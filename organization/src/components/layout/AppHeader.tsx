@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Bell, Search, User, Moon, Sun, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export function AppHeader() {
   const { resolvedTheme, setTheme } = useTheme();
   const { user, logout } = useAuth();
+  const onDashboard = useLocation().pathname === "/";
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const destinations = useMemo(() => menuItems.flatMap(group => group.items.map(item => ({ ...item, group: group.title }))), []);
@@ -37,9 +38,12 @@ export function AppHeader() {
         </button>
       </div>
       <div className="flex items-center gap-1.5">
-        <Button asChild size="sm" className="hidden sm:flex"><Link to="/student/admission-form"><Plus />New admission</Link></Button>
-        <Button variant="ghost" size="icon" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</Button>
-        <Button variant="ghost" size="icon" className="relative"><Bell /><span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[#c7ff2f] ring-2 ring-background" /></Button>
+        {/* A persistent shortcut everywhere except the dashboard, which already
+            offers it as its own primary action — outline so that when a page
+            does have a filled button, there is still only one focal point. */}
+        {!onDashboard && <Button asChild size="sm" variant="outline" className="hidden sm:flex"><Link to="/student/admission-form"><Plus />New admission</Link></Button>}
+        <Button variant="ghost" size="icon" aria-label={resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"} onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</Button>
+        <Button variant="ghost" size="icon" className="relative" aria-label="Notifications, unread"><Bell /><span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand ring-2 ring-background" /></Button>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="h-10 rounded-full p-1"><Avatar className="h-8 w-8"><AvatarFallback className="bg-foreground text-background text-xs">{user?.name.split(" ").map(p=>p[0]).join("").slice(0,2)||"ID"}</AvatarFallback></Avatar></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel><span className="block">{user?.name}</span><span className="text-xs font-normal text-muted-foreground">{user?.role.replaceAll("_"," ")}</span></DropdownMenuLabel><DropdownMenuSeparator/><DropdownMenuItem><User className="mr-2 h-4 w-4"/>Profile</DropdownMenuItem><DropdownMenuItem>Settings</DropdownMenuItem><DropdownMenuSeparator/><DropdownMenuItem className="text-destructive" onClick={()=>void logout()}>Log out</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
       </div>
 

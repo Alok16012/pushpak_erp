@@ -273,10 +273,12 @@ export function AppSidebar() {
                   <Link
                     to="/"
                     className={cn(
-                      "flex items-center gap-3 px-4 py-2.5 transition-colors",
+                      // "You are here" is a rail plus a surface, not a fill:
+                      // it reads at a glance without spending the accent colour.
+                      "relative flex items-center gap-3 px-4 py-2.5 transition-colors before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-sidebar-primary before:transition-opacity",
                       isActive("/")
-                        ? "bg-[#c7ff2f] text-[#171719] font-semibold"
-                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                        ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground before:opacity-100"
+                        : "text-sidebar-foreground/70 before:opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                     )}
                   >
                     <Building2 className="h-4 w-4" />
@@ -300,7 +302,7 @@ export function AppSidebar() {
                 const productionReady = ["Reception", "Course Management", "Student Management", "Fee Management", "Attendance Management", "Exam & Marks", "Certificate & Marksheet"].includes(item.title);
                 return <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <Link to={entry.url} className={cn("flex items-center gap-3 px-4 py-2.5 transition-all", active ? "bg-sidebar-accent text-[#c7ff2f] font-semibold" : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground")}>
+                    <Link to={entry.url} className={cn("relative flex items-center gap-3 px-4 py-2.5 transition-colors before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-sidebar-primary before:transition-opacity", active ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground before:opacity-100" : "text-sidebar-foreground/65 before:opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground")}>
                       <item.icon className="h-4 w-4" />
                       {!collapsed && <><span className="min-w-0 flex-1 truncate text-sm">{item.title.replace(" Management", "")}</span>{!productionReady&&<span className="rounded bg-sidebar-accent px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-sidebar-foreground/40">Preview</span>}<ChevronRight className="h-3.5 w-3.5 opacity-40"/></>}
                     </Link>

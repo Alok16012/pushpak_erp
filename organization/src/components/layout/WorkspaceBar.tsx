@@ -49,7 +49,7 @@ export function WorkspaceBar() {
         <span className="mr-2 hidden shrink-0 text-[10px] font-bold uppercase tracking-[.16em] text-muted-foreground lg:block">{group.title}</span>
         {group.items.map(item => <Link key={item.url} to={item.url} className={cn("shrink-0 rounded-xl px-3 py-2 text-xs font-medium transition-all hover:bg-muted", location.pathname === item.url ? "bg-foreground text-background shadow-sm" : "text-muted-foreground")}><item.icon className="mr-1.5 inline h-3.5 w-3.5"/>{item.title}</Link>)}
       </div>
-      {isWorkflow && <div className="hidden shrink-0 items-center gap-2 border-l pl-3 sm:flex"><div className="w-24"><div className="mb-1 flex justify-between text-[10px]"><span className="text-muted-foreground">Progress</span><strong>{progress}%</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#92c500] transition-all duration-500" style={{width:`${progress}%`}}/></div></div><Button variant="ghost" size="sm" onClick={saveDraft}>{progress===100?<Check/>:<Save/>}Save draft</Button></div>}
+      {isWorkflow && <div className="hidden shrink-0 items-center gap-2 border-l pl-3 sm:flex"><div className="w-24"><div className="mb-1 flex justify-between text-[10px]"><span className="text-muted-foreground">Progress</span><strong>{progress}%</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-brand transition-all duration-500" style={{width:`${progress}%`}}/></div></div><Button variant="ghost" size="sm" onClick={saveDraft}>{progress===100?<Check/>:<Save/>}Save draft</Button></div>}
     </div>
   </div>;
 }

@@ -51,6 +51,11 @@ export default {
 				DEFAULT: 'hsl(var(--accent))',
 				foreground: 'hsl(var(--accent-foreground))'
 			},
+			brand: {
+				DEFAULT: 'hsl(var(--brand))',
+				foreground: 'hsl(var(--brand-foreground))',
+				ink: 'hsl(var(--brand-ink))'
+			},
 			popover: {
 				DEFAULT: 'hsl(var(--popover))',
 				foreground: 'hsl(var(--popover-foreground))'
@@ -104,19 +109,10 @@ export default {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out'
   		},
+		// Defer to --font-sans in index.css. This previously hardcoded Inter,
+		// which silently overrode the DM Sans the app downloads on every load.
 		fontFamily: {
-			sans: [
-				'Inter',
-				'ui-sans-serif',
-				'system-ui',
-				'-apple-system',
-				'BlinkMacSystemFont',
-				'Segoe UI',
-				'Roboto',
-				'Helvetica Neue',
-				'Arial',
-				'sans-serif'
-			]
+			sans: ['var(--font-sans)']
 		},
 		boxShadow: {
 			sm: 'var(--shadow-sm)',
