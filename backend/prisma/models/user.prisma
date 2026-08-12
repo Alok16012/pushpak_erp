@@ -1,0 +1,86 @@
+// ============================================
+// User — Unified authentication for all users
+// ============================================
+
+model User {
+  id              String    @id @default(cuid())
+
+  // Type & Identity
+  userType        UserType
+  name            String
+  email           String    @unique
+  phone           String?   @unique
+  username        String    @unique
+  password        String    @db.Text                     // Always store hashed
+  role            SystemRole @default(STAFF)
+  avatar          Json?
+
+  // Status & Audit
+  isActive        Boolean   @default(true)
+  lastLoginAt     DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization    Organization?
+  branch          Branch?
+  student         Student?
+  sessions        RefreshSession[]
+  auditEvents     AuditEvent[]
+
+  @@index([userType])
+  @@map("users")
+}
+
+enum UserType {
+  ORGANIZATION
+  BRANCH
+  STUDENT
+}
+
+enum SystemRole {
+  SUPER_ADMIN
+  ORGANIZATION_ADMIN
+  BRANCH_ADMIN
+  ACCOUNTANT
+  RECEPTIONIST
+  TEACHER
+  STAFF
+  STUDENT
+}
+
+model RefreshSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_sessions")
+}
+
+model AuditEvent {
+  id             String   @id @default(cuid())
+  actorId        String?
+  actor          User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  organizationId String?
+  branchId       String?
+  action         String
+  entityType     String
+  entityId       String?
+  before         Json?
+  after          Json?
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_events")
+}

@@ -1,0 +1,40 @@
+// ============================================
+// Organization — Top-level entity
+// ============================================
+
+model Organization {
+  id              String    @id @default(cuid())
+
+  userId          String @unique
+  user            User      @relation(fields: [userId], references: [id])
+
+  // Basic Info
+  name            String
+  code            String    @unique
+  logo            Json?
+  email           String    @unique
+  phone           String
+  website         String?
+  description     String?   @db.Text
+
+  // Address
+  streetAddress   String    @db.Text
+  city            String
+  state           String
+  district        String
+  pincode         String
+  country         String    @default("India")
+
+  // Status
+  isActive        Boolean   @default(true)
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  branches        Branch[]
+  courses         Course[]
+
+  @@index([code])
+  @@map("organizations")
+}
