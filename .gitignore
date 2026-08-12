@@ -45,3 +45,6 @@ yarn-error.log*
 **/*.log
 **/*.bun
 tmp/
+
+# Bun lockfile: this project standardises on npm (package-lock.json).
+bun.lockb

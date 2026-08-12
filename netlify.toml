@@ -1,0 +1,15 @@
+[build]
+  base = "organization"
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22.12.0"
+  NPM_FLAGS = "--no-audit --no-fund"
+
+# React Router is a client-side router: every deep link must serve index.html
+# instead of 404ing on a path Netlify has no file for.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
