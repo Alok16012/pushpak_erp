@@ -111,8 +111,8 @@ export function DataTable<T extends { id: string | number }>({
   return (
     <div className="space-y-4">
       {searchable && (
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex items-center gap-2 sm:gap-4">
+          <div className="relative min-w-0 flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder={searchPlaceholder}
@@ -121,7 +121,7 @@ export function DataTable<T extends { id: string | number }>({
               className="pl-10"
             />
           </div>
-          <Button variant={showFilters || quickFilter ? "secondary" : "outline"} size="sm" className="gap-2" onClick={() => setShowFilters(value => !value)}>
+          <Button variant={showFilters || quickFilter ? "secondary" : "outline"} size="sm" className="shrink-0 gap-2" onClick={() => setShowFilters(value => !value)}>
             <Filter className="h-4 w-4" />
             Filters {quickFilter && "· 1"}
           </Button>
@@ -136,7 +136,22 @@ export function DataTable<T extends { id: string | number }>({
         </div>
       )}
 
-      <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="space-y-2 md:hidden">
+        {paginatedData.length === 0 ? <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">{emptyMessage}</div> : paginatedData.map(item => <article key={item.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            {selectable && <Checkbox className="mt-1" checked={selectedIds.includes(item.id)} onCheckedChange={()=>toggleSelect(item.id)}/>}
+            <div className="min-w-0 flex-1">
+              <div className="min-w-0 font-semibold">{columns[0]?.cell ? columns[0].cell(item) : String((item as Record<string,unknown>)[String(columns[0]?.key)] ?? "")}</div>
+              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+                {columns.slice(1,5).map(column => <div key={String(column.key)} className="min-w-0"><dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{column.header}</dt><dd className="mt-1 break-words text-sm">{column.cell ? column.cell(item) : String((item as Record<string,unknown>)[String(column.key)] ?? "-")}</dd></div>)}
+              </dl>
+            </div>
+            {actions && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="-mr-2 -mt-2 h-10 w-10 shrink-0"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{actions(item).map((action,index)=><DropdownMenuItem key={index} onClick={action.onClick} className={action.destructive?"text-destructive":""}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>}
+          </div>
+        </article>)}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
@@ -223,12 +238,12 @@ export function DataTable<T extends { id: string | number }>({
       </div>
 
       {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-center text-xs text-muted-foreground sm:text-left sm:text-sm">
             Showing {(currentPage - 1) * pageSize + 1} to{" "}
             {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} entries
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-1 sm:gap-2">
             <Button
               variant="outline"
               size="sm"

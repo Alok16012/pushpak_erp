@@ -43,13 +43,13 @@ export function WorkspaceBar() {
   };
 
   if (!group) return null;
-  return <div className="sticky top-[68px] z-30 border-b border-border/70 bg-background/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
+  return <div className="sticky top-[60px] z-30 border-b border-border/70 bg-background/90 px-2 backdrop-blur-xl sm:top-[68px] sm:px-6 lg:px-8">
     <div className="mx-auto flex max-w-[1600px] items-center gap-3">
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-2 [scrollbar-width:none]">
         <span className="mr-2 hidden shrink-0 text-[10px] font-bold uppercase tracking-[.16em] text-muted-foreground lg:block">{group.title}</span>
         {group.items.map(item => <Link key={item.url} to={item.url} className={cn("shrink-0 rounded-xl px-3 py-2 text-xs font-medium transition-all hover:bg-muted", location.pathname === item.url ? "bg-foreground text-background shadow-sm" : "text-muted-foreground")}><item.icon className="mr-1.5 inline h-3.5 w-3.5"/>{item.title}</Link>)}
       </div>
-      {isWorkflow && <div className="hidden shrink-0 items-center gap-2 border-l pl-3 sm:flex"><div className="w-24"><div className="mb-1 flex justify-between text-[10px]"><span className="text-muted-foreground">Progress</span><strong>{progress}%</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-brand transition-all duration-500" style={{width:`${progress}%`}}/></div></div><Button variant="ghost" size="sm" onClick={saveDraft}>{progress===100?<Check/>:<Save/>}Save draft</Button></div>}
+      {isWorkflow && <div className="shrink-0 border-l pl-2 sm:pl-3"><Button variant="ghost" size="sm" onClick={saveDraft} className="px-2 sm:px-3">{progress===100?<Check/>:<Save/>}<span className="hidden sm:inline">Save draft</span><span className="text-[10px] sm:hidden">{progress}%</span></Button></div>}
     </div>
   </div>;
 }
