@@ -33,6 +33,8 @@ interface DataTableProps<T> {
   searchable?: boolean;
   searchPlaceholder?: string;
   selectable?: boolean;
+  /** Notified whenever the checkbox selection changes, for bulk-action toolbars. */
+  onSelectionChange?: (ids: (string | number)[]) => void;
   actions?: (item: T) => { label: string; onClick: () => void; destructive?: boolean }[];
   emptyMessage?: string;
   pageSize?: number;
@@ -44,6 +46,7 @@ export function DataTable<T extends { id: string | number }>({
   searchable = true,
   searchPlaceholder = "Search...",
   selectable = false,
+  onSelectionChange,
   actions,
   emptyMessage = "No data available",
   pageSize = 10,
@@ -92,16 +95,21 @@ export function DataTable<T extends { id: string | number }>({
     }
   };
 
+  const applySelection = (ids: (string | number)[]) => {
+    setSelectedIds(ids);
+    onSelectionChange?.(ids);
+  };
+
   const toggleSelectAll = () => {
-    if (allSelected) {
-      setSelectedIds(selectedIds.filter((id) => !paginatedData.some((item) => item.id === id)));
-    } else {
-      setSelectedIds([...selectedIds, ...paginatedData.map((item) => item.id)]);
-    }
+    applySelection(
+      allSelected
+        ? selectedIds.filter((id) => !paginatedData.some((item) => item.id === id))
+        : [...selectedIds, ...paginatedData.map((item) => item.id)]
+    );
   };
 
   const toggleSelect = (id: string | number) => {
-    setSelectedIds(
+    applySelection(
       selectedIds.includes(id)
         ? selectedIds.filter((selectedId) => selectedId !== id)
         : [...selectedIds, id]

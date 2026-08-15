@@ -13,33 +13,52 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Download, Eye, Search, Users, CreditCard } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Printer, Download, Eye, Search, Users, CreditCard, Image as ImageIcon, QrCode } from "lucide-react";
 import { useState } from "react";
-
-const students = [
-  { id: "STU001", name: "Rahul Sharma", class: "10th", section: "A", rollNo: "101", photo: true },
-  { id: "STU002", name: "Priya Patel", class: "10th", section: "A", rollNo: "102", photo: true },
-  { id: "STU003", name: "Amit Kumar", class: "10th", section: "B", rollNo: "103", photo: false },
-  { id: "STU004", name: "Sneha Gupta", class: "9th", section: "A", rollNo: "201", photo: true },
-  { id: "STU005", name: "Vikram Singh", class: "9th", section: "B", rollNo: "202", photo: true },
-  { id: "STU006", name: "Anita Desai", class: "8th", section: "A", rollNo: "301", photo: true },
-];
-
-const templates = [
-  { id: "1", name: "Standard Blue Template", type: "Portrait" },
-  { id: "2", name: "Modern Green Template", type: "Landscape" },
-  { id: "3", name: "Classic Red Template", type: "Portrait" },
-];
+import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+import { printHtml } from "@/lib/export";
+import { idCardsPdf } from "@/lib/id-card-pdf";
+import {
+  ID_CARD_STUDENTS,
+  ID_CARD_TEMPLATES_KEY,
+  ID_CARD_TEMPLATE_SEED,
+  IdCardTemplate,
+  fieldValue,
+  idCardSheetHtml,
+} from "@/data/id-card-templates";
 
 export default function GenerateIDCards() {
+  const { toast } = useToast();
+  const { items: templates } = useLocalCollection<IdCardTemplate>(
+    ID_CARD_TEMPLATES_KEY,
+    ID_CARD_TEMPLATE_SEED,
+  );
+
+  const [templateId, setTemplateId] = useState("");
+  const [classFilter, setClassFilter] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
+  const [academicYear, setAcademicYear] = useState("2024-25");
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
-  const filteredStudents = students.filter(
+  const template = templates.find((item) => item.id === templateId) ?? null;
+  const classes = Array.from(new Set(ID_CARD_STUDENTS.map((s) => s.class)));
+  const sections = Array.from(new Set(ID_CARD_STUDENTS.map((s) => s.section))).sort();
+
+  const filteredStudents = ID_CARD_STUDENTS.filter(
     (s) =>
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.id.toLowerCase().includes(searchTerm.toLowerCase())
+      (classFilter === "all" || s.class === classFilter) &&
+      (sectionFilter === "all" || s.section === sectionFilter) &&
+      (s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.id.toLowerCase().includes(searchTerm.toLowerCase())),
   );
+
+  /** Rows hidden by the filters are not printed, even if they were ticked. */
+  const chosen = filteredStudents.filter((s) => selectedStudents.includes(s.id));
+  const missingPhotos = chosen.filter((s) => !s.photo).length;
 
   const toggleStudent = (id: string) => {
     setSelectedStudents((prev) =>
@@ -48,12 +67,51 @@ export default function GenerateIDCards() {
   };
 
   const toggleAll = () => {
-    if (selectedStudents.length === filteredStudents.length) {
-      setSelectedStudents([]);
-    } else {
-      setSelectedStudents(filteredStudents.map((s) => s.id));
-    }
+    const visibleIds = filteredStudents.map((s) => s.id);
+    setSelectedStudents((prev) =>
+      visibleIds.every((id) => prev.includes(id))
+        ? prev.filter((id) => !visibleIds.includes(id))
+        : Array.from(new Set([...prev, ...visibleIds])),
+    );
   };
+
+  /** Every output button needs the same two things picked. */
+  const ready = () => {
+    if (!template) {
+      toast({ title: "Choose a template", description: "Pick an ID card template first.", variant: "destructive" });
+      return false;
+    }
+    if (!chosen.length) {
+      toast({ title: "No students selected", description: "Tick at least one student.", variant: "destructive" });
+      return false;
+    }
+    return true;
+  };
+
+  const printCards = () => {
+    if (!ready() || !template) return;
+    printHtml(
+      `ID Cards · ${template.name} · ${academicYear}`,
+      idCardSheetHtml(template, chosen),
+    );
+  };
+
+  const downloadPdf = () => {
+    if (!ready() || !template) return;
+    const { pages } = idCardsPdf(template, chosen, `id-cards-${academicYear}.pdf`);
+    toast({
+      title: "PDF generated",
+      description: `${chosen.length} card${chosen.length === 1 ? "" : "s"} across ${pages} page${pages === 1 ? "" : "s"} — check your Downloads.`,
+    });
+  };
+
+  const openPreview = () => {
+    if (!ready()) return;
+    setPreviewOpen(true);
+  };
+
+  const allVisibleSelected =
+    filteredStudents.length > 0 && filteredStudents.every((s) => selectedStudents.includes(s.id));
 
   return (
     <AppLayout>
@@ -75,52 +133,58 @@ export default function GenerateIDCards() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Select Template</Label>
-              <Select>
+              <Select value={templateId} onValueChange={setTemplateId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose template" />
                 </SelectTrigger>
                 <SelectContent>
-                  {templates.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name} ({t.type})
+                  {templates.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name} ({item.orientation})
                     </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!templates.length && (
+                <p className="text-xs text-muted-foreground">
+                  No templates yet — create one in ID Card Template.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Class</Label>
+              <Select value={classFilter} onValueChange={setClassFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Classes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Classes</SelectItem>
+                  {classes.map((value) => (
+                    <SelectItem key={value} value={value}>{value}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Class</Label>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Classes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Classes</SelectItem>
-                  <SelectItem value="8th">8th</SelectItem>
-                  <SelectItem value="9th">9th</SelectItem>
-                  <SelectItem value="10th">10th</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
               <Label>Section</Label>
-              <Select>
+              <Select value={sectionFilter} onValueChange={setSectionFilter}>
                 <SelectTrigger>
                   <SelectValue placeholder="All Sections" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sections</SelectItem>
-                  <SelectItem value="A">Section A</SelectItem>
-                  <SelectItem value="B">Section B</SelectItem>
+                  {sections.map((value) => (
+                    <SelectItem key={value} value={value}>Section {value}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
               <Label>Academic Year</Label>
-              <Select defaultValue="2024-25">
+              <Select value={academicYear} onValueChange={setAcademicYear}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -134,24 +198,29 @@ export default function GenerateIDCards() {
             <div className="pt-4 border-t space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Users className="h-4 w-4 text-muted-foreground" />
-                <span>Selected: {selectedStudents.length} students</span>
+                <span>Selected: {chosen.length} students</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
-                <span>Cards to generate: {selectedStudents.length}</span>
+                <span>Cards to generate: {chosen.length}</span>
               </div>
+              {missingPhotos > 0 && (
+                <p className="text-xs text-destructive">
+                  {missingPhotos} selected student{missingPhotos === 1 ? "" : "s"} have no photo — those cards print a blank frame.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-2 pt-4">
-              <Button className="w-full" disabled={selectedStudents.length === 0}>
+              <Button className="w-full" disabled={!template || chosen.length === 0} onClick={openPreview}>
                 <Eye className="h-4 w-4 mr-2" />
                 Preview Cards
               </Button>
-              <Button variant="outline" className="w-full" disabled={selectedStudents.length === 0}>
+              <Button variant="outline" className="w-full" disabled={!template || chosen.length === 0} onClick={printCards}>
                 <Printer className="h-4 w-4 mr-2" />
                 Print Cards
               </Button>
-              <Button variant="outline" className="w-full" disabled={selectedStudents.length === 0}>
+              <Button variant="outline" className="w-full" disabled={!template || chosen.length === 0} onClick={downloadPdf}>
                 <Download className="h-4 w-4 mr-2" />
                 Download PDF
               </Button>
@@ -176,15 +245,12 @@ export default function GenerateIDCards() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="border rounded-lg overflow-hidden">
+            <div className="border rounded-lg overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="p-3 text-left">
-                      <Checkbox
-                        checked={selectedStudents.length === filteredStudents.length && filteredStudents.length > 0}
-                        onCheckedChange={toggleAll}
-                      />
+                      <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} />
                     </th>
                     <th className="p-3 text-left text-sm font-medium">Student ID</th>
                     <th className="p-3 text-left text-sm font-medium">Name</th>
@@ -225,6 +291,83 @@ export default function GenerateIDCards() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Card preview</DialogTitle>
+            <DialogDescription>
+              {template?.name} · {chosen.length} card{chosen.length === 1 ? "" : "s"} · {academicYear}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto">
+            <div className="flex flex-wrap gap-4">
+              {template && chosen.map((student) => (
+                <div
+                  key={student.id}
+                  className="overflow-hidden rounded-lg border bg-card shadow-sm"
+                  style={{
+                    width: template.orientation === "portrait" ? 200 : 300,
+                    height: template.orientation === "portrait" ? 300 : 200,
+                  }}
+                >
+                  <div className="px-3 py-2 text-white" style={{ background: template.accent }}>
+                    <p className="text-xs font-bold leading-tight">{template.instituteName}</p>
+                    <p className="text-[9px] opacity-85">{template.instituteAddress}</p>
+                  </div>
+                  <div className="flex gap-2 p-3">
+                    {template.showPhoto && (
+                      <div className="h-16 w-12 shrink-0 rounded border bg-muted flex items-center justify-center">
+                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {template.fields.includes("Student Name") && (
+                        <p className="mb-1 truncate text-xs font-bold">{student.name}</p>
+                      )}
+                      <dl className="space-y-0.5">
+                        {template.fields
+                          .filter((label) => label !== "Student Name")
+                          .map((label) => (
+                            <div key={label} className="flex justify-between gap-2 text-[9px]">
+                              <dt className="shrink-0 text-muted-foreground">{label}</dt>
+                              <dd className="truncate font-medium">{fieldValue(label, student, template)}</dd>
+                            </div>
+                          ))}
+                      </dl>
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between px-3">
+                    {template.showQr ? (
+                      <div className="flex h-10 w-10 items-center justify-center rounded border">
+                        <QrCode className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <span />
+                    )}
+                    {template.showSignature && (
+                      <div className="text-center">
+                        <div className="mb-1 w-16 border-t border-foreground" />
+                        <span className="text-[9px]">Principal</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={printCards}>
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+            <Button onClick={downloadPdf}>
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
