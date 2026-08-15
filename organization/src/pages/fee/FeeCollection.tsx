@@ -195,8 +195,15 @@ export default function FeeCollection() {
   const [isCollectDialogOpen, setIsCollectDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<FeeRecord | null>(null);
   const [amount,setAmount]=useState("");const [method,setMethod]=useState("CASH");
+  const [students,setStudents]=useState<Array<{id:string;firstName:string;lastName:string;enrollmentNo?:string}>>([]);
+  const [isCreateDialogOpen,setIsCreateDialogOpen]=useState(false);
+  const [invoice,setInvoice]=useState({studentId:"",description:"",amount:"",dueDate:""});
+  const [creating,setCreating]=useState(false);
   const load=()=>api<Array<{id:string;invoiceNo:string;description:string;amount:number;dueDate:string;status:string;student:{firstName:string;lastName:string;enrollmentNo?:string};payments:Array<{amount:number}>}>>("/core/fees/invoices").then(data=>setRecords(data.map(i=>{const paid=i.payments.reduce((s,p)=>s+Number(p.amount),0);return{id:i.id,studentName:`${i.student.firstName} ${i.student.lastName}`,rollNo:i.student.enrollmentNo||"Pending",course:"Enrolled course",feeType:i.description,totalAmount:Number(i.amount),paidAmount:paid,dueAmount:Number(i.amount)-paid,dueDate:i.dueDate,status:i.status.toLowerCase() as FeeRecord["status"]}}))).catch(error=>toast({title:"Could not load fees",description:error.message,variant:"destructive"}));
   useEffect(()=>{void load()},[]);
+  useEffect(()=>{api<Array<{id:string;firstName:string;lastName:string;enrollmentNo?:string}>>("/core/students?limit=100").then(setStudents).catch(()=>{/* the invoice dialog surfaces this on open */})},[]);
+
+  const createInvoice=async()=>{setCreating(true);try{await api("/core/fees/invoices",{method:"POST",body:JSON.stringify({studentId:invoice.studentId,description:invoice.description,amount:Number(invoice.amount),dueDate:invoice.dueDate})});toast({title:"Invoice created",description:`${invoice.description} raised successfully.`});setIsCreateDialogOpen(false);setInvoice({studentId:"",description:"",amount:"",dueDate:""});await load()}catch(error){toast({title:"Could not create invoice",description:error instanceof Error?error.message:"Please try again",variant:"destructive"})}finally{setCreating(false)}};
 
   const totalCollected = records.reduce((sum, r) => sum + r.paidAmount, 0);
   const totalPending = records.reduce((sum, r) => sum + r.dueAmount, 0);
@@ -226,7 +233,7 @@ export default function FeeCollection() {
           { label: "Fee Collection" },
         ]}
         actions={
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => setIsCreateDialogOpen(true)}>
             <Plus className="h-4 w-4" />
             New Collection
           </Button>
@@ -278,6 +285,80 @@ export default function FeeCollection() {
           />
         </CardContent>
       </Card>
+
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New Fee Invoice</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="invoiceStudent">Student *</Label>
+              <Select
+                value={invoice.studentId}
+                onValueChange={(studentId) => setInvoice((i) => ({ ...i, studentId }))}
+              >
+                <SelectTrigger id="invoiceStudent">
+                  <SelectValue placeholder="Select student" />
+                </SelectTrigger>
+                <SelectContent>
+                  {students.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.firstName} {s.lastName} · {s.enrollmentNo || "Pending"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoiceDescription">Description *</Label>
+              <Input
+                id="invoiceDescription"
+                placeholder="e.g. Tuition Fee - Term 1"
+                value={invoice.description}
+                onChange={(e) => setInvoice((i) => ({ ...i, description: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoiceAmount">Amount *</Label>
+              <Input
+                id="invoiceAmount"
+                type="number"
+                min={1}
+                placeholder="Enter amount"
+                value={invoice.amount}
+                onChange={(e) => setInvoice((i) => ({ ...i, amount: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="invoiceDueDate">Due Date *</Label>
+              <Input
+                id="invoiceDueDate"
+                type="date"
+                value={invoice.dueDate}
+                onChange={(e) => setInvoice((i) => ({ ...i, dueDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={
+                creating ||
+                !invoice.studentId ||
+                invoice.description.trim().length < 2 ||
+                Number(invoice.amount) <= 0 ||
+                !invoice.dueDate
+              }
+              onClick={createInvoice}
+            >
+              {creating ? "Creating…" : "Create Invoice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isCollectDialogOpen} onOpenChange={setIsCollectDialogOpen}>
         <DialogContent className="sm:max-w-md">

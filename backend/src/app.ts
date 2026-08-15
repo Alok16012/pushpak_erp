@@ -31,7 +31,9 @@ app.use(
   cors({
     origin(origin, callback) {
       if (!origin || config.corsOrigins.includes(origin)) return callback(null, true);
-      callback(new Error("Origin not allowed by CORS"));
+      // Omit the Access-Control-Allow-Origin header instead of throwing, so the
+      // browser blocks the request cleanly rather than the server returning 500.
+      callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,

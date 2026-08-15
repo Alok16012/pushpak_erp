@@ -1,5 +1,6 @@
 import { demoRequest, isDemoMode } from "./demo";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api/v1";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5050/api/v1";
+const REQUEST_TIMEOUT_MS = 30_000;
 export class ApiError extends Error { constructor(message:string, public status:number, public details?:unknown){super(message)} }
 let refreshPromise: Promise<string> | null = null;
 async function refreshAccessToken(){
@@ -9,7 +10,10 @@ async function refreshAccessToken(){
 export async function api<T>(path:string, options:RequestInit={}, retry=true):Promise<T> {
   if(isDemoMode())return demoRequest<T>(path,options);
   const token=localStorage.getItem("erp-access-token");
-  const response=await fetch(`${API_URL}${path}`,{...options,headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{ }),...options.headers}});
+  // Without a timeout an unreachable or hung API leaves the UI spinning forever.
+  let response:Response;
+  try{response=await fetch(`${API_URL}${path}`,{...options,signal:options.signal??AbortSignal.timeout(REQUEST_TIMEOUT_MS),headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{ }),...options.headers}});}
+  catch(error){if(error instanceof DOMException&&error.name==="TimeoutError")throw new ApiError("The server took too long to respond. Please try again.",408);throw new ApiError("Could not reach the server. Check your connection and try again.",0)}
   if(response.status===401&&retry&&path!=="/auth/login"&&path!=="/auth/refresh"){try{await refreshAccessToken();return api<T>(path,options,false)}catch{localStorage.removeItem("erp-access-token");localStorage.removeItem("erp-refresh-token");localStorage.removeItem("erp-user");window.dispatchEvent(new Event("erp-session-expired"));throw new ApiError("Your session has expired. Please sign in again.",401)}}
   if(response.status===204)return undefined as T;
   const body=await response.json().catch(()=>({message:"Unexpected server response"}));
