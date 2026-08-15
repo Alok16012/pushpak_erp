@@ -4,7 +4,11 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ArrowUpRight, ArrowDownLeft, IndianRupee, TrendingUp, TrendingDown, Download } from "lucide-react";
+import { useState } from "react";
+import { downloadCsv, downloadHtml, printHtml } from "@/lib/export";
+import { useToast } from "@/hooks/use-toast";
 
 interface Transaction {
   id: string;
@@ -88,11 +92,60 @@ const columns: Column<Transaction>[] = [
   },
 ];
 
+/** The printable/downloadable receipt body for one transaction. */
+const receiptHtml = (txn: Transaction) => `
+  <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto">
+    <h1 style="margin:0;font-size:20px">Pushpak Institute</h1>
+    <p style="margin:4px 0 20px;color:#6b7280;font-size:13px">Transaction receipt · ${txn.reference}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      ${[
+        ["Date", txn.date],
+        ["Branch", txn.branch],
+        ["Category", txn.category],
+        ["Description", txn.description],
+        ["Type", txn.type === "credit" ? "Credit" : "Debit"],
+        ["Amount", `${txn.type === "credit" ? "+" : "−"}₹${txn.amount.toLocaleString()}`],
+        ["Balance after", `₹${txn.balance.toLocaleString()}`],
+      ]
+        .map(
+          ([label, value]) =>
+            `<tr><td style="padding:6px 0;color:#6b7280">${label}</td><td style="padding:6px 0;text-align:right;font-weight:600">${value}</td></tr>`,
+        )
+        .join("")}
+    </table>
+    <p style="margin-top:28px;font-size:11px;color:#6b7280">Generated ${new Date().toLocaleString()} · system generated, no signature required.</p>
+  </div>`;
+
 export default function BranchTransactions() {
+  const { toast } = useToast();
+  const [details, setDetails] = useState<Transaction | null>(null);
+
+  const downloadReceipt = (txn: Transaction) => {
+    downloadHtml(`receipt-${txn.reference}.html`, `Receipt ${txn.reference}`, receiptHtml(txn));
+    toast({ title: "Receipt downloaded", description: `receipt-${txn.reference}.html` });
+  };
+
+  const exportAll = () => {
+    downloadCsv(
+      "branch-transactions.csv",
+      transactionsData.map((txn) => ({
+        Date: txn.date,
+        Branch: txn.branch,
+        Type: txn.type,
+        Category: txn.category,
+        Description: txn.description,
+        Amount: txn.amount,
+        Balance: txn.balance,
+        Reference: txn.reference,
+      })),
+    );
+    toast({ title: "Transactions exported", description: `${transactionsData.length} rows written to CSV.` });
+  };
+
   const handleActions = (txn: Transaction) => [
-    { label: "View Details", onClick: () => console.log("View", txn.id) },
-    { label: "Download Receipt", onClick: () => console.log("Download", txn.id) },
-    { label: "Print", onClick: () => console.log("Print", txn.id) },
+    { label: "View Details", onClick: () => setDetails(txn) },
+    { label: "Download Receipt", onClick: () => downloadReceipt(txn) },
+    { label: "Print", onClick: () => printHtml(`Receipt ${txn.reference}`, receiptHtml(txn)) },
   ];
 
   const totalCredits = transactionsData.filter(t => t.type === "credit").reduce((sum, t) => sum + t.amount, 0);
@@ -108,7 +161,7 @@ export default function BranchTransactions() {
           { label: "Transactions" },
         ]}
         actions={
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={exportAll}>
             <Download className="h-4 w-4" />
             Export
           </Button>
@@ -151,6 +204,35 @@ export default function BranchTransactions() {
         searchPlaceholder="Search transactions..."
         actions={handleActions}
       />
+
+      <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{details?.description}</DialogTitle>
+            <DialogDescription>{details?.reference} · {details?.branch}</DialogDescription>
+          </DialogHeader>
+          {details && (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+              {[
+                ["Date", details.date],
+                ["Category", details.category],
+                ["Type", details.type === "credit" ? "Credit" : "Debit"],
+                ["Amount", `${details.type === "credit" ? "+" : "−"}₹${details.amount.toLocaleString()}`],
+                ["Balance after", `₹${details.balance.toLocaleString()}`],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs text-muted-foreground">{label}</dt>
+                  <dd className="font-medium">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => details && downloadReceipt(details)}>Download receipt</Button>
+            <Button onClick={() => details && printHtml(`Receipt ${details.reference}`, receiptHtml(details))}>Print</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

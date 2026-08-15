@@ -4,44 +4,35 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Layers, IndianRupee, Users, BookOpen } from "lucide-react";
 import { useState } from "react";
-
-interface FeeGroup {
-  id: string;
-  name: string;
-  description: string;
-  feeTypes: string[];
-  totalAmount: number;
-  courses: string[];
-  studentsCount: number;
-  status: "active" | "inactive";
-}
-
-const feeGroupsData: FeeGroup[] = [
-  { id: "1", name: "Standard Fee Package", description: "Regular student fee structure", feeTypes: ["Tuition Fee", "Admission Fee", "Exam Fee", "Library Fee"], totalAmount: 59000, courses: ["All Courses"], studentsCount: 450, status: "active" },
-  { id: "2", name: "Science Stream Package", description: "Fee structure for science students", feeTypes: ["Tuition Fee", "Admission Fee", "Exam Fee", "Library Fee", "Lab Fee"], totalAmount: 62000, courses: ["Computer Science", "Engineering", "Science"], studentsCount: 280, status: "active" },
-  { id: "3", name: "Hostel Student Package", description: "Complete package with hostel", feeTypes: ["Tuition Fee", "Admission Fee", "Exam Fee", "Library Fee", "Hostel Fee"], totalAmount: 119000, courses: ["All Courses"], studentsCount: 85, status: "active" },
-  { id: "4", name: "Day Scholar with Transport", description: "Day scholar with bus facility", feeTypes: ["Tuition Fee", "Admission Fee", "Exam Fee", "Library Fee", "Transport Fee"], totalAmount: 71000, courses: ["All Courses"], studentsCount: 120, status: "active" },
-  { id: "5", name: "Merit Scholarship Package", description: "Reduced fee for merit students", feeTypes: ["Tuition Fee (50%)", "Exam Fee", "Library Fee"], totalAmount: 29000, courses: ["All Courses"], studentsCount: 25, status: "active" },
-];
-
-const availableFeeTypes = [
-  { id: "tf", name: "Tuition Fee", amount: 50000 },
-  { id: "af", name: "Admission Fee", amount: 5000 },
-  { id: "ef", name: "Exam Fee", amount: 2000 },
-  { id: "lf", name: "Lab Fee", amount: 3000 },
-  { id: "lib", name: "Library Fee", amount: 2000 },
-  { id: "sf", name: "Sports Fee", amount: 1500 },
-  { id: "trf", name: "Transport Fee", amount: 12000 },
-  { id: "hf", name: "Hostel Fee", amount: 60000 },
-];
+import { useNavigate } from "react-router-dom";
+import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+import {
+  FEE_GROUPS_KEY,
+  FEE_GROUP_SEED,
+  FEE_TYPES_KEY,
+  FEE_TYPE_SEED,
+  type FeeGroup,
+  type FeeType,
+} from "@/data/fee-catalog";
 
 const columns: Column<FeeGroup>[] = [
   {
@@ -109,28 +100,146 @@ const columns: Column<FeeGroup>[] = [
   },
 ];
 
+const BLANK = { name: "", courses: "All Courses", description: "", feeTypeIds: [] as string[] };
+
 export default function FeeGroups() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { items: groups, add, update, remove } = useLocalCollection<FeeGroup>(FEE_GROUPS_KEY, FEE_GROUP_SEED);
+  const { items: allFeeTypes } = useLocalCollection<FeeType>(FEE_TYPES_KEY, FEE_TYPE_SEED);
+
+  /** Only live fee types can go into a new package. */
+  const availableFeeTypes = allFeeTypes.filter((f) => f.status === "active");
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedFeeTypes, setSelectedFeeTypes] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ ...BLANK });
+  const [details, setDetails] = useState<FeeGroup | null>(null);
+  const [assigning, setAssigning] = useState<FeeGroup | null>(null);
+  const [assignCount, setAssignCount] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<FeeGroup | null>(null);
 
-  const handleActions = (group: FeeGroup) => [
-    { label: "View Details", onClick: () => console.log("View", group.id) },
-    { label: "Edit Group", onClick: () => console.log("Edit", group.id) },
-    { label: "Assign to Students", onClick: () => console.log("Assign", group.id) },
-    { label: "Duplicate", onClick: () => console.log("Duplicate", group.id) },
-    { label: "Delete", onClick: () => console.log("Delete", group.id), destructive: true },
-  ];
+  const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
 
-  const toggleFeeType = (feeId: string) => {
-    setSelectedFeeTypes((prev) =>
-      prev.includes(feeId) ? prev.filter((id) => id !== feeId) : [...prev, feeId]
-    );
+  const toggleFeeType = (feeId: string) =>
+    setForm((f) => ({
+      ...f,
+      feeTypeIds: f.feeTypeIds.includes(feeId)
+        ? f.feeTypeIds.filter((id) => id !== feeId)
+        : [...f.feeTypeIds, feeId],
+    }));
+
+  const totalSelected = form.feeTypeIds.reduce((sum, id) => {
+    const fee = allFeeTypes.find((f) => f.id === id);
+    return sum + (fee?.defaultAmount ?? 0);
+  }, 0);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ ...BLANK });
+    setIsDialogOpen(true);
   };
 
-  const totalSelected = selectedFeeTypes.reduce((sum, id) => {
-    const fee = availableFeeTypes.find(f => f.id === id);
-    return sum + (fee?.amount || 0);
-  }, 0);
+  const openEdit = (group: FeeGroup) => {
+    setEditingId(group.id);
+    setForm({
+      name: group.name,
+      courses: group.courses.join(", "),
+      description: group.description,
+      feeTypeIds: allFeeTypes.filter((f) => group.feeTypes.includes(f.name)).map((f) => f.id),
+    });
+    setIsDialogOpen(true);
+  };
+
+  const save = () => {
+    const name = form.name.trim();
+    if (!name) {
+      toast({ title: "Group name is required", variant: "destructive" });
+      return;
+    }
+    if (!form.feeTypeIds.length) {
+      toast({ title: "Pick at least one fee type", variant: "destructive" });
+      return;
+    }
+    if (groups.some((g) => g.id !== editingId && g.name.toLowerCase() === name.toLowerCase())) {
+      toast({ title: "A fee group with that name already exists", variant: "destructive" });
+      return;
+    }
+
+    const chosen = allFeeTypes.filter((f) => form.feeTypeIds.includes(f.id));
+    const courses = form.courses
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const payload = {
+      name,
+      description: form.description.trim() || `${chosen.length} fee types`,
+      feeTypes: chosen.map((f) => f.name),
+      totalAmount: chosen.reduce((sum, f) => sum + f.defaultAmount, 0),
+      courses: courses.length ? courses : ["All Courses"],
+      status: "active" as const,
+    };
+
+    if (editingId) {
+      update(editingId, payload);
+      toast({ title: "Fee group updated", description: `${name} was saved.` });
+    } else {
+      add({ ...payload, studentsCount: 0 });
+      toast({ title: "Fee group created", description: `${name} · ₹${payload.totalAmount.toLocaleString()}` });
+    }
+    setIsDialogOpen(false);
+    setEditingId(null);
+    setForm({ ...BLANK });
+  };
+
+  const duplicate = (group: FeeGroup) => {
+    const { id: _id, ...rest } = group;
+    const name = `${group.name} (Copy)`;
+    add({ ...rest, name, studentsCount: 0, status: "inactive" });
+    toast({ title: "Fee group duplicated", description: `${name} was created as inactive.` });
+  };
+
+  const confirmAssign = () => {
+    if (!assigning) return;
+    const count = Number(assignCount);
+    if (!assignCount.trim() || !Number.isFinite(count) || count <= 0) {
+      toast({ title: "Enter how many students to assign", variant: "destructive" });
+      return;
+    }
+    update(assigning.id, { studentsCount: assigning.studentsCount + count });
+    toast({
+      title: "Fee group assigned",
+      description: `${count} student(s) added to ${assigning.name} · ₹${(count * assigning.totalAmount).toLocaleString()} billed.`,
+    });
+    setAssigning(null);
+    setAssignCount("");
+  };
+
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    remove(pendingDelete.id);
+    toast({ title: "Fee group deleted", description: `${pendingDelete.name} was removed.` });
+    setPendingDelete(null);
+  };
+
+  const handleActions = (group: FeeGroup) => [
+    { label: "View Details", onClick: () => setDetails(group) },
+    { label: "Edit Group", onClick: () => openEdit(group) },
+    {
+      label: "Assign to Students",
+      onClick: () => {
+        setAssigning(group);
+        setAssignCount("");
+      },
+    },
+    { label: "Duplicate", onClick: () => duplicate(group) },
+    { label: "Delete", onClick: () => setPendingDelete(group), destructive: true },
+  ];
+
+  const avgAmount = groups.length
+    ? Math.round(groups.reduce((sum, g) => sum + g.totalAmount, 0) / groups.length / 1000)
+    : 0;
 
   return (
     <AppLayout>
@@ -142,69 +251,10 @@ export default function FeeGroups() {
           { label: "Fee Groups" },
         ]}
         actions={
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Fee Group
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Create New Fee Group</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 mt-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Group Name *</Label>
-                    <Input placeholder="e.g., Standard Fee Package" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Applicable Courses</Label>
-                    <Input placeholder="All Courses or specific courses" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea placeholder="Brief description of the fee group..." rows={2} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Select Fee Types</Label>
-                  <div className="border rounded-lg p-4 space-y-3 max-h-64 overflow-y-auto">
-                    {availableFeeTypes.map((fee) => (
-                      <div key={fee.id} className="flex items-center justify-between p-2 hover:bg-muted rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <Checkbox
-                            id={fee.id}
-                            checked={selectedFeeTypes.includes(fee.id)}
-                            onCheckedChange={() => toggleFeeType(fee.id)}
-                          />
-                          <label htmlFor={fee.id} className="cursor-pointer">
-                            <span className="font-medium">{fee.name}</span>
-                          </label>
-                        </div>
-                        <span className="text-muted-foreground">₹{fee.amount.toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {selectedFeeTypes.length > 0 && (
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">Total Amount:</span>
-                        <span className="text-xl font-bold text-primary">₹{totalSelected.toLocaleString()}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-                <div className="flex justify-end gap-3 pt-4">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                  <Button onClick={() => setIsDialogOpen(false)}>Create Group</Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button className="gap-2" onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            Create Fee Group
+          </Button>
         }
       />
 
@@ -216,7 +266,7 @@ export default function FeeGroups() {
                 <Layers className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{feeGroupsData.length}</p>
+                <p className="text-2xl font-bold">{groups.length}</p>
                 <p className="text-sm text-muted-foreground">Fee Groups</p>
               </div>
             </div>
@@ -229,7 +279,7 @@ export default function FeeGroups() {
                 <Users className="h-5 w-5 text-success" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{feeGroupsData.reduce((sum, g) => sum + g.studentsCount, 0)}</p>
+                <p className="text-2xl font-bold">{groups.reduce((sum, g) => sum + g.studentsCount, 0)}</p>
                 <p className="text-sm text-muted-foreground">Students Assigned</p>
               </div>
             </div>
@@ -242,7 +292,7 @@ export default function FeeGroups() {
                 <IndianRupee className="h-5 w-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold">₹{Math.round(feeGroupsData.reduce((sum, g) => sum + g.totalAmount, 0) / feeGroupsData.length / 1000)}K</p>
+                <p className="text-2xl font-bold">₹{avgAmount}K</p>
                 <p className="text-sm text-muted-foreground">Avg. Group Amount</p>
               </div>
             </div>
@@ -264,11 +314,202 @@ export default function FeeGroups() {
       </div>
 
       <DataTable
-        data={feeGroupsData}
+        data={groups}
         columns={columns}
         searchPlaceholder="Search fee groups..."
         actions={handleActions}
       />
+
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) setEditingId(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit Fee Group" : "Create New Fee Group"}</DialogTitle>
+            <DialogDescription>
+              The total is the sum of the fee types you tick — maintain those on the Fee Types page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="group-name">Group Name *</Label>
+                <Input
+                  id="group-name"
+                  placeholder="e.g., Standard Fee Package"
+                  value={form.name}
+                  onChange={(e) => set("name", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="group-courses">Applicable Courses</Label>
+                <Input
+                  id="group-courses"
+                  placeholder="All Courses, or a comma separated list"
+                  value={form.courses}
+                  onChange={(e) => set("courses", e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="group-description">Description</Label>
+              <Textarea
+                id="group-description"
+                placeholder="Brief description of the fee group..."
+                rows={2}
+                value={form.description}
+                onChange={(e) => set("description", e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Select Fee Types *</Label>
+              <div className="border rounded-lg p-4 space-y-3 max-h-64 overflow-y-auto">
+                {availableFeeTypes.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No active fee types. Add one on the Fee Types page first.
+                  </p>
+                )}
+                {availableFeeTypes.map((fee) => (
+                  <div key={fee.id} className="flex items-center justify-between p-2 hover:bg-muted rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        id={`fee-${fee.id}`}
+                        checked={form.feeTypeIds.includes(fee.id)}
+                        onCheckedChange={() => toggleFeeType(fee.id)}
+                      />
+                      <label htmlFor={`fee-${fee.id}`} className="cursor-pointer">
+                        <span className="font-medium">{fee.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{fee.frequency}</span>
+                      </label>
+                    </div>
+                    <span className="text-muted-foreground">₹{fee.defaultAmount.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {form.feeTypeIds.length > 0 && (
+              <Card className="bg-muted/50">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">Total Amount:</span>
+                    <span className="text-xl font-bold text-primary">₹{totalSelected.toLocaleString()}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+            <Button onClick={save}>{editingId ? "Save changes" : "Create Group"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{details?.name}</DialogTitle>
+            <DialogDescription>{details?.description}</DialogDescription>
+          </DialogHeader>
+          {details && (
+            <div className="space-y-4">
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {[
+                  ["Total amount", `₹${details.totalAmount.toLocaleString()}`],
+                  ["Students assigned", String(details.studentsCount)],
+                  ["Courses", details.courses.join(", ")],
+                  ["Expected revenue", `₹${(details.totalAmount * details.studentsCount).toLocaleString()}`],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="font-medium">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Fee types</p>
+                <ul className="divide-y rounded-lg border text-sm">
+                  {details.feeTypes.map((name) => {
+                    const fee = allFeeTypes.find((f) => f.name === name);
+                    return (
+                      <li key={name} className="flex items-center justify-between p-2">
+                        <span>{name}</span>
+                        <span className="text-muted-foreground">
+                          {fee ? `₹${fee.defaultAmount.toLocaleString()}` : "not in catalogue"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetails(null)}>Close</Button>
+            <Button onClick={() => navigate("/fee/allocation")}>Go to allocation</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!assigning}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAssigning(null);
+            setAssignCount("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign {assigning?.name}</DialogTitle>
+            <DialogDescription>
+              ₹{assigning?.totalAmount.toLocaleString()} per student · {assigning?.studentsCount} already assigned.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="assign-count">Number of students</Label>
+            <Input
+              id="assign-count"
+              type="number"
+              min={1}
+              placeholder="e.g., 25"
+              value={assignCount}
+              onChange={(e) => setAssignCount(e.target.value)}
+            />
+            {Number(assignCount) > 0 && assigning && (
+              <p className="text-xs text-muted-foreground">
+                Bills ₹{(Number(assignCount) * assigning.totalAmount).toLocaleString()} in total.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssigning(null)}>Cancel</Button>
+            <Button onClick={confirmAssign}>Assign</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.studentsCount
+                ? `${pendingDelete.studentsCount} students are on this package — they will lose their fee structure.`
+                : "This fee group has no students assigned."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

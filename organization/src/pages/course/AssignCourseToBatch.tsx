@@ -8,8 +8,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, Column } from "@/components/ui/DataTable";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BookOpen, Users, Link2, CheckCircle } from "lucide-react";
 import { useState } from "react";
+import { useLocalCollection, useLocalState } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
 
 interface CourseAssignment {
   id: string;
@@ -112,17 +125,36 @@ const columns: Column<CourseAssignment>[] = [
   },
 ];
 
+const INSTRUCTOR_POOL = ["Dr. Smith", "Prof. Johnson", "Dr. Patel", "Dr. Sharma", "Prof. Gupta", "Prof. Kumar"];
+
 export default function AssignCourseToBatch() {
+  const { toast } = useToast();
+  const { items: assignments, add, update, remove } = useLocalCollection<CourseAssignment>(
+    "erp-course-assignments",
+    assignmentsData,
+  );
+  const [subjectsList, setSubjectsList] = useLocalState<string[]>("erp-course-subjects", availableSubjects);
+
+  const [selectedBranch, setSelectedBranch] = useState("");
   const [selectedCourse, setSelectedCourse] = useState("");
   const [selectedBatch, setSelectedBatch] = useState("");
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [newSubject, setNewSubject] = useState("");
-  const [subjectsList, setSubjectsList] = useState(availableSubjects);
+  const [details, setDetails] = useState<CourseAssignment | null>(null);
+  const [editing, setEditing] = useState<CourseAssignment | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<CourseAssignment | null>(null);
 
   const handleActions = (assignment: CourseAssignment) => [
-    { label: "View Details", onClick: () => console.log("View", assignment.id) },
-    { label: "Edit Assignment", onClick: () => console.log("Edit", assignment.id) },
-    { label: "Remove Assignment", onClick: () => console.log("Remove", assignment.id), destructive: true },
+    { label: "View Details", onClick: () => setDetails(assignment) },
+    { label: "Edit Assignment", onClick: () => setEditing(assignment) },
+    {
+      label: assignment.status === "assigned" ? "Mark Pending" : "Mark Assigned",
+      onClick: () => {
+        update(assignment.id, { status: assignment.status === "assigned" ? "pending" : "assigned" });
+        toast({ title: "Assignment updated", description: `${assignment.course} · ${assignment.batch}` });
+      },
+    },
+    { label: "Remove Assignment", onClick: () => setPendingRemove(assignment), destructive: true },
   ];
 
   const toggleSubject = (subject: string) => {
@@ -132,11 +164,85 @@ export default function AssignCourseToBatch() {
   };
 
   const addSubject = () => {
-    if (newSubject.trim() && !subjectsList.includes(newSubject.trim())) {
-      setSubjectsList((prev) => [...prev, newSubject.trim()]);
-      setSelectedSubjects((prev) => [...prev, newSubject.trim()]);
-      setNewSubject("");
+    const name = newSubject.trim();
+    if (!name) {
+      toast({ title: "Type a subject name first", variant: "destructive" });
+      return;
     }
+    if (subjectsList.some((s) => s.toLowerCase() === name.toLowerCase())) {
+      toast({ title: "That subject already exists", description: name, variant: "destructive" });
+      return;
+    }
+    setSubjectsList((prev) => [...prev, name]);
+    setSelectedSubjects((prev) => [...prev, name]);
+    setNewSubject("");
+    toast({ title: "Subject created", description: `${name} was added and selected.` });
+  };
+
+  const resetForm = () => {
+    setSelectedBranch("");
+    setSelectedCourse("");
+    setSelectedBatch("");
+    setSelectedSubjects([]);
+    setNewSubject("");
+  };
+
+  const assign = () => {
+    const course = availableCourses.find((c) => c.id === selectedCourse);
+    const batch = availableBatches.find((b) => b.id === selectedBatch);
+    if (!selectedBranch) {
+      toast({ title: "Choose a branch", variant: "destructive" });
+      return;
+    }
+    if (!course || !batch) {
+      toast({ title: "Choose both a course and a batch", variant: "destructive" });
+      return;
+    }
+    if (!selectedSubjects.length) {
+      toast({ title: "Select at least one subject", variant: "destructive" });
+      return;
+    }
+    if (assignments.some((a) => a.courseCode === course.code && a.batch === batch.name)) {
+      toast({
+        title: "Already assigned",
+        description: `${course.name} is already linked to ${batch.name}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    add({
+      course: course.name,
+      courseCode: course.code,
+      batch: batch.name,
+      subjects: [...selectedSubjects],
+      // Instructors are allocated later; seed a lead so the row is not blank.
+      instructors: [INSTRUCTOR_POOL[assignments.length % INSTRUCTOR_POOL.length]],
+      status: "pending",
+    });
+    toast({
+      title: "Course assigned",
+      description: `${course.name} → ${batch.name} with ${selectedSubjects.length} subject(s).`,
+    });
+    resetForm();
+  };
+
+  const saveEdit = () => {
+    if (!editing) return;
+    if (!editing.subjects.length) {
+      toast({ title: "An assignment needs at least one subject", variant: "destructive" });
+      return;
+    }
+    update(editing.id, editing);
+    toast({ title: "Assignment saved", description: `${editing.course} · ${editing.batch}` });
+    setEditing(null);
+  };
+
+  const confirmRemove = () => {
+    if (!pendingRemove) return;
+    remove(pendingRemove.id);
+    toast({ title: "Assignment removed", description: `${pendingRemove.course} · ${pendingRemove.batch}` });
+    setPendingRemove(null);
   };
 
   return (
@@ -163,7 +269,7 @@ export default function AssignCourseToBatch() {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label>Select Branch *</Label>
-                <Select>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose a branch" />
                   </SelectTrigger>
@@ -248,8 +354,8 @@ export default function AssignCourseToBatch() {
             )}
 
             <div className="flex justify-end gap-3 pt-4">
-              <Button variant="outline">Cancel</Button>
-              <Button disabled={!selectedCourse || !selectedBatch}>
+              <Button variant="outline" onClick={resetForm}>Cancel</Button>
+              <Button disabled={!selectedCourse || !selectedBatch} onClick={assign}>
                 <Link2 className="h-4 w-4 mr-2" />
                 Assign Course
               </Button>
@@ -264,15 +370,15 @@ export default function AssignCourseToBatch() {
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <span className="text-sm">Total Assignments</span>
-              <span className="font-bold">{assignmentsData.length}</span>
+              <span className="font-bold">{assignments.length}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <span className="text-sm">Active Assignments</span>
-              <span className="font-bold text-success">{assignmentsData.filter(a => a.status === "assigned").length}</span>
+              <span className="font-bold text-success">{assignments.filter(a => a.status === "assigned").length}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <span className="text-sm">Pending Assignments</span>
-              <span className="font-bold text-warning">{assignmentsData.filter(a => a.status === "pending").length}</span>
+              <span className="font-bold text-warning">{assignments.filter(a => a.status === "pending").length}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <span className="text-sm">Total Batches</span>
@@ -288,13 +394,126 @@ export default function AssignCourseToBatch() {
         </CardHeader>
         <CardContent>
           <DataTable
-            data={assignmentsData}
+            data={assignments}
             columns={columns}
             searchPlaceholder="Search assignments..."
             actions={handleActions}
           />
         </CardContent>
       </Card>
+
+      <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{details?.course}</DialogTitle>
+            <DialogDescription>{details?.courseCode} · {details?.batch}</DialogDescription>
+          </DialogHeader>
+          {details && (
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Status</p>
+                <p className="font-medium capitalize">{details.status}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Subjects ({details.subjects.length})</p>
+                <div className="flex flex-wrap gap-1">
+                  {details.subjects.map((subject) => (
+                    <Badge key={subject} variant="secondary">{subject}</Badge>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Instructors</p>
+                <div className="flex flex-wrap gap-1">
+                  {details.instructors.map((instructor) => (
+                    <Badge key={instructor} variant="outline">{instructor}</Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetails(null)}>Close</Button>
+            <Button
+              onClick={() => {
+                setEditing(details);
+                setDetails(null);
+              }}
+            >
+              Edit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit assignment</DialogTitle>
+            <DialogDescription>{editing?.course} · {editing?.batch}</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-instructors">Instructors (comma separated)</Label>
+                <Input
+                  id="edit-instructors"
+                  value={editing.instructors.join(", ")}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      instructors: e.target.value.split(",").map((i) => i.trim()).filter(Boolean),
+                    })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Subjects</Label>
+                <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto p-3 border rounded-lg">
+                  {Array.from(new Set([...subjectsList, ...editing.subjects])).map((subject) => (
+                    <div key={subject} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`edit-${subject}`}
+                        checked={editing.subjects.includes(subject)}
+                        onCheckedChange={() =>
+                          setEditing({
+                            ...editing,
+                            subjects: editing.subjects.includes(subject)
+                              ? editing.subjects.filter((s) => s !== subject)
+                              : [...editing.subjects, subject],
+                          })
+                        }
+                      />
+                      <label htmlFor={`edit-${subject}`} className="text-sm cursor-pointer line-clamp-1">
+                        {subject}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button onClick={saveEdit}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!pendingRemove} onOpenChange={(open) => !open && setPendingRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this assignment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRemove?.course} will no longer be linked to {pendingRemove?.batch}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRemove}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

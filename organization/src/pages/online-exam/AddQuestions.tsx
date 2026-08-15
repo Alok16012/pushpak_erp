@@ -21,7 +21,7 @@ type QuestionType = "mcq" | "true-false" | "short" | "long";
  * One entry of the question bank. The API does not model question banks yet, so
  * this lives in localStorage — see `use-local-collection`.
  */
-type Question = {
+export type Question = {
   id: string;
   type: QuestionType;
   subject: string;
@@ -66,7 +66,7 @@ const TYPE_LABEL: Record<QuestionType, string> = {
   long: "Long Answer",
 };
 
-const SEED: Question[] = [
+export const QUESTION_SEED: Question[] = [
   {
     id: "q-seed-1",
     type: "mcq",
@@ -123,7 +123,7 @@ const blankOptions = () => [
 
 export default function AddQuestions() {
   const { toast } = useToast();
-  const { items, setItems, add, remove } = useLocalCollection<Question>(QUESTION_BANK_KEY, SEED);
+  const { items, setItems, add, remove } = useLocalCollection<Question>(QUESTION_BANK_KEY, QUESTION_SEED);
 
   // Shared "Question Details" / "Question Settings" panel, used by the MCQ tab.
   const [meta, setMeta] = useState(BLANK_META);

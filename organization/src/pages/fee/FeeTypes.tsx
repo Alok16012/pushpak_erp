@@ -4,7 +4,17 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,31 +22,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Plus, IndianRupee, Tags, Edit } from "lucide-react";
 import { useState } from "react";
-
-interface FeeType {
-  id: string;
-  name: string;
-  code: string;
-  category: string;
-  defaultAmount: number;
-  frequency: string;
-  applicableTo: string[];
-  description: string;
-  status: "active" | "inactive";
-}
-
-const feeTypesData: FeeType[] = [
-  { id: "1", name: "Tuition Fee", code: "TF001", category: "Academic", defaultAmount: 50000, frequency: "Yearly", applicableTo: ["All Courses"], description: "Main academic tuition fee", status: "active" },
-  { id: "2", name: "Admission Fee", code: "AF001", category: "One-time", defaultAmount: 5000, frequency: "One-time", applicableTo: ["All Courses"], description: "One-time admission processing fee", status: "active" },
-  { id: "3", name: "Exam Fee", code: "EF001", category: "Academic", defaultAmount: 2000, frequency: "Per Semester", applicableTo: ["All Courses"], description: "Examination and assessment fee", status: "active" },
-  { id: "4", name: "Lab Fee", code: "LF001", category: "Academic", defaultAmount: 3000, frequency: "Yearly", applicableTo: ["Computer Science", "Engineering", "Science"], description: "Laboratory equipment and materials", status: "active" },
-  { id: "5", name: "Library Fee", code: "LIB001", category: "Facility", defaultAmount: 2000, frequency: "Yearly", applicableTo: ["All Courses"], description: "Library access and resources", status: "active" },
-  { id: "6", name: "Sports Fee", code: "SF001", category: "Facility", defaultAmount: 1500, frequency: "Yearly", applicableTo: ["All Courses"], description: "Sports facilities and activities", status: "active" },
-  { id: "7", name: "Transport Fee", code: "TRF001", category: "Optional", defaultAmount: 12000, frequency: "Yearly", applicableTo: ["All Courses"], description: "School bus transportation", status: "active" },
-  { id: "8", name: "Hostel Fee", code: "HF001", category: "Optional", defaultAmount: 60000, frequency: "Yearly", applicableTo: ["All Courses"], description: "Hostel accommodation charges", status: "inactive" },
-  { id: "9", name: "Re-Exam Fee", code: "REF001", category: "Academic", defaultAmount: 500, frequency: "Per Exam", applicableTo: ["All Courses"], description: "Fee for re-examination attempts", status: "active" },
-  { id: "10", name: "Re-Admission Fee", code: "RAF001", category: "One-time", defaultAmount: 2500, frequency: "One-time", applicableTo: ["All Courses"], description: "Fee for re-admission after discontinuation", status: "active" },
-];
+import { useNavigate } from "react-router-dom";
+import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+import {
+  COURSE_OPTIONS,
+  FEE_CATEGORIES,
+  FEE_FREQUENCIES,
+  FEE_GROUPS_KEY,
+  FEE_GROUP_SEED,
+  FEE_TYPES_KEY,
+  FEE_TYPE_SEED,
+  suggestCode,
+  type FeeGroup,
+  type FeeType,
+} from "@/data/fee-catalog";
 
 const columns: Column<FeeType>[] = [
   {
@@ -96,15 +96,130 @@ const columns: Column<FeeType>[] = [
   },
 ];
 
+const BLANK = {
+  name: "",
+  code: "",
+  category: "Academic",
+  defaultAmount: "",
+  frequency: "Yearly",
+  applicableTo: "All Courses",
+  description: "",
+  active: true,
+};
+
 export default function FeeTypes() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { items: feeTypes, add, update, remove } = useLocalCollection<FeeType>(FEE_TYPES_KEY, FEE_TYPE_SEED);
+  const { items: feeGroups } = useLocalCollection<FeeGroup>(FEE_GROUPS_KEY, FEE_GROUP_SEED);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState({ ...BLANK });
+  const [usage, setUsage] = useState<FeeType | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<FeeType | null>(null);
+
+  const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ ...BLANK });
+    setIsDialogOpen(true);
+  };
+
+  const openEdit = (fee: FeeType) => {
+    setEditingId(fee.id);
+    setForm({
+      name: fee.name,
+      code: fee.code,
+      category: fee.category,
+      defaultAmount: String(fee.defaultAmount),
+      frequency: fee.frequency,
+      applicableTo: fee.applicableTo[0] ?? "All Courses",
+      description: fee.description,
+      active: fee.status === "active",
+    });
+    setIsDialogOpen(true);
+  };
+
+  const save = () => {
+    const name = form.name.trim();
+    const code = (form.code.trim() || suggestCode(name, feeTypes)).toUpperCase();
+    const amount = Number(form.defaultAmount);
+
+    if (!name) {
+      toast({ title: "Fee name is required", variant: "destructive" });
+      return;
+    }
+    if (!form.defaultAmount.trim() || !Number.isFinite(amount) || amount < 0) {
+      toast({ title: "Enter a valid default amount", variant: "destructive" });
+      return;
+    }
+    if (feeTypes.some((f) => f.id !== editingId && f.code.toUpperCase() === code)) {
+      toast({ title: "That fee code is already in use", description: code, variant: "destructive" });
+      return;
+    }
+
+    const payload = {
+      name,
+      code,
+      category: form.category,
+      defaultAmount: amount,
+      frequency: form.frequency,
+      applicableTo: [form.applicableTo],
+      description: form.description.trim(),
+      status: form.active ? ("active" as const) : ("inactive" as const),
+    };
+
+    if (editingId) {
+      update(editingId, payload);
+      toast({ title: "Fee type updated", description: `${name} was saved.` });
+    } else {
+      add(payload);
+      toast({ title: "Fee type added", description: `${name} (${code}) is now available.` });
+    }
+    setIsDialogOpen(false);
+    setEditingId(null);
+    setForm({ ...BLANK });
+  };
+
+  const duplicate = (fee: FeeType) => {
+    const name = `${fee.name} (Copy)`;
+    const { id: _id, ...rest } = fee;
+    add({ ...rest, name, code: suggestCode(fee.name, feeTypes), status: "inactive" });
+    toast({ title: "Fee type duplicated", description: `${name} was created as inactive.` });
+  };
+
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    const usedBy = feeGroups.filter((g) => g.feeTypes.includes(pendingDelete.name));
+    remove(pendingDelete.id);
+    toast({
+      title: "Fee type deleted",
+      description: usedBy.length
+        ? `${pendingDelete.name} removed — it was still referenced by ${usedBy.length} fee group(s).`
+        : `${pendingDelete.name} removed.`,
+    });
+    setPendingDelete(null);
+  };
 
   const handleActions = (fee: FeeType) => [
-    { label: "Edit Fee Type", onClick: () => console.log("Edit", fee.id) },
-    { label: "View Usage", onClick: () => console.log("Usage", fee.id) },
-    { label: "Duplicate", onClick: () => console.log("Duplicate", fee.id) },
-    { label: "Delete", onClick: () => console.log("Delete", fee.id), destructive: true },
+    { label: "Edit Fee Type", onClick: () => openEdit(fee) },
+    { label: "View Usage", onClick: () => setUsage(fee) },
+    { label: "Duplicate", onClick: () => duplicate(fee) },
+    {
+      label: fee.status === "active" ? "Deactivate" : "Activate",
+      onClick: () => {
+        update(fee.id, { status: fee.status === "active" ? "inactive" : "active" });
+        toast({ title: fee.status === "active" ? "Fee type deactivated" : "Fee type activated", description: fee.name });
+      },
+    },
+    { label: "Delete", onClick: () => setPendingDelete(fee), destructive: true },
   ];
+
+  const usageGroups = usage ? feeGroups.filter((g) => g.feeTypes.includes(usage.name)) : [];
+  const usageStudents = usageGroups.reduce((sum, g) => sum + g.studentsCount, 0);
 
   return (
     <AppLayout>
@@ -116,94 +231,10 @@ export default function FeeTypes() {
           { label: "Fee Types" },
         ]}
         actions={
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" />
-                Add Fee Type
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>Add New Fee Type</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 mt-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Fee Name *</Label>
-                    <Input placeholder="e.g., Tuition Fee" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Fee Code *</Label>
-                    <Input placeholder="e.g., TF001" />
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="academic">Academic</SelectItem>
-                        <SelectItem value="facility">Facility</SelectItem>
-                        <SelectItem value="onetime">One-time</SelectItem>
-                        <SelectItem value="optional">Optional</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Default Amount (₹) *</Label>
-                    <Input type="number" placeholder="e.g., 5000" />
-                  </div>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Frequency</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select frequency" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="onetime">One-time</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="quarterly">Quarterly</SelectItem>
-                        <SelectItem value="semester">Per Semester</SelectItem>
-                        <SelectItem value="yearly">Yearly</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Applicable To</Label>
-                    <Select>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select courses" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Courses</SelectItem>
-                        <SelectItem value="cs">Computer Science</SelectItem>
-                        <SelectItem value="engineering">Engineering</SelectItem>
-                        <SelectItem value="commerce">Commerce</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea placeholder="Brief description of the fee type..." rows={2} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Switch id="active" defaultChecked />
-                  <Label htmlFor="active">Active</Label>
-                </div>
-                <div className="flex justify-end gap-3 pt-4">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-                  <Button onClick={() => setIsDialogOpen(false)}>Add Fee Type</Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button className="gap-2" onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            Add Fee Type
+          </Button>
         }
       />
 
@@ -214,7 +245,7 @@ export default function FeeTypes() {
               <Tags className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{feeTypesData.length}</p>
+              <p className="text-2xl font-bold">{feeTypes.length}</p>
               <p className="text-sm text-muted-foreground">Total Fee Types</p>
             </div>
           </div>
@@ -225,7 +256,7 @@ export default function FeeTypes() {
               <IndianRupee className="h-5 w-5 text-success" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{feeTypesData.filter(f => f.status === "active").length}</p>
+              <p className="text-2xl font-bold">{feeTypes.filter(f => f.status === "active").length}</p>
               <p className="text-sm text-muted-foreground">Active Types</p>
             </div>
           </div>
@@ -236,7 +267,7 @@ export default function FeeTypes() {
               <Edit className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{feeTypesData.filter(f => f.category === "Academic").length}</p>
+              <p className="text-2xl font-bold">{feeTypes.filter(f => f.category === "Academic").length}</p>
               <p className="text-sm text-muted-foreground">Academic Fees</p>
             </div>
           </div>
@@ -247,7 +278,7 @@ export default function FeeTypes() {
               <Tags className="h-5 w-5 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-2xl font-bold">{feeTypesData.filter(f => f.category === "Optional").length}</p>
+              <p className="text-2xl font-bold">{feeTypes.filter(f => f.category === "Optional").length}</p>
               <p className="text-sm text-muted-foreground">Optional Fees</p>
             </div>
           </div>
@@ -255,11 +286,169 @@ export default function FeeTypes() {
       </div>
 
       <DataTable
-        data={feeTypesData}
+        data={feeTypes}
         columns={columns}
         searchPlaceholder="Search fee types..."
         actions={handleActions}
       />
+
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) setEditingId(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit Fee Type" : "Add New Fee Type"}</DialogTitle>
+            <DialogDescription>
+              Fee types are the building blocks of the packages on the Fee Groups page.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="fee-name">Fee Name *</Label>
+                <Input
+                  id="fee-name"
+                  placeholder="e.g., Tuition Fee"
+                  value={form.name}
+                  onChange={(e) => set("name", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fee-code">Fee Code</Label>
+                <Input
+                  id="fee-code"
+                  placeholder={form.name ? suggestCode(form.name, feeTypes) : "e.g., TF001"}
+                  value={form.code}
+                  onChange={(e) => set("code", e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select value={form.category} onValueChange={(v) => set("category", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FEE_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="fee-amount">Default Amount (₹) *</Label>
+                <Input
+                  id="fee-amount"
+                  type="number"
+                  min={0}
+                  placeholder="e.g., 5000"
+                  value={form.defaultAmount}
+                  onChange={(e) => set("defaultAmount", e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Frequency</Label>
+                <Select value={form.frequency} onValueChange={(v) => set("frequency", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select frequency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FEE_FREQUENCIES.map((f) => (
+                      <SelectItem key={f} value={f}>{f}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Applicable To</Label>
+                <Select value={form.applicableTo} onValueChange={(v) => set("applicableTo", v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select courses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COURSE_OPTIONS.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="fee-description">Description</Label>
+              <Textarea
+                id="fee-description"
+                placeholder="Brief description of the fee type..."
+                rows={2}
+                value={form.description}
+                onChange={(e) => set("description", e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch id="active" checked={form.active} onCheckedChange={(v) => set("active", v)} />
+              <Label htmlFor="active">Active</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+            <Button onClick={save}>{editingId ? "Save changes" : "Add Fee Type"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!usage} onOpenChange={(open) => !open && setUsage(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{usage?.name} usage</DialogTitle>
+            <DialogDescription>
+              {usageGroups.length
+                ? `Included in ${usageGroups.length} fee group(s) covering ${usageStudents} students.`
+                : "This fee type is not part of any fee group yet."}
+            </DialogDescription>
+          </DialogHeader>
+          {usageGroups.length > 0 && (
+            <ul className="space-y-2 text-sm">
+              {usageGroups.map((group) => (
+                <li key={group.id} className="flex items-center justify-between rounded-lg border p-3">
+                  <div>
+                    <p className="font-medium">{group.name}</p>
+                    <p className="text-xs text-muted-foreground">{group.courses.join(", ")}</p>
+                  </div>
+                  <Badge variant="secondary">{group.studentsCount} students</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUsage(null)}>Close</Button>
+            <Button onClick={() => navigate("/fee/groups")}>Open fee groups</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete && feeGroups.some((g) => g.feeTypes.includes(pendingDelete.name))
+                ? "This fee type is still referenced by one or more fee groups. Those groups keep their totals but will no longer be able to re-add it."
+                : "This removes the fee type from the catalogue."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

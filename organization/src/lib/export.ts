@@ -86,6 +86,23 @@ export function printHtml(title: string, bodyHtml: string) {
   setTimeout(() => frame.remove(), 1000);
 }
 
+/** Save a titled HTML fragment as a standalone file — the "Download report" twin of `printHtml`. */
+export function downloadHtml(filename: string, title: string, bodyHtml: string) {
+  save(
+    new Blob(
+      [
+        `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
+          `<style>body{font-family:ui-sans-serif,system-ui,sans-serif;margin:32px;color:#111}` +
+          `h1{font-size:20px;margin:0 0 16px}table{border-collapse:collapse;width:100%}` +
+          `td,th{border:1px solid #ccc;padding:8px;text-align:left;font-size:13px}</style>` +
+          `<h1>${title}</h1>${bodyHtml}`,
+      ],
+      { type: "text/html;charset=utf-8" },
+    ),
+    filename,
+  );
+}
+
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
   for (let i = 0; i < 256; i++) {
