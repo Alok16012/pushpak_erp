@@ -9,15 +9,35 @@ import { StatsCard } from "@/components/ui/StatsCard";
  import { Wallet, CreditCard, Building2, History, Plus, ArrowUpRight, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
  import { useState } from "react";
- 
+import { useNavigate } from "react-router-dom";
+import { useLocalState } from "@/hooks/use-local-collection";
+import { newId } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+
  interface Institute {
    id: string;
    name: string;
    directorName: string;
    balance: number;
  }
- 
- const institutesData: Institute[] = [
+
+type Recharge = {
+  id: string;
+  branch: string;
+  amount: number;
+  method: string;
+  date: string;
+  status: "completed" | "pending" | "failed";
+  remarks?: string;
+};
+
+const METHODS = [
+  { id: "card", label: "Credit/Debit Card", icon: CreditCard },
+  { id: "upi", label: "UPI Payment", icon: Wallet },
+  { id: "netbanking", label: "Net Banking", icon: Building2 },
+];
+
+ const SEED_INSTITUTES: Institute[] = [
    { id: "main", name: "Main Campus", directorName: "Dr. Rajesh Kumar", balance: 125000 },
    { id: "north", name: "North Campus", directorName: "Mrs. Priya Sharma", balance: 85000 },
    { id: "south", name: "South Campus", directorName: "Mr. Anand Patel", balance: 65000 },
@@ -25,7 +45,7 @@ import { Badge } from "@/components/ui/badge";
    { id: "west", name: "West Campus", directorName: "Mrs. Meera Singh", balance: 35000 },
  ];
 
-const rechargeHistory = [
+const SEED_HISTORY: Recharge[] = [
   { id: "1", branch: "Main Campus", amount: 50000, method: "UPI", date: "2024-01-15", status: "completed" },
   { id: "2", branch: "North Campus", amount: 30000, method: "Card", date: "2024-01-14", status: "completed" },
   { id: "3", branch: "South Campus", amount: 25000, method: "Net Banking", date: "2024-01-13", status: "pending" },
@@ -35,16 +55,68 @@ const rechargeHistory = [
 
 const quickAmounts = [5000, 10000, 25000, 50000, 100000];
 
+const inr = (value: number) => `₹${value.toLocaleString("en-IN")}`;
+
 export default function WalletRecharge() {
+   const { toast } = useToast();
+   const navigate = useNavigate();
+   const [institutes, setInstitutes] = useLocalState<Institute[]>("erp-wallet-institutes", SEED_INSTITUTES);
+   const [history, setHistory] = useLocalState<Recharge[]>("erp-wallet-history", SEED_HISTORY);
    const [searchQuery, setSearchQuery] = useState("");
    const [selectedInstitute, setSelectedInstitute] = useState<Institute | null>(null);
- 
-   const filteredInstitutes = institutesData.filter(
+   const [amount, setAmount] = useState("");
+   const [method, setMethod] = useState("upi");
+   const [remarks, setRemarks] = useState("");
+
+   const filteredInstitutes = institutes.filter(
      (inst) =>
        inst.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
        inst.directorName.toLowerCase().includes(searchQuery.toLowerCase())
    );
- 
+
+   const totalBalance = institutes.reduce((sum, i) => sum + i.balance, 0);
+   const thisMonth = history.filter((h) => h.date.slice(0, 7) === new Date().toISOString().slice(0, 7));
+   const pending = history.filter((h) => h.status === "pending");
+
+   const reset = () => {
+     setSelectedInstitute(null);
+     setSearchQuery("");
+     setAmount("");
+     setRemarks("");
+   };
+
+   const recharge = () => {
+     const value = Number(amount);
+     if (!selectedInstitute) {
+       toast({ title: "Select an institute", description: "Search for the branch you want to top up.", variant: "destructive" });
+       return;
+     }
+     if (!Number.isFinite(value) || value <= 0) {
+       toast({ title: "Invalid amount", description: "Enter a recharge amount greater than zero.", variant: "destructive" });
+       return;
+     }
+     const label = METHODS.find((m) => m.id === method)?.label ?? method;
+     setHistory((list) => [
+       {
+         id: newId("rch"),
+         branch: selectedInstitute.name,
+         amount: value,
+         method: label,
+         date: new Date().toISOString().slice(0, 10),
+         status: "completed",
+         remarks: remarks || undefined,
+       },
+       ...list,
+     ]);
+     // The wallet balance is the whole point of the screen, so credit it here
+     // rather than leaving the history and the balances out of step.
+     setInstitutes((list) =>
+       list.map((i) => (i.id === selectedInstitute.id ? { ...i, balance: i.balance + value } : i)),
+     );
+     toast({ title: "Recharge successful", description: `${inr(value)} added to ${selectedInstitute.name}.` });
+     reset();
+   };
+
   return (
     <AppLayout>
       <PageHeader
@@ -59,27 +131,27 @@ export default function WalletRecharge() {
       <div className="grid gap-4 md:grid-cols-4 mb-6">
         <StatsCard
           title="Total Balance"
-          value="₹4,85,000"
+          value={inr(totalBalance)}
           subtitle="All branches combined"
           icon={Wallet}
           trend={{ value: 15, isPositive: true }}
         />
         <StatsCard
           title="This Month Recharge"
-          value="₹1,70,000"
-          subtitle="5 transactions"
+          value={inr(thisMonth.reduce((sum, h) => sum + h.amount, 0))}
+          subtitle={`${thisMonth.length} transactions`}
           icon={CreditCard}
           trend={{ value: 8, isPositive: true }}
         />
         <StatsCard
           title="Pending Recharges"
-          value="1"
-          subtitle="₹25,000 pending"
+          value={String(pending.length)}
+          subtitle={`${inr(pending.reduce((sum, h) => sum + h.amount, 0))} pending`}
           icon={History}
         />
         <StatsCard
           title="Active Branches"
-          value="4"
+          value={String(institutes.length)}
           subtitle="With wallet enabled"
           icon={Building2}
         />
@@ -137,16 +209,21 @@ export default function WalletRecharge() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="amount">Recharge Amount *</Label>
-                  <Input id="amount" type="number" placeholder="Enter amount" />
+                  <Input id="amount" type="number" placeholder="Enter amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label>Quick Select Amount</Label>
                 <div className="flex flex-wrap gap-2">
-                  {quickAmounts.map((amount) => (
-                    <Button key={amount} variant="outline" size="sm">
-                      ₹{amount.toLocaleString()}
+                  {quickAmounts.map((value) => (
+                    <Button
+                      key={value}
+                      variant={Number(amount) === value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setAmount(String(value))}
+                    >
+                      {inr(value)}
                     </Button>
                   ))}
                 </div>
@@ -155,35 +232,34 @@ export default function WalletRecharge() {
               <div className="space-y-2">
                 <Label>Payment Method</Label>
                 <div className="grid gap-3 md:grid-cols-3">
-                  <Card className="cursor-pointer border-2 hover:border-primary transition-colors">
-                    <CardContent className="p-4 text-center">
-                      <CreditCard className="h-6 w-6 mx-auto mb-2 text-primary" />
-                      <p className="font-medium text-sm">Credit/Debit Card</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="cursor-pointer border-2 border-primary">
-                    <CardContent className="p-4 text-center">
-                      <Wallet className="h-6 w-6 mx-auto mb-2 text-primary" />
-                      <p className="font-medium text-sm">UPI Payment</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="cursor-pointer border-2 hover:border-primary transition-colors">
-                    <CardContent className="p-4 text-center">
-                      <Building2 className="h-6 w-6 mx-auto mb-2 text-primary" />
-                      <p className="font-medium text-sm">Net Banking</p>
-                    </CardContent>
-                  </Card>
+                  {METHODS.map(({ id, label, icon: Icon }) => (
+                    <Card
+                      key={id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setMethod(id)}
+                      onKeyDown={(e) => e.key === "Enter" && setMethod(id)}
+                      className={`cursor-pointer border-2 transition-colors ${
+                        method === id ? "border-primary" : "hover:border-primary"
+                      }`}
+                    >
+                      <CardContent className="p-4 text-center">
+                        <Icon className="h-6 w-6 mx-auto mb-2 text-primary" />
+                        <p className="font-medium text-sm">{label}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="remarks">Remarks (Optional)</Label>
-                <Input id="remarks" placeholder="Add a note for this recharge" />
+                <Input id="remarks" placeholder="Add a note for this recharge" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
-                <Button variant="outline">Cancel</Button>
-                <Button className="gap-2">
+                <Button variant="outline" onClick={reset}>Cancel</Button>
+                <Button className="gap-2" onClick={recharge}>
                   <ArrowUpRight className="h-4 w-4" />
                   Proceed to Payment
                 </Button>
@@ -202,7 +278,7 @@ export default function WalletRecharge() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {rechargeHistory.map((item) => (
+                {history.slice(0, 5).map((item) => (
                   <div key={item.id} className="flex items-center justify-between py-2 border-b last:border-0">
                     <div>
                       <p className="font-medium text-sm">{item.branch}</p>
@@ -220,7 +296,7 @@ export default function WalletRecharge() {
                   </div>
                 ))}
               </div>
-              <Button variant="ghost" className="w-full mt-4" size="sm">
+              <Button variant="ghost" className="w-full mt-4" size="sm" onClick={() => navigate("/branch/transactions")}>
                 View All Transactions
               </Button>
             </CardContent>
@@ -232,7 +308,7 @@ export default function WalletRecharge() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                 {institutesData.map((inst) => (
+                 {institutes.map((inst) => (
                    <div key={inst.id} className="flex items-center justify-between">
                      <div>
                        <span className="text-sm">{inst.name}</span>

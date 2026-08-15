@@ -8,38 +8,72 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreditCard, Globe, Shield, CheckCircle, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { useLocalState } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+
+const GATEWAYS = [
+  { id: "razorpay", name: "Razorpay", description: "Accept payments via UPI, Cards, Netbanking, Wallets", logo: "🔷" },
+  { id: "paytm", name: "Paytm", description: "Accept payments via Paytm Wallet, UPI, Cards", logo: "💙" },
+  { id: "stripe", name: "Stripe", description: "Global payment processing for cards and wallets", logo: "💳" },
+  { id: "phonepe", name: "PhonePe", description: "Accept UPI payments via PhonePe", logo: "💜" },
+];
+
+type GatewayConfig = {
+  keyId: string;
+  keySecret: string;
+  webhookSecret: string;
+  testMode: boolean;
+  verifyWebhooks: boolean;
+};
+
+const BLANK_CONFIG: GatewayConfig = {
+  keyId: "",
+  keySecret: "",
+  webhookSecret: "",
+  testMode: false,
+  verifyWebhooks: true,
+};
 
 const PaymentGateway = () => {
-  const gateways = [
-    {
-      id: "razorpay",
-      name: "Razorpay",
-      description: "Accept payments via UPI, Cards, Netbanking, Wallets",
-      status: "connected",
-      logo: "🔷",
-    },
-    {
-      id: "paytm",
-      name: "Paytm",
-      description: "Accept payments via Paytm Wallet, UPI, Cards",
-      status: "disconnected",
-      logo: "💙",
-    },
-    {
-      id: "stripe",
-      name: "Stripe",
-      description: "Global payment processing for cards and wallets",
-      status: "disconnected",
-      logo: "💳",
-    },
-    {
-      id: "phonepe",
-      name: "PhonePe",
-      description: "Accept UPI payments via PhonePe",
-      status: "disconnected",
-      logo: "💜",
-    },
-  ];
+  const { toast } = useToast();
+  const [connected, setConnected] = useLocalState<string[]>("erp-gateways-connected", ["razorpay"]);
+  const [configs, setConfigs] = useLocalState<Record<string, GatewayConfig>>("erp-gateway-configs", {});
+  // Which gateway the Settings tab is editing; Configure switches it.
+  const [active, setActive] = useState("razorpay");
+  const [tab, setTab] = useState("gateways");
+
+  const activeName = GATEWAYS.find((g) => g.id === active)?.name ?? active;
+  const config = configs[active] ?? BLANK_CONFIG;
+  const setConfig = <K extends keyof GatewayConfig>(key: K, value: GatewayConfig[K]) =>
+    setConfigs((all) => ({ ...all, [active]: { ...(all[active] ?? BLANK_CONFIG), [key]: value } }));
+
+  const connect = (id: string, name: string) => {
+    setConnected((list) => (list.includes(id) ? list : [...list, id]));
+    setActive(id);
+    setTab("settings");
+    toast({ title: `${name} connected`, description: "Add your API credentials to start accepting payments." });
+  };
+
+  const disconnect = (id: string, name: string) => {
+    setConnected((list) => list.filter((g) => g !== id));
+    // Credentials go with the connection; leaving them behind would silently
+    // re-arm the gateway on the next connect.
+    setConfigs((all) => {
+      const next = { ...all };
+      delete next[id];
+      return next;
+    });
+    toast({ title: `${name} disconnected`, description: "Stored credentials were cleared." });
+  };
+
+  const saveConfig = () => {
+    if (!config.keyId.trim() || !config.keySecret.trim()) {
+      toast({ title: "Credentials required", description: "Both the API key ID and secret are needed.", variant: "destructive" });
+      return;
+    }
+    toast({ title: "Configuration saved", description: `${activeName} credentials stored on this device.` });
+  };
 
   return (
     <AppLayout>
@@ -53,7 +87,7 @@ const PaymentGateway = () => {
           ]}
         />
 
-        <Tabs defaultValue="gateways" className="space-y-6">
+        <Tabs value={tab} onValueChange={setTab} className="space-y-6">
           <TabsList>
             <TabsTrigger value="gateways">Payment Gateways</TabsTrigger>
             <TabsTrigger value="settings">Gateway Settings</TabsTrigger>
@@ -62,7 +96,7 @@ const PaymentGateway = () => {
 
           <TabsContent value="gateways" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {gateways.map((gateway) => (
+              {GATEWAYS.map((gateway) => (
                 <Card key={gateway.id}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -73,8 +107,8 @@ const PaymentGateway = () => {
                           <CardDescription>{gateway.description}</CardDescription>
                         </div>
                       </div>
-                      <Badge variant={gateway.status === "connected" ? "default" : "secondary"}>
-                        {gateway.status === "connected" ? (
+                      <Badge variant={connected.includes(gateway.id) ? "default" : "secondary"}>
+                        {connected.includes(gateway.id) ? (
                           <><CheckCircle className="h-3 w-3 mr-1" /> Connected</>
                         ) : (
                           <><AlertCircle className="h-3 w-3 mr-1" /> Not Connected</>
@@ -84,13 +118,24 @@ const PaymentGateway = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="flex gap-2">
-                      {gateway.status === "connected" ? (
+                      {connected.includes(gateway.id) ? (
                         <>
-                          <Button variant="outline" size="sm">Configure</Button>
-                          <Button variant="destructive" size="sm">Disconnect</Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setActive(gateway.id);
+                              setTab("settings");
+                            }}
+                          >
+                            Configure
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => disconnect(gateway.id, gateway.name)}>
+                            Disconnect
+                          </Button>
                         </>
                       ) : (
-                        <Button size="sm">Connect</Button>
+                        <Button size="sm" onClick={() => connect(gateway.id, gateway.name)}>Connect</Button>
                       )}
                     </div>
                   </CardContent>
@@ -104,21 +149,21 @@ const PaymentGateway = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CreditCard className="h-5 w-5" />
-                  Razorpay Configuration
+                  {activeName} Configuration
                 </CardTitle>
                 <CardDescription>
-                  Configure your Razorpay API credentials
+                  Configure your {activeName} API credentials
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="key-id">API Key ID</Label>
-                    <Input id="key-id" placeholder="rzp_live_xxxxxxxxxx" type="password" />
+                    <Input id="key-id" placeholder="rzp_live_xxxxxxxxxx" type="password" value={config.keyId} onChange={(e) => setConfig("keyId", e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="key-secret">API Key Secret</Label>
-                    <Input id="key-secret" placeholder="••••••••••••••••" type="password" />
+                    <Input id="key-secret" placeholder="••••••••••••••••" type="password" value={config.keySecret} onChange={(e) => setConfig("keySecret", e.target.value)} />
                   </div>
                 </div>
 
@@ -130,7 +175,7 @@ const PaymentGateway = () => {
                       <p className="text-sm text-muted-foreground">Use test credentials for development</p>
                     </div>
                   </div>
-                  <Switch />
+                  <Switch checked={config.testMode} onCheckedChange={(v) => setConfig("testMode", v)} />
                 </div>
 
                 <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -141,15 +186,15 @@ const PaymentGateway = () => {
                       <p className="text-sm text-muted-foreground">Verify webhook signatures for security</p>
                     </div>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch checked={config.verifyWebhooks} onCheckedChange={(v) => setConfig("verifyWebhooks", v)} />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="webhook-secret">Webhook Secret</Label>
-                  <Input id="webhook-secret" placeholder="whsec_xxxxxxxxxx" type="password" />
+                  <Input id="webhook-secret" placeholder="whsec_xxxxxxxxxx" type="password" value={config.webhookSecret} onChange={(e) => setConfig("webhookSecret", e.target.value)} />
                 </div>
 
-                <Button>Save Configuration</Button>
+                <Button onClick={saveConfig}>Save Configuration</Button>
               </CardContent>
             </Card>
           </TabsContent>

@@ -14,9 +14,59 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings, Bell, Shield, Palette, Globe, Save } from "lucide-react";
+import { Settings, Bell, Shield, Palette, Save, RotateCcw } from "lucide-react";
+import { useTheme } from "next-themes";
+import { useLocalState } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+
+const NOTIFICATIONS = [
+  { key: "email", title: "Email Notifications", description: "Receive email notifications for important updates" },
+  { key: "sms", title: "SMS Alerts", description: "Get SMS alerts for fee reminders and announcements" },
+  { key: "push", title: "Push Notifications", description: "Browser push notifications for real-time updates" },
+  { key: "fees", title: "Fee Reminders", description: "Automatic reminders for pending fee payments" },
+  { key: "exams", title: "Exam Notifications", description: "Alerts for upcoming exams and results" },
+  { key: "attendance", title: "Attendance Alerts", description: "Notifications for low attendance" },
+];
+
+const DEFAULTS = {
+  schoolName: "ABC International School",
+  schoolCode: "ABC2024",
+  email: "info@abcschool.edu",
+  phone: "+91 1234567890",
+  address: "123 Education Street, Knowledge City",
+  city: "Mumbai",
+  state: "Maharashtra",
+  country: "India",
+  academicYear: "2024",
+  timezone: "ist",
+  currency: "inr",
+  dateFormat: "dd-mm-yyyy",
+  notifications: Object.fromEntries(NOTIFICATIONS.map((n) => [n.key, true])) as Record<string, boolean>,
+  twoFactor: false,
+  sessionTimeout: "30",
+  passwordPolicy: true,
+  accentColor: "bg-blue-500",
+  compact: false,
+};
 
 export default function GeneralSettings() {
+  const { toast } = useToast();
+  const { theme, setTheme } = useTheme();
+  const [form, setForm] = useLocalState("erp-settings-general", DEFAULTS);
+  const set = <K extends keyof typeof DEFAULTS>(key: K, value: (typeof DEFAULTS)[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const save = () => {
+    // useLocalState already persists on change; this confirms the write and is
+    // where a PUT /settings call belongs once the API models this screen.
+    toast({ title: "Settings saved", description: "Your changes are stored on this device." });
+  };
+  const resetAll = () => {
+    setForm(DEFAULTS);
+    setTheme("system");
+    toast({ title: "Settings restored", description: "Every field is back to its default." });
+  };
+
   return (
     <AppLayout>
       <PageHeader
@@ -57,37 +107,37 @@ export default function GeneralSettings() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="schoolName">School Name</Label>
-                  <Input id="schoolName" defaultValue="ABC International School" />
+                  <Input id="schoolName" value={form.schoolName} onChange={(e) => set("schoolName", e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="schoolCode">School Code</Label>
-                  <Input id="schoolCode" defaultValue="ABC2024" />
+                  <Input id="schoolCode" value={form.schoolCode} onChange={(e) => set("schoolCode", e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" defaultValue="info@abcschool.edu" />
+                  <Input id="email" type="email" value={form.email} onChange={(e) => set("email", e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" defaultValue="+91 1234567890" />
+                  <Input id="phone" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="address">Address</Label>
-                <Textarea id="address" defaultValue="123 Education Street, Knowledge City" />
+                <Textarea id="address" value={form.address} onChange={(e) => set("address", e.target.value)} />
               </div>
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="city">City</Label>
-                  <Input id="city" defaultValue="Mumbai" />
+                  <Input id="city" value={form.city} onChange={(e) => set("city", e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="state">State</Label>
-                  <Input id="state" defaultValue="Maharashtra" />
+                  <Input id="state" value={form.state} onChange={(e) => set("state", e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="country">Country</Label>
-                  <Input id="country" defaultValue="India" />
+                  <Input id="country" value={form.country} onChange={(e) => set("country", e.target.value)} />
                 </div>
               </div>
             </CardContent>
@@ -101,7 +151,7 @@ export default function GeneralSettings() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="academicYear">Current Academic Year</Label>
-                  <Select defaultValue="2024">
+                  <Select value={form.academicYear} onValueChange={(v) => set("academicYear", v)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -114,7 +164,7 @@ export default function GeneralSettings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone">Timezone</Label>
-                  <Select defaultValue="ist">
+                  <Select value={form.timezone} onValueChange={(v) => set("timezone", v)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -127,7 +177,7 @@ export default function GeneralSettings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="currency">Currency</Label>
-                  <Select defaultValue="inr">
+                  <Select value={form.currency} onValueChange={(v) => set("currency", v)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -140,7 +190,7 @@ export default function GeneralSettings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="dateFormat">Date Format</Label>
-                  <Select defaultValue="dd-mm-yyyy">
+                  <Select value={form.dateFormat} onValueChange={(v) => set("dateFormat", v)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -162,20 +212,18 @@ export default function GeneralSettings() {
               <CardTitle>Notification Preferences</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {[
-                { title: "Email Notifications", description: "Receive email notifications for important updates" },
-                { title: "SMS Alerts", description: "Get SMS alerts for fee reminders and announcements" },
-                { title: "Push Notifications", description: "Browser push notifications for real-time updates" },
-                { title: "Fee Reminders", description: "Automatic reminders for pending fee payments" },
-                { title: "Exam Notifications", description: "Alerts for upcoming exams and results" },
-                { title: "Attendance Alerts", description: "Notifications for low attendance" },
-              ].map((item) => (
-                <div key={item.title} className="flex items-center justify-between">
+              {NOTIFICATIONS.map((item) => (
+                <div key={item.key} className="flex items-center justify-between">
                   <div>
                     <p className="font-medium">{item.title}</p>
                     <p className="text-sm text-muted-foreground">{item.description}</p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch
+                    checked={form.notifications[item.key] ?? false}
+                    onCheckedChange={(checked) =>
+                      set("notifications", { ...form.notifications, [item.key]: checked })
+                    }
+                  />
                 </div>
               ))}
             </CardContent>
@@ -193,14 +241,14 @@ export default function GeneralSettings() {
                   <p className="font-medium">Two-Factor Authentication</p>
                   <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
                 </div>
-                <Switch />
+                <Switch checked={form.twoFactor} onCheckedChange={(v) => set("twoFactor", v)} />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Session Timeout</p>
                   <p className="text-sm text-muted-foreground">Automatically log out after inactivity</p>
                 </div>
-                <Select defaultValue="30">
+                <Select value={form.sessionTimeout} onValueChange={(v) => set("sessionTimeout", v)}>
                   <SelectTrigger className="w-32">
                     <SelectValue />
                   </SelectTrigger>
@@ -216,7 +264,7 @@ export default function GeneralSettings() {
                   <p className="font-medium">Password Policy</p>
                   <p className="text-sm text-muted-foreground">Require strong passwords</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={form.passwordPolicy} onCheckedChange={(v) => set("passwordPolicy", v)} />
               </div>
             </CardContent>
           </Card>
@@ -231,9 +279,16 @@ export default function GeneralSettings() {
               <div className="space-y-2">
                 <Label>Theme</Label>
                 <div className="flex gap-4">
-                  <Button variant="outline" className="flex-1">Light</Button>
-                  <Button variant="outline" className="flex-1">Dark</Button>
-                  <Button variant="default" className="flex-1">System</Button>
+                  {(["light", "dark", "system"] as const).map((mode) => (
+                    <Button
+                      key={mode}
+                      variant={theme === mode ? "default" : "outline"}
+                      className="flex-1 capitalize"
+                      onClick={() => setTheme(mode)}
+                    >
+                      {mode}
+                    </Button>
+                  ))}
                 </div>
               </div>
               <div className="space-y-2">
@@ -242,7 +297,13 @@ export default function GeneralSettings() {
                   {["bg-blue-500", "bg-indigo-500", "bg-purple-500", "bg-green-500", "bg-orange-500"].map((color) => (
                     <button
                       key={color}
-                      className={`h-8 w-8 rounded-full ${color} ring-2 ring-offset-2 ring-transparent hover:ring-primary transition-all`}
+                      type="button"
+                      aria-label={color.replace("bg-", "").replace("-500", "")}
+                      aria-pressed={form.accentColor === color}
+                      onClick={() => set("accentColor", color)}
+                      className={`h-8 w-8 rounded-full ${color} ring-2 ring-offset-2 transition-all hover:ring-primary ${
+                        form.accentColor === color ? "ring-primary" : "ring-transparent"
+                      }`}
                     />
                   ))}
                 </div>
@@ -252,15 +313,19 @@ export default function GeneralSettings() {
                   <p className="font-medium">Compact Mode</p>
                   <p className="text-sm text-muted-foreground">Reduce spacing for more content</p>
                 </div>
-                <Switch />
+                <Switch checked={form.compact} onCheckedChange={(v) => set("compact", v)} />
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      <div className="flex justify-end mt-6">
-        <Button className="gap-2">
+      <div className="flex justify-end gap-2 mt-6">
+        <Button variant="outline" className="gap-2" onClick={resetAll}>
+          <RotateCcw className="h-4 w-4" />
+          Reset to Defaults
+        </Button>
+        <Button className="gap-2" onClick={save}>
           <Save className="h-4 w-4" />
           Save Changes
         </Button>

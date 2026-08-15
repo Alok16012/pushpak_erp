@@ -9,15 +9,131 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { QrCode, Download, Printer, School, Users } from "lucide-react";
+import { useState } from "react";
+import { useLocalState } from "@/hooks/use-local-collection";
+import { qrDataUrl, upiUri } from "@/lib/upi";
+import { dataUrlToBytes, downloadZip, printHtml } from "@/lib/export";
+import { useToast } from "@/hooks/use-toast";
+
+type Batch = {
+  id: number;
+  name: string;
+  students: number;
+  course: string;
+  courseKey: string;
+  qrGenerated: boolean;
+};
+
+const SEED: Batch[] = [
+  { id: 1, name: "Class 10 - A", students: 45, course: "CBSE", courseKey: "cbse", qrGenerated: true },
+  { id: 2, name: "Class 10 - B", students: 42, course: "CBSE", courseKey: "cbse", qrGenerated: true },
+  { id: 3, name: "Class 11 - Science", students: 38, course: "Science", courseKey: "science", qrGenerated: false },
+  { id: 4, name: "Class 11 - Commerce", students: 35, course: "Commerce", courseKey: "commerce", qrGenerated: false },
+  { id: 5, name: "Class 12 - Science", students: 40, course: "Science", courseKey: "science", qrGenerated: true },
+];
+
+const FEE_TYPES: Record<string, string> = {
+  tuition: "Tuition Fee",
+  exam: "Exam Fee",
+  transport: "Transport Fee",
+  library: "Library Fee",
+};
+
+/** Batch name -> the `{batch_id}` slug used in the UPI template. */
+const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 const BatchPaymentQR = () => {
-  const batches = [
-    { id: 1, name: "Class 10 - A", students: 45, course: "CBSE", qrGenerated: true },
-    { id: 2, name: "Class 10 - B", students: 42, course: "CBSE", qrGenerated: true },
-    { id: 3, name: "Class 11 - Science", students: 38, course: "Science", qrGenerated: false },
-    { id: 4, name: "Class 11 - Commerce", students: 35, course: "Commerce", qrGenerated: false },
-    { id: 5, name: "Class 12 - Science", students: 40, course: "Science", qrGenerated: true },
-  ];
+  const { toast } = useToast();
+  const [all, setAll] = useLocalState<Batch[]>("erp-batch-qr", SEED);
+  const [config, setConfig] = useLocalState("erp-batch-qr-config", {
+    course: "all",
+    feeType: "tuition",
+    upiTemplate: "school_{batch_id}@upi",
+    includeBatchName: true,
+    autoGenerate: false,
+  });
+  const [selected, setSelected] = useState<number[]>([]);
+
+  const setCfg = <K extends keyof typeof config>(key: K, value: (typeof config)[K]) =>
+    setConfig((c) => ({ ...c, [key]: value }));
+
+  const batches = config.course === "all" ? all : all.filter((b) => b.courseKey === config.course);
+  const allSelected = batches.length > 0 && batches.every((b) => selected.includes(b.id));
+
+  const toggle = (id: number) =>
+    setSelected((list) => (list.includes(id) ? list.filter((i) => i !== id) : [...list, id]));
+
+  const toggleAll = () =>
+    setSelected(allSelected ? [] : batches.map((b) => b.id));
+
+  const upiFor = (batch: Batch) => config.upiTemplate.replace("{batch_id}", slug(batch.name));
+
+  const imageFor = (batch: Batch) =>
+    qrDataUrl(
+      upiUri({
+        upiId: upiFor(batch),
+        merchantName: config.includeBatchName ? batch.name : "Fee Collection",
+        note: `${FEE_TYPES[config.feeType] ?? config.feeType}${config.includeBatchName ? ` - ${batch.name}` : ""}`,
+      }),
+    );
+
+  const generateSelected = () => {
+    if (!selected.length) {
+      toast({ title: "Nothing selected", description: "Tick at least one batch first.", variant: "destructive" });
+      return;
+    }
+    setAll((list) => list.map((b) => (selected.includes(b.id) ? { ...b, qrGenerated: true } : b)));
+    toast({ title: "QR codes generated", description: `${selected.length} batch QR code(s) are ready.` });
+    setSelected([]);
+  };
+
+  const printAll = async () => {
+    const ready = batches.filter((b) => b.qrGenerated);
+    if (!ready.length) {
+      toast({ title: "No QR codes yet", description: "Generate them before printing.", variant: "destructive" });
+      return;
+    }
+    const cards = await Promise.all(
+      ready.map(async (b) =>
+        `<div class="card" style="text-align:center;page-break-inside:avoid"><img src="${await imageFor(b)}" width="240" height="240" /><p><strong>${b.name}</strong><br/>${upiFor(b)}</p></div>`,
+      ),
+    );
+    printHtml(`${FEE_TYPES[config.feeType] ?? "Fee"} QR Codes`, cards.join(""));
+  };
+
+  const downloadOne = async (batch: Batch) => {
+    const link = document.createElement("a");
+    link.href = await imageFor(batch);
+    link.download = `${slug(batch.name)}-qr.png`;
+    link.click();
+  };
+
+  const downloadAllZip = async () => {
+    const ready = all.filter((b) => b.qrGenerated);
+    if (!ready.length) {
+      toast({ title: "No QR codes yet", description: "Generate them before downloading.", variant: "destructive" });
+      return;
+    }
+    const files = await Promise.all(
+      ready.map(async (b) => ({ name: `${slug(b.name)}-qr.png`, data: dataUrlToBytes(await imageFor(b)) })),
+    );
+    downloadZip("batch-payment-qr-codes.zip", files);
+    toast({ title: "Download started", description: `${files.length} QR code(s) bundled.` });
+  };
+
+  const printLabels = () =>
+    printHtml(
+      "Batch Labels",
+      `<table><tr><th>Batch</th><th>Course</th><th>Students</th><th>UPI ID</th></tr>${all
+        .map((b) => `<tr><td>${b.name}</td><td>${b.course}</td><td>${b.students}</td><td>${upiFor(b)}</td></tr>`)
+        .join("")}</table>`,
+    );
+
+  const resetAll = () => {
+    setAll((list) => list.map((b) => ({ ...b, qrGenerated: false })));
+    setSelected([]);
+    toast({ title: "QR codes reset", description: "Every batch is back to pending." });
+  };
 
   return (
     <AppLayout>
@@ -47,7 +163,7 @@ const BatchPaymentQR = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Select Course</Label>
-                  <Select>
+                  <Select value={config.course} onValueChange={(v) => setCfg("course", v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Courses" />
                     </SelectTrigger>
@@ -62,7 +178,7 @@ const BatchPaymentQR = () => {
 
                 <div className="space-y-2">
                   <Label>Fee Type</Label>
-                  <Select>
+                  <Select value={config.feeType} onValueChange={(v) => setCfg("feeType", v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select fee type" />
                     </SelectTrigger>
@@ -78,7 +194,7 @@ const BatchPaymentQR = () => {
 
               <div className="space-y-2">
                 <Label>UPI ID Template</Label>
-                <Input placeholder="school_{batch_id}@upi" />
+                <Input placeholder="school_{batch_id}@upi" value={config.upiTemplate} onChange={(e) => setCfg("upiTemplate", e.target.value)} />
                 <p className="text-xs text-muted-foreground">
                   Use {"{batch_id}"} as placeholder for batch identifier
                 </p>
@@ -89,7 +205,7 @@ const BatchPaymentQR = () => {
                   <p className="font-medium">Include Batch Name in QR</p>
                   <p className="text-sm text-muted-foreground">Add batch name as payment reference</p>
                 </div>
-                <Switch defaultChecked />
+                <Switch checked={config.includeBatchName} onCheckedChange={(v) => setCfg("includeBatchName", v)} />
               </div>
 
               <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -97,7 +213,7 @@ const BatchPaymentQR = () => {
                   <p className="font-medium">Auto-generate for New Batches</p>
                   <p className="text-sm text-muted-foreground">Automatically create QR when new batch is added</p>
                 </div>
-                <Switch />
+                <Switch checked={config.autoGenerate} onCheckedChange={(v) => setCfg("autoGenerate", v)} />
               </div>
 
               {/* Batch Selection Table */}
@@ -105,7 +221,7 @@ const BatchPaymentQR = () => {
                 <div className="p-4 border-b bg-muted/50">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Checkbox id="select-all" />
+                      <Checkbox id="select-all" checked={allSelected} onCheckedChange={toggleAll} />
                       <Label htmlFor="select-all" className="font-medium">Select All Batches</Label>
                     </div>
                     <Badge variant="secondary">
@@ -117,7 +233,7 @@ const BatchPaymentQR = () => {
                   {batches.map((batch) => (
                     <div key={batch.id} className="flex items-center justify-between p-4">
                       <div className="flex items-center gap-4">
-                        <Checkbox id={`batch-${batch.id}`} />
+                        <Checkbox id={`batch-${batch.id}`} checked={selected.includes(batch.id)} onCheckedChange={() => toggle(batch.id)} />
                         <div>
                           <p className="font-medium">{batch.name}</p>
                           <p className="text-sm text-muted-foreground">
@@ -132,7 +248,7 @@ const BatchPaymentQR = () => {
                               <QrCode className="h-3 w-3" />
                               Generated
                             </Badge>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => downloadOne(batch)}>
                               <Download className="h-4 w-4" />
                             </Button>
                           </>
@@ -146,11 +262,11 @@ const BatchPaymentQR = () => {
               </div>
 
               <div className="flex gap-2">
-                <Button>
+                <Button onClick={generateSelected}>
                   <QrCode className="h-4 w-4 mr-2" />
-                  Generate Selected
+                  Generate Selected{selected.length > 0 && ` (${selected.length})`}
                 </Button>
-                <Button variant="outline">
+                <Button variant="outline" onClick={printAll}>
                   <Printer className="h-4 w-4 mr-2" />
                   Print All QR Codes
                 </Button>
@@ -198,15 +314,15 @@ const BatchPaymentQR = () => {
                 <CardTitle>Bulk Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start">
+                <Button variant="outline" className="w-full justify-start" onClick={downloadAllZip}>
                   <Download className="h-4 w-4 mr-2" />
                   Download All as ZIP
                 </Button>
-                <Button variant="outline" className="w-full justify-start">
+                <Button variant="outline" className="w-full justify-start" onClick={printLabels}>
                   <Printer className="h-4 w-4 mr-2" />
                   Print Batch Labels
                 </Button>
-                <Button variant="outline" className="w-full justify-start text-destructive">
+                <Button variant="outline" className="w-full justify-start text-destructive" onClick={resetAll}>
                   Reset All QR Codes
                 </Button>
               </CardContent>
