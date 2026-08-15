@@ -7,31 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Plus, Video, Users, Calendar, Clock, Play } from "lucide-react";
-
-interface LiveClass {
-  id: string;
-  title: string;
-  subject: string;
-  instructor: string;
-  course: string;
-  batch: string;
-  date: string;
-  time: string;
-  duration: string;
-  platform: string;
-  attendees: number;
-  totalStudents: number;
-  status: "scheduled" | "active" | "completed" | "cancelled";
-}
-
-const classesData: LiveClass[] = [
-  { id: "1", title: "Introduction to Algorithms", subject: "Computer Science", instructor: "Dr. John Smith", course: "Computer Science", batch: "2024-A", date: "2024-01-30", time: "10:00 AM", duration: "1 hour", platform: "Zoom", attendees: 42, totalStudents: 45, status: "active" },
-  { id: "2", title: "Organic Chemistry Basics", subject: "Chemistry", instructor: "Prof. Sarah Johnson", course: "Science", batch: "2024-B", date: "2024-01-30", time: "2:00 PM", duration: "1.5 hours", platform: "Google Meet", attendees: 0, totalStudents: 38, status: "scheduled" },
-  { id: "3", title: "Financial Accounting", subject: "Accounting", instructor: "Mr. Michael Brown", course: "Commerce", batch: "2024-A", date: "2024-01-29", time: "11:00 AM", duration: "1 hour", platform: "Zoom", attendees: 35, totalStudents: 40, status: "completed" },
-  { id: "4", title: "English Literature", subject: "English", instructor: "Ms. Emily Davis", course: "Arts", batch: "2024-C", date: "2024-01-31", time: "3:00 PM", duration: "1 hour", platform: "Microsoft Teams", attendees: 0, totalStudents: 32, status: "scheduled" },
-  { id: "5", title: "Physics Lab Session", subject: "Physics", instructor: "Dr. Robert Wilson", course: "Science", batch: "2024-A", date: "2024-01-28", time: "9:00 AM", duration: "2 hours", platform: "Zoom", attendees: 28, totalStudents: 30, status: "completed" },
-];
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+import { downloadCsv } from "@/lib/export";
+import { LIVE_CLASSES_KEY, LIVE_CLASS_SEED, type LiveClass } from "@/data/live-classes";
 
 const columns: Column<LiveClass>[] = [
   {
@@ -106,25 +91,94 @@ const columns: Column<LiveClass>[] = [
 ];
 
 export default function ViewLiveClasses() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { items: classesData, update } = useLocalCollection<LiveClass>(LIVE_CLASSES_KEY, LIVE_CLASS_SEED);
+  const [details, setDetails] = useState<LiveClass | null>(null);
+  const [editing, setEditing] = useState<LiveClass | null>(null);
+
+  const join = (liveClass: LiveClass) => {
+    if (!liveClass.meetingLink) {
+      toast({ title: "No meeting link on this class", variant: "destructive" });
+      return;
+    }
+    window.open(liveClass.meetingLink, "_blank", "noopener");
+    toast({ title: "Opening the class", description: `${liveClass.platform} · ${liveClass.title}` });
+  };
+
+  const cancelClass = (liveClass: LiveClass) => {
+    update(liveClass.id, { status: "cancelled" });
+    toast({ title: "Class cancelled", description: `${liveClass.title} was marked cancelled.` });
+  };
+
+  const recording = (liveClass: LiveClass) => {
+    if (!liveClass.recorded) {
+      toast({
+        title: "No recording available",
+        description: `${liveClass.title} was not recorded.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({ title: "Recording ready", description: `Streaming ${liveClass.title} from ${liveClass.platform}.` });
+    setDetails(liveClass);
+  };
+
+  const attendanceReport = (liveClass: LiveClass) => {
+    downloadCsv(`attendance-${liveClass.title.toLowerCase().replace(/\s+/g, "-")}.csv`, [
+      {
+        Class: liveClass.title,
+        Instructor: liveClass.instructor,
+        Batch: liveClass.batch,
+        Date: liveClass.date,
+        Time: liveClass.time,
+        Attended: liveClass.attendees,
+        Enrolled: liveClass.totalStudents,
+        "Attendance %": Math.round((liveClass.attendees / liveClass.totalStudents) * 100),
+      },
+    ]);
+    toast({ title: "Attendance report exported" });
+  };
+
+  const saveEdit = () => {
+    if (!editing) return;
+    if (!editing.title.trim()) {
+      toast({ title: "Class title is required", variant: "destructive" });
+      return;
+    }
+    update(editing.id, editing);
+    toast({ title: "Class updated", description: `${editing.title} was saved.` });
+    setEditing(null);
+  };
+
   const handleActions = (liveClass: LiveClass) => {
     const actions = [
-      { label: "View Details", onClick: () => console.log("View", liveClass.id) },
+      { label: "View Details", onClick: () => setDetails(liveClass) },
     ];
-    
+
     if (liveClass.status === "active") {
-      actions.unshift({ label: "Join Class", onClick: () => console.log("Join", liveClass.id) });
+      actions.unshift({ label: "Join Class", onClick: () => join(liveClass) });
     }
     if (liveClass.status === "scheduled") {
-      actions.push({ label: "Edit", onClick: () => console.log("Edit", liveClass.id) });
-      actions.push({ label: "Cancel", onClick: () => console.log("Cancel", liveClass.id) });
+      actions.push({ label: "Edit", onClick: () => setEditing(liveClass) });
+      actions.push({ label: "Cancel", onClick: () => cancelClass(liveClass) });
     }
     if (liveClass.status === "completed") {
-      actions.push({ label: "View Recording", onClick: () => console.log("Recording", liveClass.id) });
-      actions.push({ label: "Attendance Report", onClick: () => console.log("Attendance", liveClass.id) });
+      actions.push({ label: "View Recording", onClick: () => recording(liveClass) });
+      actions.push({ label: "Attendance Report", onClick: () => attendanceReport(liveClass) });
     }
-    
+
     return actions;
   };
+
+  const liveNow = classesData.filter((c) => c.status === "active").length;
+  const upcoming = classesData.filter((c) => c.status === "scheduled").length;
+  const finished = classesData.filter((c) => c.status === "completed");
+  const avgAttendance = finished.length
+    ? Math.round(
+        finished.reduce((sum, c) => sum + (c.attendees / c.totalStudents) * 100, 0) / finished.length,
+      )
+    : 0;
 
   return (
     <AppLayout>
@@ -136,7 +190,7 @@ export default function ViewLiveClasses() {
           { label: "View Classes" },
         ]}
         actions={
-          <Button className="gap-2">
+          <Button className="gap-2" onClick={() => navigate("/live-class/setup")}>
             <Plus className="h-4 w-4" />
             Schedule Class
           </Button>
@@ -144,10 +198,10 @@ export default function ViewLiveClasses() {
       />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-6">
-        <StatsCard title="Total Classes" value="24" subtitle="This month" icon={Video} variant="primary" />
-        <StatsCard title="Live Now" value="2" subtitle="In progress" icon={Play} variant="success" />
-        <StatsCard title="Upcoming" value="8" subtitle="Scheduled" icon={Calendar} variant="info" />
-        <StatsCard title="Avg. Attendance" value="87%" subtitle="This week" icon={Users} variant="warning" />
+        <StatsCard title="Total Classes" value={classesData.length} subtitle="On the schedule" icon={Video} variant="primary" />
+        <StatsCard title="Live Now" value={liveNow} subtitle="In progress" icon={Play} variant="success" />
+        <StatsCard title="Upcoming" value={upcoming} subtitle="Scheduled" icon={Calendar} variant="info" />
+        <StatsCard title="Avg. Attendance" value={`${avgAttendance}%`} subtitle="Completed classes" icon={Users} variant="warning" />
       </div>
 
       <Card>
@@ -163,6 +217,77 @@ export default function ViewLiveClasses() {
           />
         </CardContent>
       </Card>
+
+      <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{details?.title}</DialogTitle>
+            <DialogDescription>{details?.subject} · {details?.instructor}</DialogDescription>
+          </DialogHeader>
+          {details && (
+            <>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {[
+                  ["Course", `${details.course} · ${details.batch}`],
+                  ["Schedule", `${new Date(details.date).toLocaleDateString()} at ${details.time}`],
+                  ["Duration", details.duration],
+                  ["Platform", details.platform],
+                  ["Attendance", `${details.attendees}/${details.totalStudents}`],
+                  ["Recording", details.recorded ? "Available" : "Not recorded"],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="font-medium">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {details.description && <p className="text-sm text-muted-foreground">{details.description}</p>}
+              {details.meetingLink && (
+                <p className="truncate text-xs text-muted-foreground" title={details.meetingLink}>
+                  {details.meetingLink}
+                </p>
+              )}
+            </>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetails(null)}>Close</Button>
+            {details?.meetingLink && <Button onClick={() => join(details)}>Open meeting</Button>}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit class</DialogTitle>
+            <DialogDescription>Change the schedule for this session.</DialogDescription>
+          </DialogHeader>
+          {editing && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="class-title">Title</Label>
+                <Input id="class-title" value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="class-date">Date</Label>
+                <Input id="class-date" type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="class-time">Time</Label>
+                <Input id="class-time" value={editing.time} onChange={(e) => setEditing({ ...editing, time: e.target.value })} />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="class-link">Meeting link</Label>
+                <Input id="class-link" value={editing.meetingLink ?? ""} onChange={(e) => setEditing({ ...editing, meetingLink: e.target.value })} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button onClick={saveEdit}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

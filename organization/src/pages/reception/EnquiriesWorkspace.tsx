@@ -13,10 +13,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
+  Download,
   Filter,
   MoreHorizontal,
   Plus,
@@ -29,6 +37,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { downloadCsv } from "@/lib/export";
 
 const records = [
   {
@@ -100,6 +109,9 @@ export default function EnquiriesWorkspace() {
   const [status, setStatus] = useState("all");
   const [liveRecords, setLiveRecords] = useState(records);
   const [loading, setLoading] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
+  const [purpose, setPurpose] = useState("all");
+  const [owner, setOwner] = useState("all");
   const [draft, setDraft] = useState<Draft>(() => {
     try {
       return {
@@ -119,13 +131,56 @@ export default function EnquiriesWorkspace() {
       liveRecords.filter(
         (r) =>
           (status === "all" || r.status === status) &&
+          (purpose === "all" || r.purpose === purpose) &&
+          (owner === "all" || r.owner === owner) &&
           Object.values(r)
             .join(" ")
             .toLowerCase()
             .includes(query.toLowerCase()),
       ),
-    [query, status, liveRecords],
+    [query, status, purpose, owner, liveRecords],
   );
+  const purposes = useMemo(
+    () => Array.from(new Set(liveRecords.map((r) => r.purpose))).filter(Boolean),
+    [liveRecords],
+  );
+  const owners = useMemo(
+    () => Array.from(new Set(liveRecords.map((r) => r.owner))).filter(Boolean),
+    [liveRecords],
+  );
+  const setRecordStatus = (id: string, next: string) => {
+    setLiveRecords((prev) => prev.map((r) => (r.id === id ? { ...r, status: next } : r)));
+    toast({ title: `Marked ${next.toLowerCase()}`, description: `Visitor ${id} was updated.` });
+  };
+  const removeRecord = (id: string) => {
+    setLiveRecords((prev) => prev.filter((r) => r.id !== id));
+    toast({ title: "Entry removed", description: `Visitor ${id} was taken off the log.` });
+  };
+  const exportVisitors = () => {
+    if (!filtered.length) {
+      toast({ title: "Nothing to export", description: "No visitors match these filters.", variant: "destructive" });
+      return;
+    }
+    downloadCsv(
+      "visitor-log.csv",
+      filtered.map((r) => ({
+        ID: r.id,
+        Visitor: r.name,
+        Phone: r.phone,
+        Purpose: r.purpose,
+        Meeting: r.owner,
+        Status: r.status,
+        Time: r.date,
+      })),
+    );
+    toast({ title: "Visitor log exported", description: `${filtered.length} rows written to CSV.` });
+  };
+  const clearFilters = () => {
+    setPurpose("all");
+    setOwner("all");
+    setStatus("all");
+    setQuery("");
+  };
   useEffect(() => {
     localStorage.setItem("reception-enquiry-draft", JSON.stringify(draft));
   }, [draft]);
@@ -298,11 +353,42 @@ export default function EnquiriesWorkspace() {
                     <SelectItem value="Follow-up">Follow-up</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline">
+                <Button
+                  variant={showFilters ? "secondary" : "outline"}
+                  onClick={() => setShowFilters((open) => !open)}
+                >
                   <SlidersHorizontal />
                   More filters
                 </Button>
               </div>
+              {showFilters && (
+                <div className="flex flex-col gap-3 border-b bg-muted/20 p-4 md:flex-row md:items-center">
+                  <Select value={purpose} onValueChange={setPurpose}>
+                    <SelectTrigger className="w-full md:w-52"><SelectValue placeholder="Purpose" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All purposes</SelectItem>
+                      {purposes.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={owner} onValueChange={setOwner}>
+                    <SelectTrigger className="w-full md:w-52"><SelectValue placeholder="Meeting with" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Anyone</SelectItem>
+                      {owners.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-xs text-muted-foreground md:ml-1">
+                    {filtered.length} of {liveRecords.length} visitors
+                  </span>
+                  <div className="flex gap-2 md:ml-auto">
+                    <Button variant="ghost" onClick={clearFilters}>Clear</Button>
+                    <Button variant="outline" onClick={exportVisitors}>
+                      <Download />
+                      Export
+                    </Button>
+                  </div>
+                </div>
+              )}
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[760px] text-sm">
                   <thead>
@@ -342,12 +428,49 @@ export default function EnquiriesWorkspace() {
                           {r.date}
                         </td>
                         <td className="px-4">
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => setRecordStatus(r.id, "Checked in")}>
+                                Mark checked in
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => setRecordStatus(r.id, "Follow-up")}>
+                                Flag for follow-up
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => setRecordStatus(r.id, "Completed")}>
+                                Mark completed
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  navigator.clipboard?.writeText(r.phone);
+                                  toast({ title: "Phone copied", description: r.phone });
+                                }}
+                              >
+                                Copy phone number
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onSelect={() => removeRecord(r.id)}
+                              >
+                                Remove from log
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </td>
                       </tr>
                     ))}
+                    {!filtered.length && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                          {loading ? "Loading visitors…" : "No visitors match these filters."}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

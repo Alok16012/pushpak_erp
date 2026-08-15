@@ -15,8 +15,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, Eye, Download, Calendar, Clock, CheckCircle, XCircle } from "lucide-react";
-import { format } from "date-fns";
+import { format, subDays } from "date-fns";
+import { downloadCsv } from "@/lib/export";
+import { useToast } from "@/hooks/use-toast";
 
 interface AttendanceRecord {
   id: string;
@@ -32,72 +35,44 @@ interface AttendanceRecord {
   workingHours: number;
 }
 
-// Sample data - replace with actual API data
+/** Sample data — dated relative to today so the Today/Yesterday tabs are populated. */
+const day = (ago: number) => format(subDays(new Date(), ago), "yyyy-MM-dd");
+
+const punch = (ago: number, time: string) => `${day(ago)} ${time}`;
+
 const sampleAttendanceRecords: AttendanceRecord[] = [
-  {
-    id: "1",
-    employeeId: "EMP001",
-    employeeName: "John Doe",
-    department: "IT",
-    date: "2024-03-25",
-    punchInTime: "2024-03-25 09:00:00",
-    punchOutTime: "2024-03-25 18:00:00",
-    punchInPhoto: "/photos/punch-in-1.jpg",
-    punchOutPhoto: "/photos/punch-out-1.jpg",
-    status: "present",
-    workingHours: 9,
-  },
-  {
-    id: "2",
-    employeeId: "EMP002",
-    employeeName: "Sarah Smith",
-    department: "HR",
-    date: "2024-03-25",
-    punchInTime: "2024-03-25 09:15:00",
-    punchOutTime: "2024-03-25 18:15:00",
-    punchInPhoto: "/photos/punch-in-2.jpg",
-    punchOutPhoto: "/photos/punch-out-2.jpg",
-    status: "present",
-    workingHours: 9,
-  },
-  {
-    id: "3",
-    employeeId: "EMP003",
-    employeeName: "Mike Johnson",
-    department: "Sales",
-    date: "2024-03-25",
-    punchInTime: "2024-03-25 09:30:00",
-    punchOutTime: "",
-    punchInPhoto: "/photos/punch-in-3.jpg",
-    punchOutPhoto: "",
-    status: "half-day",
-    workingHours: 4.5,
-  },
-  {
-    id: "4",
-    employeeId: "EMP004",
-    employeeName: "Emily Davis",
-    department: "IT",
-    date: "2024-03-25",
-    punchInTime: "",
-    punchOutTime: "",
-    punchInPhoto: "",
-    punchOutPhoto: "",
-    status: "absent",
-    workingHours: 0,
-  },
+  { id: "1", employeeId: "EMP001", employeeName: "John Doe", department: "IT", date: day(0), punchInTime: punch(0, "09:00:00"), punchOutTime: punch(0, "18:00:00"), punchInPhoto: "/photos/punch-in-1.jpg", punchOutPhoto: "/photos/punch-out-1.jpg", status: "present", workingHours: 9 },
+  { id: "2", employeeId: "EMP002", employeeName: "Sarah Smith", department: "HR", date: day(0), punchInTime: punch(0, "09:15:00"), punchOutTime: punch(0, "18:15:00"), punchInPhoto: "/photos/punch-in-2.jpg", punchOutPhoto: "/photos/punch-out-2.jpg", status: "present", workingHours: 9 },
+  { id: "3", employeeId: "EMP003", employeeName: "Mike Johnson", department: "Sales", date: day(0), punchInTime: punch(0, "09:30:00"), punchOutTime: "", punchInPhoto: "/photos/punch-in-3.jpg", punchOutPhoto: "", status: "half-day", workingHours: 4.5 },
+  { id: "4", employeeId: "EMP004", employeeName: "Emily Davis", department: "IT", date: day(0), punchInTime: "", punchOutTime: "", punchInPhoto: "", punchOutPhoto: "", status: "absent", workingHours: 0 },
+  { id: "5", employeeId: "EMP001", employeeName: "John Doe", department: "IT", date: day(1), punchInTime: punch(1, "09:05:00"), punchOutTime: punch(1, "17:50:00"), punchInPhoto: "/photos/punch-in-1.jpg", punchOutPhoto: "/photos/punch-out-1.jpg", status: "present", workingHours: 8.75 },
+  { id: "6", employeeId: "EMP002", employeeName: "Sarah Smith", department: "HR", date: day(1), punchInTime: "", punchOutTime: "", punchInPhoto: "", punchOutPhoto: "", status: "on-leave", workingHours: 0 },
+  { id: "7", employeeId: "EMP005", employeeName: "Priya Nair", department: "Finance", date: day(1), punchInTime: punch(1, "10:00:00"), punchOutTime: punch(1, "14:30:00"), punchInPhoto: "/photos/punch-in-5.jpg", punchOutPhoto: "/photos/punch-out-5.jpg", status: "half-day", workingHours: 4.5 },
 ];
 
+type PhotoView = { record: AttendanceRecord; mode: "in" | "out" | "full" };
+
 const AttendanceReport = () => {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [tab, setTab] = useState("today");
+  const [selectedDate, setSelectedDate] = useState(day(0));
+  const [detail, setDetail] = useState<PhotoView | null>(null);
   const [attendanceRecords] = useState<AttendanceRecord[]>(sampleAttendanceRecords);
 
-  // Calculate summary statistics
-  const totalPresent = attendanceRecords.filter(r => r.status === "present").length;
-  const totalAbsent = attendanceRecords.filter(r => r.status === "absent").length;
-  const totalHalfDay = attendanceRecords.filter(r => r.status === "half-day").length;
-  const totalEmployees = attendanceRecords.length;
+  // The three tabs are just date presets over the same table.
+  const changeTab = (value: string) => {
+    setTab(value);
+    if (value === "today") setSelectedDate(day(0));
+    if (value === "yesterday") setSelectedDate(day(1));
+  };
+
+  // Summary statistics for the day being viewed, not the whole fixture set.
+  const dayRecords = attendanceRecords.filter((record) => record.date === selectedDate);
+  const totalPresent = dayRecords.filter(r => r.status === "present").length;
+  const totalAbsent = dayRecords.filter(r => r.status === "absent").length;
+  const totalHalfDay = dayRecords.filter(r => r.status === "half-day").length;
+  const totalEmployees = dayRecords.length;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -199,13 +174,13 @@ const AttendanceReport = () => {
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>View Details</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDetail({ record: item, mode: "in" })}>
               View Punch In Photo
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDetail({ record: item, mode: "out" })}>
               View Punch Out Photo
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDetail({ record: item, mode: "full" })}>
               View Full Details
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -225,6 +200,34 @@ const AttendanceReport = () => {
     return matchesSearch && matchesDate;
   });
 
+  const exportReport = () => {
+    if (!filteredRecords.length) {
+      toast({
+        title: "Nothing to export",
+        description: `No attendance records for ${selectedDate}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    downloadCsv(
+      `attendance-report-${selectedDate}.csv`,
+      filteredRecords.map((record) => ({
+        "Employee ID": record.employeeId,
+        Name: record.employeeName,
+        Department: record.department,
+        Date: record.date,
+        "Punch In": record.punchInTime ? format(new Date(record.punchInTime), "hh:mm a") : "—",
+        "Punch Out": record.punchOutTime ? format(new Date(record.punchOutTime), "hh:mm a") : "—",
+        "Working Hours": record.workingHours,
+        Status: record.status,
+      })),
+    );
+    toast({ title: "Report exported", description: `${filteredRecords.length} records written to CSV.` });
+  };
+
+  const photoFor = (view: PhotoView) =>
+    view.mode === "in" ? view.record.punchInPhoto : view.record.punchOutPhoto;
+
   return (
     <AppLayout>
       <div className="container mx-auto p-6">
@@ -236,7 +239,7 @@ const AttendanceReport = () => {
             { label: "Attendance Report" },
           ]}
           actions={
-            <Button variant="outline">
+            <Button variant="outline" onClick={exportReport}>
               <Download className="mr-2 h-4 w-4" />
               Export Report
             </Button>
@@ -305,7 +308,7 @@ const AttendanceReport = () => {
               <CardTitle>Filter Attendance Records</CardTitle>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="today" className="space-y-4">
+              <Tabs value={tab} onValueChange={changeTab} className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="today">Today</TabsTrigger>
                   <TabsTrigger value="yesterday">Yesterday</TabsTrigger>
@@ -365,6 +368,52 @@ const AttendanceReport = () => {
             </CardContent>
           </Card>
         </div>
+
+        <Dialog open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {detail?.mode === "in" ? "Punch in" : detail?.mode === "out" ? "Punch out" : "Attendance detail"}
+                {" — "}{detail?.record.employeeName}
+              </DialogTitle>
+              <DialogDescription>
+                {detail?.record.employeeId} · {detail?.record.department} · {detail?.record.date}
+              </DialogDescription>
+            </DialogHeader>
+            {detail && detail.mode === "full" ? (
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {[
+                  ["Punch in", detail.record.punchInTime ? format(new Date(detail.record.punchInTime), "hh:mm a") : "Not recorded"],
+                  ["Punch out", detail.record.punchOutTime ? format(new Date(detail.record.punchOutTime), "hh:mm a") : "Not recorded"],
+                  ["Working hours", detail.record.workingHours ? `${detail.record.workingHours} hrs` : "—"],
+                  ["Status", detail.record.status],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className="font-medium capitalize">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : detail && photoFor(detail) ? (
+              <div className="text-center">
+                <img
+                  src={photoFor(detail)}
+                  alt={`${detail.mode === "in" ? "Punch in" : "Punch out"} capture`}
+                  className="mx-auto max-h-72 rounded-lg object-contain"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                    e.currentTarget.nextElementSibling?.classList.remove("hidden");
+                  }}
+                />
+                <p className="hidden py-8 text-sm text-muted-foreground">Capture not available for this punch.</p>
+              </div>
+            ) : (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No {detail?.mode === "in" ? "punch-in" : "punch-out"} was recorded for this day.
+              </p>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

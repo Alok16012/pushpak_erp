@@ -16,19 +16,19 @@
          <div className="grid gap-4 md:grid-cols-4">
            <div className="space-y-2">
              <Label htmlFor="numComputers">Number of Computers</Label>
-             <Input id="numComputers" type="number" placeholder="0" />
+             <Input id="numComputers" name="numComputers" type="number" placeholder="0" />
            </div>
            <div className="space-y-2">
              <Label htmlFor="numFaculty">Number of Faculty</Label>
-             <Input id="numFaculty" type="number" placeholder="0" />
+             <Input id="numFaculty" name="numFaculty" type="number" placeholder="0" />
            </div>
            <div className="space-y-2">
              <Label htmlFor="numRooms">Number of Rooms</Label>
-             <Input id="numRooms" type="number" placeholder="0" />
+             <Input id="numRooms" name="numRooms" type="number" placeholder="0" />
            </div>
            <div className="space-y-2">
              <Label htmlFor="numFees">Number of Fee Types</Label>
-             <Input id="numFees" type="number" placeholder="0" />
+             <Input id="numFees" name="numFees" type="number" placeholder="0" />
            </div>
          </div>
          
@@ -40,25 +40,25 @@
            <div className="grid gap-4 md:grid-cols-3">
              <div className="space-y-2">
                <Label htmlFor="registrationDate">Registration Date *</Label>
-               <Input id="registrationDate" type="month" />
+               <Input id="registrationDate" name="registrationDate" type="month" />
              </div>
              <div className="space-y-2">
                <Label htmlFor="validDate">Valid From</Label>
-               <Input id="validDate" type="date" />
+               <Input id="validDate" name="validDate" type="date" />
              </div>
              <div className="space-y-2">
                <Label htmlFor="expiryDate">Expiry Date *</Label>
-               <Input id="expiryDate" type="date" />
+               <Input id="expiryDate" name="expiryDate" type="date" />
              </div>
            </div>
            <div className="grid gap-4 md:grid-cols-2 mt-4">
              <div className="space-y-2">
                <Label htmlFor="renewalDate">Renewal Date</Label>
-               <Input id="renewalDate" type="date" />
+               <Input id="renewalDate" name="renewalDate" type="date" />
              </div>
              <div className="space-y-2">
                <Label htmlFor="referralCode">Referral Code</Label>
-               <Input id="referralCode" placeholder="Enter referral code" />
+               <Input id="referralCode" name="referralCode" placeholder="Enter referral code" />
              </div>
            </div>
          </div>

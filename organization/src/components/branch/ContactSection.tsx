@@ -16,21 +16,21 @@
          <div className="grid gap-4 md:grid-cols-2">
            <div className="space-y-2">
              <Label htmlFor="phone">Phone Number *</Label>
-             <Input id="phone" placeholder="+91 XXXXX XXXXX" />
+             <Input id="phone" name="phone" placeholder="+91 XXXXX XXXXX" />
            </div>
            <div className="space-y-2">
              <Label htmlFor="altPhone">Alternate Phone</Label>
-             <Input id="altPhone" placeholder="+91 XXXXX XXXXX" />
+             <Input id="altPhone" name="altPhone" placeholder="+91 XXXXX XXXXX" />
            </div>
          </div>
          <div className="grid gap-4 md:grid-cols-2">
            <div className="space-y-2">
              <Label htmlFor="whatsappNumber">WhatsApp Number</Label>
-             <Input id="whatsappNumber" placeholder="+91 XXXXX XXXXX" />
+             <Input id="whatsappNumber" name="whatsappNumber" placeholder="+91 XXXXX XXXXX" />
            </div>
            <div className="space-y-2">
              <Label htmlFor="email">Email Address *</Label>
-             <Input id="email" type="email" placeholder="branch@example.com" />
+             <Input id="email" name="email" type="email" placeholder="branch@example.com" />
            </div>
          </div>
        </CardContent>
