@@ -22,8 +22,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Search, Eye, Download, Filter, Calendar, Clock } from "lucide-react";
 import { format, subDays } from "date-fns";
+import { downloadCsv } from "@/lib/export";
+import { useToast } from "@/hooks/use-toast";
 
 interface AttendanceLog {
   id: string;
@@ -41,16 +50,18 @@ interface AttendanceLog {
   remarks: string;
 }
 
-// Sample data - replace with actual API data
+/** Sample data — dated relative to today so the default 7-day filter shows rows. */
+const day = (ago: number) => format(subDays(new Date(), ago), "yyyy-MM-dd");
+
 const sampleAttendanceLogs: AttendanceLog[] = [
   {
     id: "1",
     employeeId: "EMP001",
     employeeName: "John Doe",
     department: "IT",
-    date: "2024-03-25",
-    punchInTime: "2024-03-25 09:00:00",
-    punchOutTime: "2024-03-25 18:00:00",
+    date: day(0),
+    punchInTime: `${day(0)} 09:00:00`,
+    punchOutTime: `${day(0)} 18:00:00`,
     punchInPhoto: "/photos/punch-in-1.jpg",
     punchOutPhoto: "/photos/punch-out-1.jpg",
     lateArrival: false,
@@ -63,9 +74,9 @@ const sampleAttendanceLogs: AttendanceLog[] = [
     employeeId: "EMP002",
     employeeName: "Sarah Smith",
     department: "HR",
-    date: "2024-03-25",
-    punchInTime: "2024-03-25 09:45:00",
-    punchOutTime: "2024-03-25 18:30:00",
+    date: day(0),
+    punchInTime: `${day(0)} 09:45:00`,
+    punchOutTime: `${day(0)} 18:30:00`,
     punchInPhoto: "/photos/punch-in-2.jpg",
     punchOutPhoto: "/photos/punch-out-2.jpg",
     lateArrival: true,
@@ -78,9 +89,9 @@ const sampleAttendanceLogs: AttendanceLog[] = [
     employeeId: "EMP003",
     employeeName: "Mike Johnson",
     department: "Sales",
-    date: "2024-03-24",
-    punchInTime: "2024-03-24 08:30:00",
-    punchOutTime: "2024-03-24 20:00:00",
+    date: day(1),
+    punchInTime: `${day(1)} 08:30:00`,
+    punchOutTime: `${day(1)} 20:00:00`,
     punchInPhoto: "/photos/punch-in-3.jpg",
     punchOutPhoto: "/photos/punch-out-3.jpg",
     lateArrival: false,
@@ -93,9 +104,9 @@ const sampleAttendanceLogs: AttendanceLog[] = [
     employeeId: "EMP004",
     employeeName: "Emily Davis",
     department: "IT",
-    date: "2024-03-24",
-    punchInTime: "2024-03-24 09:00:00",
-    punchOutTime: "2024-03-24 17:00:00",
+    date: day(1),
+    punchInTime: `${day(1)} 09:00:00`,
+    punchOutTime: `${day(1)} 17:00:00`,
     punchInPhoto: "/photos/punch-in-4.jpg",
     punchOutPhoto: "/photos/punch-out-4.jpg",
     lateArrival: false,
@@ -103,15 +114,37 @@ const sampleAttendanceLogs: AttendanceLog[] = [
     overtime: 0,
     remarks: "Early departure approved",
   },
+  {
+    id: "5",
+    employeeId: "EMP005",
+    employeeName: "Priya Nair",
+    department: "Finance",
+    date: day(3),
+    punchInTime: `${day(3)} 10:10:00`,
+    punchOutTime: `${day(3)} 16:40:00`,
+    punchInPhoto: "/photos/punch-in-5.jpg",
+    punchOutPhoto: "/photos/punch-out-5.jpg",
+    lateArrival: true,
+    earlyDeparture: true,
+    overtime: 0,
+    remarks: "Half day - medical appointment",
+  },
 ];
 
+/** The logs are historic, so the default window has to reach back to cover them. */
+const defaultRange = () => ({
+  from: format(subDays(new Date(), 7), "yyyy-MM-dd"),
+  to: format(new Date(), "yyyy-MM-dd"),
+});
+
+type Detail = { log: AttendanceLog; mode: "in" | "out" | "full" };
+
 const AttendanceLogs = () => {
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("all");
-  const [dateRange, setDateRange] = useState({
-    from: format(subDays(new Date(), 7), "yyyy-MM-dd"),
-    to: format(new Date(), "yyyy-MM-dd"),
-  });
+  const [dateRange, setDateRange] = useState(defaultRange);
+  const [detail, setDetail] = useState<Detail | null>(null);
 
   const filteredLogs = sampleAttendanceLogs.filter((log) => {
     const matchesSearch =
@@ -130,6 +163,36 @@ const AttendanceLogs = () => {
     
     return matchesSearch && matchesDepartment && matchesDate;
   });
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setSelectedDepartment("all");
+    setDateRange(defaultRange());
+  };
+
+  const exportLogs = () => {
+    if (!filteredLogs.length) {
+      toast({ title: "Nothing to export", description: "No records match the current filters.", variant: "destructive" });
+      return;
+    }
+    // Export exactly what the table shows, so the file matches the filters.
+    downloadCsv(
+      `attendance-logs-${dateRange.from}-to-${dateRange.to}.csv`,
+      filteredLogs.map((log) => ({
+        employeeId: log.employeeId,
+        employeeName: log.employeeName,
+        department: log.department,
+        date: log.date,
+        punchIn: log.punchInTime,
+        punchOut: log.punchOutTime,
+        lateArrival: log.lateArrival ? "Yes" : "No",
+        earlyDeparture: log.earlyDeparture ? "Yes" : "No",
+        overtimeHours: log.overtime,
+        remarks: log.remarks,
+      })),
+    );
+    toast({ title: "Export ready", description: `${filteredLogs.length} record(s) downloaded as CSV.` });
+  };
 
   const columns = [
     {
@@ -209,13 +272,13 @@ const AttendanceLogs = () => {
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>View Details</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDetail({ log: item, mode: "in" })}>
               View Punch In Photo
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDetail({ log: item, mode: "out" })}>
               View Punch Out Photo
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setDetail({ log: item, mode: "full" })}>
               View Full Log Details
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -235,7 +298,7 @@ const AttendanceLogs = () => {
             { label: "Attendance Logs" },
           ]}
           actions={
-            <Button variant="outline">
+            <Button variant="outline" onClick={exportLogs}>
               <Download className="mr-2 h-4 w-4" />
               Export Logs
             </Button>
@@ -310,7 +373,7 @@ const AttendanceLogs = () => {
               <p className="text-sm text-muted-foreground">
                 Showing {filteredLogs.length} of {sampleAttendanceLogs.length} records
               </p>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={clearFilters}>
                 <Calendar className="mr-2 h-4 w-4" />
                 Clear Filters
               </Button>
@@ -332,6 +395,68 @@ const AttendanceLogs = () => {
             />
           </CardContent>
         </Card>
+
+        <Dialog open={detail !== null} onOpenChange={(open) => !open && setDetail(null)}>
+          <DialogContent className="max-w-lg">
+            {detail && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>
+                    {detail.mode === "full"
+                      ? "Attendance Log Details"
+                      : `Punch ${detail.mode === "in" ? "In" : "Out"} Photo`}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {detail.log.employeeName} ({detail.log.employeeId}) •{" "}
+                    {format(new Date(detail.log.date), "dd MMM yyyy")}
+                  </DialogDescription>
+                </DialogHeader>
+
+                {detail.mode === "full" ? (
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    {[
+                      ["Department", detail.log.department],
+                      ["Punch In", format(new Date(detail.log.punchInTime), "dd MMM yyyy, hh:mm a")],
+                      ["Punch Out", format(new Date(detail.log.punchOutTime), "dd MMM yyyy, hh:mm a")],
+                      ["Late Arrival", detail.log.lateArrival ? "Yes" : "No"],
+                      ["Early Departure", detail.log.earlyDeparture ? "Yes" : "No"],
+                      ["Overtime", detail.log.overtime > 0 ? `${detail.log.overtime} hrs` : "None"],
+                      ["Remarks", detail.log.remarks || "-"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="contents">
+                        <dt className="text-muted-foreground">{label}</dt>
+                        <dd className="font-medium">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <div className="rounded-lg border bg-muted/40 p-4 text-center">
+                    <img
+                      src={detail.mode === "in" ? detail.log.punchInPhoto : detail.log.punchOutPhoto}
+                      alt={`Punch ${detail.mode} capture`}
+                      className="mx-auto max-h-72 rounded object-contain"
+                      // The demo dataset points at photos that were never uploaded,
+                      // so fall back to a readable message instead of a broken image.
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                        e.currentTarget.nextElementSibling?.classList.remove("hidden");
+                      }}
+                    />
+                    <p className="hidden text-sm text-muted-foreground">
+                      Capture not available for this punch.
+                    </p>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {format(
+                        new Date(detail.mode === "in" ? detail.log.punchInTime : detail.log.punchOutTime),
+                        "dd MMM yyyy, hh:mm a",
+                      )}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );

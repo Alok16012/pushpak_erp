@@ -28,6 +28,35 @@ export function downloadCsv(
   save(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
 
+/** Parse CSV text into records keyed by the header row — the inverse of `downloadCsv`. */
+export function parseCsv(text: string): Array<Record<string, string>> {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (quoted) {
+      if (char !== '"') value += char;
+      else if (text[i + 1] === '"') (value += '"'), i++;
+      else quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === ",") (row.push(value), (value = ""));
+    else if (char === "\n") (row.push(value), rows.push(row), (row = []), (value = ""));
+    else if (char !== "\r") value += char;
+  }
+  if (value !== "" || row.length) (row.push(value), rows.push(row));
+
+  const [headers, ...body] = rows.filter((r) => r.some((c) => c.trim() !== ""));
+  if (!headers) return [];
+  return body.map((r) =>
+    Object.fromEntries(headers.map((h, i) => [h.trim(), (r[i] ?? "").trim()])),
+  );
+}
+
 export function downloadJson(filename: string, data: unknown) {
   save(
     new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
