@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DollarSign, TrendingUp, TrendingDown, Calendar, Filter } from "lucide-react";
 import { format } from "date-fns";
 
@@ -31,6 +32,11 @@ interface Transaction {
   paymentMethod?: string;
 }
 
+/** `YYYY-MM-DD`, `days` before today — fixtures must stay near "now" or the
+ *  date filters open on an empty table. */
+const daysAgo = (days: number) =>
+  new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+
 // Sample data - replace with actual API data
 const sampleTransactions: Transaction[] = [
   {
@@ -40,8 +46,8 @@ const sampleTransactions: Transaction[] = [
     type: "commission",
     amount: 5000,
     status: "completed",
-    description: "Commission for student admission - Batch 2024",
-    date: "2024-03-15",
+    description: "Commission for student admission - new batch",
+    date: daysAgo(4),
     referenceId: "COMM-2024-001",
     paymentMethod: "Bank Transfer",
   },
@@ -53,7 +59,7 @@ const sampleTransactions: Transaction[] = [
     amount: 10000,
     status: "completed",
     description: "Partner incentive payment",
-    date: "2024-03-10",
+    date: daysAgo(9),
     referenceId: "PAY-2024-045",
     paymentMethod: "UPI",
   },
@@ -65,7 +71,7 @@ const sampleTransactions: Transaction[] = [
     amount: 3500,
     status: "pending",
     description: "Commission for online course enrollment",
-    date: "2024-03-20",
+    date: daysAgo(1),
     referenceId: "COMM-2024-002",
   },
   {
@@ -76,7 +82,7 @@ const sampleTransactions: Transaction[] = [
     amount: 2000,
     status: "completed",
     description: "Refund for cancelled admission",
-    date: "2024-03-05",
+    date: daysAgo(14),
     referenceId: "REF-2024-012",
     paymentMethod: "Bank Transfer",
   },
@@ -87,27 +93,78 @@ const sampleTransactions: Transaction[] = [
     type: "adjustment",
     amount: 500,
     status: "completed",
-    description: "Tax adjustment for February 2024",
-    date: "2024-03-01",
+    description: "Tax adjustment for last month",
+    date: daysAgo(21),
     referenceId: "ADJ-2024-003",
+  },
+  {
+    id: "6",
+    partnerId: "2",
+    partnerName: "Bright Future Consultants",
+    type: "commission",
+    amount: 7250,
+    status: "pending",
+    description: "Commission for corporate training referrals",
+    date: daysAgo(33),
+    referenceId: "COMM-2024-003",
+    paymentMethod: "Cheque",
+  },
+  {
+    id: "7",
+    partnerId: "2",
+    partnerName: "Bright Future Consultants",
+    type: "payment",
+    amount: 4200,
+    status: "failed",
+    description: "Quarterly settlement - retry pending",
+    date: daysAgo(47),
+    referenceId: "PAY-2024-046",
+    paymentMethod: "Bank Transfer",
   },
 ];
 
+const PAYMENT_METHODS = ["Bank Transfer", "UPI", "Cheque"];
+
+const BLANK_FILTERS = { from: "", to: "", min: "", max: "", method: "all" };
+
 const PartnerTransactions = () => {
   const [transactions] = useState<Transaction[]>(sampleTransactions);
-  const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  /** Everything behind the "More Filters" popover. */
+  const [more, setMore] = useState(BLANK_FILTERS);
 
-  // Calculate summary
-  const totalCommission = transactions
+  const setFilter = <K extends keyof typeof BLANK_FILTERS>(
+    key: K,
+    value: (typeof BLANK_FILTERS)[K],
+  ) => setMore((f) => ({ ...f, [key]: value }));
+
+  const activeCount =
+    (more.from ? 1 : 0) +
+    (more.to ? 1 : 0) +
+    (more.min ? 1 : 0) +
+    (more.max ? 1 : 0) +
+    (more.method === "all" ? 0 : 1);
+
+  const filteredTransactions = transactions.filter((transaction) => {
+    if (filterStatus !== "all" && transaction.status !== filterStatus) return false;
+    if (more.from && transaction.date < more.from) return false;
+    if (more.to && transaction.date > more.to) return false;
+    if (more.min && transaction.amount < Number(more.min)) return false;
+    if (more.max && transaction.amount > Number(more.max)) return false;
+    if (more.method !== "all" && (transaction.paymentMethod ?? "") !== more.method) return false;
+    return true;
+  });
+
+  // Calculate summary — over what the filters currently show
+  const totalCommission = filteredTransactions
     .filter((t) => t.type === "commission")
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalPayment = transactions
+  const totalPayment = filteredTransactions
     .filter((t) => t.type === "payment")
     .reduce((sum, t) => sum + t.amount, 0);
 
-  const totalRefund = transactions
+  const totalRefund = filteredTransactions
     .filter((t) => t.type === "refund")
     .reduce((sum, t) => sum + t.amount, 0);
 
@@ -186,12 +243,6 @@ const PartnerTransactions = () => {
       cell: (item: Transaction) => item.paymentMethod || "-",
     },
   ];
-
-  const filteredTransactions = transactions.filter((transaction) => {
-    const typeMatch = filterType === "all" || transaction.type === filterType;
-    const statusMatch = filterStatus === "all" || transaction.status === filterStatus;
-    return typeMatch && statusMatch;
-  });
 
   return (
     <AppLayout>
@@ -289,10 +340,92 @@ const PartnerTransactions = () => {
                   </SelectContent>
                 </Select>
 
-                <Button variant="outline" size="sm">
-                  <Filter className="mr-2 h-4 w-4" />
-                  More Filters
-                </Button>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Filter className="mr-2 h-4 w-4" />
+                      More Filters
+                      {activeCount > 0 && (
+                        <Badge className="ml-2 h-5 px-1.5" variant="secondary">
+                          {activeCount}
+                        </Badge>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="from">From date</Label>
+                        <Input
+                          id="from"
+                          type="date"
+                          value={more.from}
+                          onChange={(e) => setFilter("from", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="to">To date</Label>
+                        <Input
+                          id="to"
+                          type="date"
+                          value={more.to}
+                          onChange={(e) => setFilter("to", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="min">Min amount</Label>
+                        <Input
+                          id="min"
+                          type="number"
+                          placeholder="0"
+                          value={more.min}
+                          onChange={(e) => setFilter("min", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="max">Max amount</Label>
+                        <Input
+                          id="max"
+                          type="number"
+                          placeholder="Any"
+                          value={more.max}
+                          onChange={(e) => setFilter("max", e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Payment method</Label>
+                      <Select value={more.method} onValueChange={(v) => setFilter("method", v)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Any method</SelectItem>
+                          {PAYMENT_METHODS.map((method) => (
+                            <SelectItem key={method} value={method}>
+                              {method}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {filteredTransactions.length} of {transactions.length} shown
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMore(BLANK_FILTERS)}
+                        disabled={activeCount === 0}
+                      >
+                        Reset
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
 

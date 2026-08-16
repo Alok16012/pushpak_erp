@@ -11,67 +11,125 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Printer, Download, Eye, Search, Users, FileText, Calendar } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+import { printHtml } from "@/lib/export";
+import { admitCardsPdf } from "@/lib/admit-card-pdf";
+import {
+  ADMIT_CARD_STUDENTS,
+  ADMIT_CARD_TEMPLATES_KEY,
+  ADMIT_CARD_TEMPLATE_SEED,
+  AdmitCardTemplate,
+  EXAMS,
+  admitCardHtml,
+  admitCardSheetHtml,
+  findExam,
+} from "@/data/admit-card-templates";
 
-const students = [
-  { id: "STU001", name: "Rahul Sharma", class: "10th", section: "A", rollNo: "101", feeStatus: "paid" },
-  { id: "STU002", name: "Priya Patel", class: "10th", section: "A", rollNo: "102", feeStatus: "paid" },
-  { id: "STU003", name: "Amit Kumar", class: "10th", section: "B", rollNo: "103", feeStatus: "pending" },
-  { id: "STU004", name: "Sneha Gupta", class: "9th", section: "A", rollNo: "201", feeStatus: "paid" },
-  { id: "STU005", name: "Vikram Singh", class: "9th", section: "B", rollNo: "202", feeStatus: "overdue" },
-  { id: "STU006", name: "Anita Desai", class: "8th", section: "A", rollNo: "301", feeStatus: "paid" },
-];
+const CLASSES = ["8th", "9th", "10th"];
+const SECTIONS = ["A", "B"];
 
-const exams = [
-  { id: "1", name: "Mid-Term Examination 2024", date: "15 Jan - 25 Jan 2024" },
-  { id: "2", name: "Final Examination 2024", date: "15 Mar - 30 Mar 2024" },
-  { id: "3", name: "Unit Test 3", date: "10 Feb 2024" },
-];
-
-const templates = [
-  { id: "1", name: "Mid-Term Exam Template" },
-  { id: "2", name: "Final Exam Template" },
-  { id: "3", name: "Unit Test Template" },
-];
+const FEE_BADGES: Record<string, string> = {
+  paid: "bg-green-500/10 text-green-600 border-green-200",
+  pending: "bg-yellow-500/10 text-yellow-600 border-yellow-200",
+  overdue: "bg-red-500/10 text-red-600 border-red-200",
+};
 
 export default function GenerateAdmitCards() {
-  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const filteredStudents = students.filter(
-    (s) =>
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.id.toLowerCase().includes(searchTerm.toLowerCase())
+  const { toast } = useToast();
+  const { items: templates } = useLocalCollection<AdmitCardTemplate>(
+    ADMIT_CARD_TEMPLATES_KEY,
+    ADMIT_CARD_TEMPLATE_SEED,
   );
 
-  const toggleStudent = (id: string) => {
+  const [examValue, setExamValue] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [classFilter, setClassFilter] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
+  const [feeFilter, setFeeFilter] = useState("all");
+  const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const template = templates.find((t) => t.id === templateId);
+  /** The exam picked here wins over whatever the template was designed against. */
+  const effectiveTemplate = template
+    ? { ...template, exam: examValue || template.exam }
+    : undefined;
+  const exam = findExam(effectiveTemplate?.exam ?? examValue);
+
+  const filteredStudents = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    return ADMIT_CARD_STUDENTS.filter(
+      (s) =>
+        (classFilter === "all" || s.class === classFilter) &&
+        (sectionFilter === "all" || s.section === sectionFilter) &&
+        (feeFilter === "all" || s.feeStatus === feeFilter) &&
+        (!term || s.name.toLowerCase().includes(term) || s.id.toLowerCase().includes(term)),
+    );
+  }, [classFilter, sectionFilter, feeFilter, searchTerm]);
+
+  /** Rows hidden by the filters are not printed, even if they were ticked. */
+  const chosen = filteredStudents.filter((s) => selectedStudents.includes(s.id));
+  const unpaid = chosen.filter((s) => s.feeStatus !== "paid").length;
+  const allSelected = filteredStudents.length > 0 && chosen.length === filteredStudents.length;
+
+  const toggleStudent = (id: string) =>
     setSelectedStudents((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+    );
+
+  const toggleAll = () =>
+    setSelectedStudents(allSelected ? [] : filteredStudents.map((s) => s.id));
+
+  /** Every output button needs the same two things picked. */
+  const ready = () => {
+    if (!effectiveTemplate) {
+      toast({ title: "Pick a template", description: "Choose an admit card template first.", variant: "destructive" });
+      return false;
+    }
+    if (!chosen.length) {
+      toast({ title: "No students selected", description: "Tick at least one student to generate cards for.", variant: "destructive" });
+      return false;
+    }
+    return true;
+  };
+
+  const openPreview = () => {
+    if (!ready()) return;
+    setPreviewOpen(true);
+  };
+
+  const print = () => {
+    if (!ready() || !effectiveTemplate) return;
+    printHtml(
+      `${effectiveTemplate.name} — ${chosen.length} admit card${chosen.length > 1 ? "s" : ""}`,
+      admitCardSheetHtml(effectiveTemplate, chosen),
     );
   };
 
-  const toggleAll = () => {
-    if (selectedStudents.length === filteredStudents.length) {
-      setSelectedStudents([]);
-    } else {
-      setSelectedStudents(filteredStudents.map((s) => s.id));
-    }
-  };
-
-  const getFeeStatusBadge = (status: string) => {
-    switch (status) {
-      case "paid":
-        return <Badge className="bg-green-500/10 text-green-600 border-green-200">Paid</Badge>;
-      case "pending":
-        return <Badge className="bg-yellow-500/10 text-yellow-600 border-yellow-200">Pending</Badge>;
-      case "overdue":
-        return <Badge className="bg-red-500/10 text-red-600 border-red-200">Overdue</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
-    }
+  const download = () => {
+    if (!ready() || !effectiveTemplate) return;
+    const { pages } = admitCardsPdf(
+      effectiveTemplate,
+      chosen,
+      `admit-cards-${effectiveTemplate.name || "batch"}.pdf`,
+    );
+    toast({
+      title: "Admit cards downloaded",
+      description: `${chosen.length} card${chosen.length > 1 ? "s" : ""} across ${pages} page${pages > 1 ? "s" : ""}.`,
+    });
   };
 
   return (
@@ -94,16 +152,16 @@ export default function GenerateAdmitCards() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Select Examination</Label>
-              <Select>
+              <Select value={examValue} onValueChange={setExamValue}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose examination" />
                 </SelectTrigger>
                 <SelectContent>
-                  {exams.map((exam) => (
-                    <SelectItem key={exam.id} value={exam.id}>
+                  {EXAMS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
                       <div>
-                        <div>{exam.name}</div>
-                        <div className="text-xs text-muted-foreground">{exam.date}</div>
+                        <div>{option.label}</div>
+                        <div className="text-xs text-muted-foreground">{option.window}</div>
                       </div>
                     </SelectItem>
                   ))}
@@ -113,7 +171,7 @@ export default function GenerateAdmitCards() {
 
             <div className="space-y-2">
               <Label>Select Template</Label>
-              <Select>
+              <Select value={templateId} onValueChange={setTemplateId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose template" />
                 </SelectTrigger>
@@ -125,46 +183,54 @@ export default function GenerateAdmitCards() {
                   ))}
                 </SelectContent>
               </Select>
+              {templates.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No templates yet — design one on the Admit Card Template page.
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label>Class</Label>
-              <Select>
+              <Select value={classFilter} onValueChange={setClassFilter}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All Classes" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Classes</SelectItem>
-                  <SelectItem value="8th">8th</SelectItem>
-                  <SelectItem value="9th">9th</SelectItem>
-                  <SelectItem value="10th">10th</SelectItem>
+                  {CLASSES.map((value) => (
+                    <SelectItem key={value} value={value}>{value}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
               <Label>Section</Label>
-              <Select>
+              <Select value={sectionFilter} onValueChange={setSectionFilter}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All Sections" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sections</SelectItem>
-                  <SelectItem value="A">Section A</SelectItem>
-                  <SelectItem value="B">Section B</SelectItem>
+                  {SECTIONS.map((value) => (
+                    <SelectItem key={value} value={value}>Section {value}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
               <Label>Fee Status Filter</Label>
-              <Select defaultValue="all">
+              <Select value={feeFilter} onValueChange={setFeeFilter}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Students</SelectItem>
                   <SelectItem value="paid">Fee Paid Only</SelectItem>
+                  <SelectItem value="pending">Pending Only</SelectItem>
+                  <SelectItem value="overdue">Overdue Only</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -172,28 +238,33 @@ export default function GenerateAdmitCards() {
             <div className="pt-4 border-t space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Users className="h-4 w-4 text-muted-foreground" />
-                <span>Selected: {selectedStudents.length} students</span>
+                <span>Selected: {chosen.length} students</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <FileText className="h-4 w-4 text-muted-foreground" />
-                <span>Admit cards to generate: {selectedStudents.length}</span>
+                <span>Template: {template?.name ?? "none chosen"}</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span>Exam: Mid-Term 2024</span>
+                <span>Exam: {exam ? `${exam.label} (${exam.window})` : "none chosen"}</span>
               </div>
+              {unpaid > 0 && (
+                <p className="text-xs text-yellow-700">
+                  {unpaid} selected student{unpaid > 1 ? "s have" : " has"} an unpaid fee balance.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-2 pt-4">
-              <Button className="w-full" disabled={selectedStudents.length === 0}>
+              <Button className="w-full" disabled={chosen.length === 0} onClick={openPreview}>
                 <Eye className="h-4 w-4 mr-2" />
                 Preview Admit Cards
               </Button>
-              <Button variant="outline" className="w-full" disabled={selectedStudents.length === 0}>
+              <Button variant="outline" className="w-full" disabled={chosen.length === 0} onClick={print}>
                 <Printer className="h-4 w-4 mr-2" />
                 Print Admit Cards
               </Button>
-              <Button variant="outline" className="w-full" disabled={selectedStudents.length === 0}>
+              <Button variant="outline" className="w-full" disabled={chosen.length === 0} onClick={download}>
                 <Download className="h-4 w-4 mr-2" />
                 Download PDF
               </Button>
@@ -223,10 +294,7 @@ export default function GenerateAdmitCards() {
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="p-3 text-left">
-                      <Checkbox
-                        checked={selectedStudents.length === filteredStudents.length && filteredStudents.length > 0}
-                        onCheckedChange={toggleAll}
-                      />
+                      <Checkbox checked={allSelected} onCheckedChange={toggleAll} />
                     </th>
                     <th className="p-3 text-left text-sm font-medium">Student ID</th>
                     <th className="p-3 text-left text-sm font-medium">Name</th>
@@ -249,7 +317,9 @@ export default function GenerateAdmitCards() {
                       <td className="p-3 text-sm">{student.class} - {student.section}</td>
                       <td className="p-3 text-sm">{student.rollNo}</td>
                       <td className="p-3">
-                        {getFeeStatusBadge(student.feeStatus)}
+                        <Badge className={FEE_BADGES[student.feeStatus]}>
+                          {student.feeStatus}
+                        </Badge>
                       </td>
                     </tr>
                   ))}
@@ -259,18 +329,50 @@ export default function GenerateAdmitCards() {
 
             {filteredStudents.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                No students found matching your search
+                No students found matching your filters
               </div>
             )}
 
             <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-700">
-                <strong>Note:</strong> Students with overdue fees are highlighted. You can filter to show only students who have paid their fees.
+                <strong>Note:</strong> Only students visible under the current filters are
+                included in the printed batch. Use the fee status filter to restrict generation
+                to students who have cleared their fees.
               </p>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Admit card preview</DialogTitle>
+            <DialogDescription>
+              {chosen.length} card{chosen.length > 1 ? "s" : ""} using {effectiveTemplate?.name}
+              {exam ? ` for ${exam.label}` : ""}.
+            </DialogDescription>
+          </DialogHeader>
+          {effectiveTemplate && (
+            <div
+              className="rounded-lg bg-white p-4"
+              dangerouslySetInnerHTML={{
+                __html: chosen.map((student) => admitCardHtml(effectiveTemplate, student)).join(""),
+              }}
+            />
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={print}>
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+            <Button onClick={download}>
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

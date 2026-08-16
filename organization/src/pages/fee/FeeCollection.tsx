@@ -26,7 +26,7 @@ import {
 import { CreditCard, Receipt, AlertCircle, CheckCircle, Plus, Printer } from "lucide-react";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { feeStatementPdf } from "@/lib/documents";
+import { feeReceiptPdf, feeStatementPdf } from "@/lib/documents";
 
 interface FeeRecord {
   id: string;
@@ -195,6 +195,10 @@ export default function FeeCollection() {
   const [isCollectDialogOpen, setIsCollectDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<FeeRecord | null>(null);
   const [amount,setAmount]=useState("");const [method,setMethod]=useState("CASH");
+  const [remarks,setRemarks]=useState("");
+  /** Receipt number handed back by the last successful collection, so the
+   *  receipt can be reprinted for real instead of as a provisional copy. */
+  const [lastReceipt,setLastReceipt]=useState<{recordId:string;receiptNo:string}|null>(null);
   const [students,setStudents]=useState<Array<{id:string;firstName:string;lastName:string;enrollmentNo?:string}>>([]);
   const [isCreateDialogOpen,setIsCreateDialogOpen]=useState(false);
   const [invoice,setInvoice]=useState({studentId:"",description:"",amount:"",dueDate:""});
@@ -205,6 +209,8 @@ export default function FeeCollection() {
 
   const createInvoice=async()=>{setCreating(true);try{await api("/core/fees/invoices",{method:"POST",body:JSON.stringify({studentId:invoice.studentId,description:invoice.description,amount:Number(invoice.amount),dueDate:invoice.dueDate})});toast({title:"Invoice created",description:`${invoice.description} raised successfully.`});setIsCreateDialogOpen(false);setInvoice({studentId:"",description:"",amount:"",dueDate:""});await load()}catch(error){toast({title:"Could not create invoice",description:error instanceof Error?error.message:"Please try again",variant:"destructive"})}finally{setCreating(false)}};
 
+  const collected = !!selectedRecord && lastReceipt?.recordId === selectedRecord.id;
+
   const totalCollected = records.reduce((sum, r) => sum + r.paidAmount, 0);
   const totalPending = records.reduce((sum, r) => sum + r.dueAmount, 0);
   const paidCount = records.filter((r) => r.status === "paid").length;
@@ -213,7 +219,30 @@ export default function FeeCollection() {
   const handleCollectFee = (record: FeeRecord) => {
     setSelectedRecord(record);
     setAmount(String(record.dueAmount));
+    setRemarks("");
+    setLastReceipt(null);
     setIsCollectDialogOpen(true);
+  };
+
+  const printReceipt=()=>{
+    if(!selectedRecord)return;
+    const paid=Number(amount);
+    if(!paid||paid<=0){toast({title:"Enter an amount",description:"A receipt needs the amount being collected.",variant:"destructive"});return}
+    const receiptNo=lastReceipt?.recordId===selectedRecord.id?lastReceipt.receiptNo:undefined;
+    feeReceiptPdf({
+      studentName:selectedRecord.studentName,
+      rollNo:selectedRecord.rollNo,
+      feeType:selectedRecord.feeType,
+      amount:paid,
+      method,
+      remarks,
+      receiptNo,
+      balanceAfter:Math.max(0,selectedRecord.dueAmount-paid),
+    });
+    toast({
+      title:receiptNo?"Receipt generated":"Provisional receipt generated",
+      description:receiptNo?`Receipt ${receiptNo} is in Downloads.`:"Collect the payment to issue a numbered receipt.",
+    });
   };
 
   const handleActions = (record: FeeRecord) => [
@@ -221,7 +250,8 @@ export default function FeeCollection() {
     { label: "Print Statement", onClick: () => printStatement(record) },
   ];
   const printStatement=(record:FeeRecord)=>{feeStatementPdf(record);toast({title:"PDF statement generated",description:"The print-ready statement is in Downloads."})};
-  const collect=async()=>{if(!selectedRecord)return;try{const payment=await api<{receiptNo:string}>(`/core/fees/invoices/${selectedRecord.id}/payments`,{method:"POST",body:JSON.stringify({amount:Number(amount),method})});toast({title:"Payment collected",description:`Receipt ${payment.receiptNo} created successfully.`});setIsCollectDialogOpen(false);await load()}catch(error){toast({title:"Payment failed",description:error instanceof Error?error.message:"Please try again",variant:"destructive"})}};
+  /** Stays open on success so the numbered receipt can be printed straight away. */
+  const collect=async()=>{if(!selectedRecord)return;try{const payment=await api<{receiptNo:string}>(`/core/fees/invoices/${selectedRecord.id}/payments`,{method:"POST",body:JSON.stringify({amount:Number(amount),method})});setLastReceipt({recordId:selectedRecord.id,receiptNo:payment.receiptNo});toast({title:"Payment collected",description:`Receipt ${payment.receiptNo} created successfully.`});await load()}catch(error){toast({title:"Payment failed",description:error instanceof Error?error.message:"Please try again",variant:"destructive"})}};
 
   return (
     <AppLayout>
@@ -420,20 +450,25 @@ export default function FeeCollection() {
 
               <div className="space-y-2">
                 <Label htmlFor="remarks">Remarks</Label>
-                <Input id="remarks" placeholder="Optional remarks" />
+                <Input
+                  id="remarks"
+                  placeholder="Optional remarks"
+                  value={remarks}
+                  onChange={e=>setRemarks(e.target.value)}
+                />
               </div>
             </div>
           )}
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsCollectDialogOpen(false)}>
-              Cancel
+              {collected ? "Close" : "Cancel"}
             </Button>
-            <Button variant="outline" className="gap-2">
+            <Button variant="outline" className="gap-2" onClick={printReceipt}>
               <Printer className="h-4 w-4" />
               Print Receipt
             </Button>
-            <Button onClick={collect}>
-              Collect Payment
+            <Button onClick={collect} disabled={collected}>
+              {collected ? "Collected" : "Collect Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

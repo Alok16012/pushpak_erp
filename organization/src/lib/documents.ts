@@ -245,3 +245,52 @@ export function feeStatementPdf(record: {
   footer(doc, "Idealdigiskills");
   save(doc, `fee-statement-${record.rollNo}.pdf`);
 }
+
+/**
+ * Receipt for a single payment. `receiptNo` is omitted while the payment has
+ * only been keyed in — the sheet then prints as provisional so a counter copy
+ * can never pass for a collected one.
+ */
+export function feeReceiptPdf(payment: {
+  studentName: string;
+  rollNo: string;
+  feeType: string;
+  amount: number;
+  method: string;
+  remarks?: string;
+  receiptNo?: string;
+  balanceAfter: number;
+}) {
+  const doc = new jsPDF();
+  const provisional = !payment.receiptNo;
+  header(
+    doc,
+    provisional ? "PROVISIONAL RECEIPT" : "FEE RECEIPT",
+    payment.receiptNo ?? "Not yet collected",
+  );
+  line(doc, "Student", payment.studentName, 55);
+  line(doc, "Roll number", payment.rollNo, 72);
+  line(doc, "Fee description", payment.feeType, 89);
+  line(doc, "Received on", new Date().toLocaleString("en-IN"), 106);
+
+  doc.setFillColor(245, 245, 245);
+  doc.roundedRect(16, 125, 178, 54, 3, 3, "F");
+  line(doc, "Amount received", `INR ${payment.amount.toLocaleString("en-IN")}`, 136);
+  line(doc, "Payment method", payment.method.replace(/_/g, " "), 153);
+  line(doc, "Balance after payment", `INR ${payment.balanceAfter.toLocaleString("en-IN")}`, 170);
+
+  if (payment.remarks?.trim()) line(doc, "Remarks", payment.remarks.trim(), 190);
+
+  if (provisional) {
+    doc.setFontSize(9);
+    doc.setTextColor(180, 60, 60);
+    doc.text(
+      "Provisional — valid only once the payment is collected and a receipt number is issued.",
+      16,
+      provisional && payment.remarks?.trim() ? 208 : 190,
+    );
+  }
+
+  footer(doc, "Idealdigiskills");
+  save(doc, `fee-receipt-${payment.receiptNo ?? payment.rollNo}.pdf`);
+}

@@ -14,6 +14,17 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Plus,
   Save,
   Eye,
@@ -29,79 +40,23 @@ import { useState } from "react";
 import { useLocalCollection, newId } from "@/hooks/use-local-collection";
 import { printHtml } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import {
+  ADMIT_CARD_ELEMENTS,
+  ADMIT_CARD_TEMPLATES_KEY,
+  ADMIT_CARD_TEMPLATE_SEED,
+  AdmitCardTemplate as Template,
+  EXAMS,
+  INSTITUTE,
+  INSTRUCTIONS,
+  PAGE_SIZES,
+  SAMPLE_STUDENT,
+  admitCardHtml,
+  blankAdmitCardTemplate,
+  fieldValue,
+  findExam,
+} from "@/data/admit-card-templates";
 
-type Template = {
-  id: string;
-  name: string;
-  exam: string;
-  status: "active" | "draft";
-  size: string;
-  showQr: boolean;
-  showPhoto: boolean;
-  showSchedule: boolean;
-  /** Labels from `fieldElements` that are placed on the card. */
-  elements: string[];
-};
-
-const EXAMS = [
-  { value: "midterm", label: "Mid-Term Exam" },
-  { value: "final", label: "Final Exam" },
-  { value: "unit", label: "Unit Test" },
-];
-
-const fieldElements = [
-  { icon: Type, label: "Student Name", type: "text" },
-  { icon: Type, label: "Roll Number", type: "text" },
-  { icon: Type, label: "Class & Section", type: "text" },
-  { icon: Type, label: "Exam Name", type: "text" },
-  { icon: Type, label: "Exam Date", type: "text" },
-  { icon: Image, label: "Student Photo", type: "image" },
-  { icon: Image, label: "School Logo", type: "image" },
-  { icon: QrCode, label: "QR Code", type: "qr" },
-  { icon: Table, label: "Exam Schedule", type: "table" },
-  { icon: Type, label: "Instructions", type: "textarea" },
-];
-
-/** Placeholder values so the canvas shows what a printed card will look like. */
-const SAMPLE: Record<string, string> = {
-  "Student Name": "Aarav Sharma",
-  "Roll Number": "101",
-  "Class & Section": "10th - A",
-  "Exam Name": "Mid-Term Examination 2024",
-  "Exam Date": "15 Jan 2025",
-};
-
-const SCHEDULE = [
-  { subject: "Mathematics", when: "15 Jan, 9:00 AM" },
-  { subject: "Science", when: "16 Jan, 9:00 AM" },
-  { subject: "English", when: "17 Jan, 9:00 AM" },
-];
-
-const DEFAULT_ELEMENTS = [
-  "Student Name",
-  "Roll Number",
-  "Class & Section",
-  "Exam Name",
-  "Exam Date",
-  "School Logo",
-];
-
-const SEED: Template[] = [
-  { id: "1", name: "Mid-Term Exam 2024", exam: "midterm", status: "active", size: "a4", showQr: true, showPhoto: true, showSchedule: true, elements: DEFAULT_ELEMENTS },
-  { id: "2", name: "Final Exam 2024", exam: "final", status: "draft", size: "a4", showQr: false, showPhoto: true, showSchedule: true, elements: DEFAULT_ELEMENTS },
-  { id: "3", name: "Unit Test Template", exam: "unit", status: "active", size: "a5", showQr: true, showPhoto: false, showSchedule: false, elements: ["Student Name", "Roll Number", "Exam Name"] },
-];
-
-const blank = (): Omit<Template, "id"> => ({
-  name: "",
-  exam: "",
-  status: "draft",
-  size: "a4",
-  showQr: true,
-  showPhoto: true,
-  showSchedule: true,
-  elements: [...DEFAULT_ELEMENTS],
-});
+const ELEMENT_ICONS = { text: Type, image: Image, qr: QrCode, table: Table, textarea: Type };
 
 /** The three toggles that have their own switches, keyed by element label. */
 const SWITCHED: Record<string, "showPhoto" | "showQr" | "showSchedule"> = {
@@ -112,12 +67,18 @@ const SWITCHED: Record<string, "showPhoto" | "showQr" | "showSchedule"> = {
 
 export default function AdmitCardTemplate() {
   const { toast } = useToast();
-  const { items, add, update, remove } = useLocalCollection<Template>("erp-admit-card-templates", SEED);
+  const { items, add, update, remove } = useLocalCollection<Template>(
+    ADMIT_CARD_TEMPLATES_KEY,
+    ADMIT_CARD_TEMPLATE_SEED,
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState(blank);
+  const [draft, setDraft] = useState(blankAdmitCardTemplate);
 
   const set = <K extends keyof Omit<Template, "id">>(key: K, value: Omit<Template, "id">[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
+
+  const exam = findExam(draft.exam);
+  const examLabel = exam?.label ?? "Examination";
 
   const isPlaced = (label: string) => {
     const flag = SWITCHED[label];
@@ -143,7 +104,7 @@ export default function AdmitCardTemplate() {
 
   const startNew = () => {
     setEditingId(null);
-    setDraft(blank());
+    setDraft(blankAdmitCardTemplate());
     toast({ title: "New template", description: "The canvas is reset — name it and save." });
   };
 
@@ -164,7 +125,7 @@ export default function AdmitCardTemplate() {
   };
 
   const duplicate = (template: Template) => {
-    const { id, ...rest } = template;
+    const { id: _id, ...rest } = template;
     add({ ...rest, name: `${template.name} (Copy)`, status: "draft" });
     toast({ title: "Template duplicated", description: `A draft copy of ${template.name} was created.` });
   };
@@ -173,31 +134,17 @@ export default function AdmitCardTemplate() {
     remove(template.id);
     if (editingId === template.id) {
       setEditingId(null);
-      setDraft(blank());
+      setDraft(blankAdmitCardTemplate());
     }
     toast({ title: "Template deleted", description: `${template.name} was removed.` });
   };
 
-  const examLabel = EXAMS.find((e) => e.value === draft.exam)?.label ?? "Examination";
-
-  const preview = () => {
-    const rows = draft.elements
-      .filter((label) => SAMPLE[label])
-      .map((label) => `<tr><td>${label}</td><td>${SAMPLE[label]}</td></tr>`)
-      .join("");
-    const schedule = draft.showSchedule
-      ? `<h3>Exam Schedule</h3><table>${SCHEDULE.map((s) => `<tr><td>${s.subject}</td><td>${s.when}</td></tr>`).join("")}</table>`
-      : "";
-    const photo = draft.showPhoto ? "<p>[ Student Photo ]</p>" : "";
-    const qr = draft.showQr ? "<p>[ QR Code ]</p>" : "";
-    const instructions = draft.elements.includes("Instructions")
-      ? "<p><strong>Instructions:</strong> Carry this admit card and a valid photo ID to every session.</p>"
-      : "";
+  /** Print the sample card exactly as the generator would render it. */
+  const preview = () =>
     printHtml(
       draft.name || "Admit Card",
-      `<div class="card"><h2>ADMIT CARD — ${examLabel}</h2>${photo}<table>${rows}</table>${schedule}${instructions}${qr}<p>Principal's Signature: ____________</p></div>`,
+      admitCardHtml({ ...draft, id: editingId ?? "preview" }, SAMPLE_STUDENT),
     );
-  };
 
   return (
     <AppLayout>
@@ -229,21 +176,24 @@ export default function AdmitCardTemplate() {
             <CardTitle className="text-lg">Elements</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {fieldElements.map((element) => (
-              <button
-                key={element.label}
-                type="button"
-                onClick={() => togglePlaced(element.label)}
-                className={`w-full flex items-center gap-3 p-3 border rounded-lg text-left transition-colors hover:bg-muted/50 ${
-                  isPlaced(element.label) ? "border-primary bg-primary/5" : ""
-                }`}
-              >
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-                <element.icon className="h-4 w-4 text-primary" />
-                <span className="text-sm flex-1">{element.label}</span>
-                {isPlaced(element.label) && <Badge variant="secondary" className="text-[10px]">on</Badge>}
-              </button>
-            ))}
+            {ADMIT_CARD_ELEMENTS.map((element) => {
+              const Icon = ELEMENT_ICONS[element.type];
+              return (
+                <button
+                  key={element.label}
+                  type="button"
+                  onClick={() => togglePlaced(element.label)}
+                  className={`w-full flex items-center gap-3 p-3 border rounded-lg text-left transition-colors hover:bg-muted/50 ${
+                    isPlaced(element.label) ? "border-primary bg-primary/5" : ""
+                  }`}
+                >
+                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                  <Icon className="h-4 w-4 text-primary" />
+                  <span className="text-sm flex-1">{element.label}</span>
+                  {isPlaced(element.label) && <Badge variant="secondary" className="text-[10px]">on</Badge>}
+                </button>
+              );
+            })}
             <p className="text-xs text-muted-foreground pt-2">
               Click an element to place it on — or remove it from — the canvas
             </p>
@@ -255,14 +205,14 @@ export default function AdmitCardTemplate() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Template Canvas</CardTitle>
-              <Select value={draft.size} onValueChange={(v) => set("size", v)}>
+              <Select value={draft.size} onValueChange={(v) => set("size", v as Template["size"])}>
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="a4">A4 Size</SelectItem>
-                  <SelectItem value="a5">A5 Size</SelectItem>
-                  <SelectItem value="letter">Letter</SelectItem>
+                  {PAGE_SIZES.map((size) => (
+                    <SelectItem key={size.value} value={size.value}>{size.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -277,8 +227,8 @@ export default function AdmitCardTemplate() {
                       <Image className="h-8 w-8 text-muted-foreground" />
                     </div>
                   )}
-                  <h2 className="font-bold text-lg">School Name Here</h2>
-                  <p className="text-xs text-muted-foreground">School Address, City - PIN</p>
+                  <h2 className="font-bold text-lg">{INSTITUTE.name}</h2>
+                  <p className="text-xs text-muted-foreground">{INSTITUTE.address}</p>
                 </div>
 
                 <div className="text-center mb-4">
@@ -294,11 +244,12 @@ export default function AdmitCardTemplate() {
                   )}
                   <div className="flex-1 space-y-2 text-sm">
                     {draft.elements
-                      .filter((label) => SAMPLE[label])
-                      .map((label) => (
-                        <div key={label} className="flex justify-between">
+                      .map((label) => [label, fieldValue(label, SAMPLE_STUDENT, exam)] as const)
+                      .filter(([, value]) => value !== null)
+                      .map(([label, value]) => (
+                        <div key={label} className="flex justify-between gap-3">
                           <span className="text-muted-foreground">{label}:</span>
-                          <span className="font-medium">{SAMPLE[label]}</span>
+                          <span className="font-medium text-right">{value}</span>
                         </div>
                       ))}
                   </div>
@@ -308,20 +259,21 @@ export default function AdmitCardTemplate() {
                   <div className="border rounded p-3 mb-4">
                     <h4 className="text-xs font-semibold mb-2">EXAM SCHEDULE</h4>
                     <div className="text-xs space-y-1">
-                      {SCHEDULE.map((slot) => (
-                        <div key={slot.subject} className="flex justify-between">
+                      {(exam?.schedule ?? []).map((slot) => (
+                        <div key={slot.subject} className="flex justify-between gap-3">
                           <span>{slot.subject}</span>
                           <span>{slot.when}</span>
                         </div>
                       ))}
+                      {!exam && (
+                        <p className="text-muted-foreground">Pick an exam type to show its schedule.</p>
+                      )}
                     </div>
                   </div>
                 )}
 
                 {draft.elements.includes("Instructions") && (
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Carry this admit card and a valid photo ID to every session.
-                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">{INSTRUCTIONS}</p>
                 )}
 
                 <div className="flex justify-between items-end pt-4 border-t">
@@ -361,8 +313,8 @@ export default function AdmitCardTemplate() {
                     <SelectValue placeholder="Select exam" />
                   </SelectTrigger>
                   <SelectContent>
-                    {EXAMS.map((exam) => (
-                      <SelectItem key={exam.value} value={exam.value}>{exam.label}</SelectItem>
+                    {EXAMS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -416,7 +368,7 @@ export default function AdmitCardTemplate() {
                   <button type="button" className="text-left flex-1" onClick={() => load(template)}>
                     <p className="text-sm font-medium">{template.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {EXAMS.find((e) => e.value === template.exam)?.label ?? template.exam}
+                      {findExam(template.exam)?.label ?? template.exam}
                     </p>
                   </button>
                   <div className="flex items-center gap-1">
@@ -426,14 +378,25 @@ export default function AdmitCardTemplate() {
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => duplicate(template)}>
                       <Copy className="h-3 w-3" />
                     </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => destroy(template)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive">
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete this template?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {template.name} will be removed. Cards already generated are unaffected.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => destroy(template)}>Delete</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
               ))}
