@@ -2,15 +2,27 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Login from "./pages/Login";
 
 // Pages
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+
+// Franchise / branch
+import FranchiseDashboard from "./pages/franchise/FranchiseDashboard";
+
+// Student portal
+import StudentDashboard from "./pages/portal/StudentDashboard";
+import MyAttendance from "./pages/portal/MyAttendance";
+import MyFees from "./pages/portal/MyFees";
+import MyResults from "./pages/portal/MyResults";
+import MyClasses from "./pages/portal/MyClasses";
+import MyDocuments from "./pages/portal/MyDocuments";
+import MyProfile from "./pages/portal/MyProfile";
 
 // Reception
 import EnquiriesWorkspace from "./pages/reception/EnquiriesWorkspace";
@@ -31,9 +43,7 @@ import OnlineStudentEnquiry from "./pages/enquiry/OnlineStudentEnquiry";
 
 // Student Management
 import ViewStudents from "./pages/student/ViewStudents";
-import AddStudent from "./pages/student/AddStudent";
 import OnlineAdmissionList from "./pages/student/OnlineAdmissionList";
-import StudentAdmissionForm from "./pages/student/StudentAdmissionForm";
 import AdmissionsWorkspace from "./pages/student/AdmissionsWorkspace";
 
 // Fee Management
@@ -44,19 +54,11 @@ import FeeAllocation from "./pages/fee/FeeAllocation";
 import DueFeeCollection from "./pages/fee/DueFeeCollection";
 
 // Course Management
-import ViewCourses from "./pages/course/ViewCourses";
-import CreateCourse from "./pages/course/CreateCourse";
-import CreateBatch from "./pages/course/CreateBatch";
 import BatchTiming from "./pages/course/BatchTiming";
 import AssignCourseToBatch from "./pages/course/AssignCourseToBatch";
 import AcademicsWorkspace from "./pages/course/AcademicsWorkspace";
 
 // Exam Management
-import ExamSchedule from "./pages/exam/ExamSchedule";
-import CreateExam from "./pages/exam/CreateExam";
-import AssignMarks from "./pages/exam/AssignMarks";
-import MarksList from "./pages/exam/MarksList";
-import GradeManagement from "./pages/exam/GradeManagement";
 import AssessmentsWorkspace from "./pages/exam/AssessmentsWorkspace";
 
 // Online Exam
@@ -74,14 +76,6 @@ import IDCardTemplate from "./pages/cards/IDCardTemplate";
 import GenerateIDCards from "./pages/cards/GenerateIDCards";
 import AdmitCardTemplate from "./pages/cards/AdmitCardTemplate";
 import GenerateAdmitCards from "./pages/cards/GenerateAdmitCards";
-
-// Certificates
-import CertificateTemplate from "./pages/certificate/CertificateTemplate";
-import GenerateCertificates from "./pages/certificate/GenerateCertificates";
-
-// Marksheets
-import MarksheetTemplate from "./pages/marksheet/MarksheetTemplate";
-import GenerateMarksheets from "./pages/marksheet/GenerateMarksheets";
 
 // Settings
 import GeneralSettings from "./pages/settings/GeneralSettings";
@@ -116,6 +110,14 @@ import AllSessionYears from "./pages/session/AllSessionYears";
 
 const queryClient = new QueryClient();
 
+/** The root path belongs to whichever workspace the signed-in authorisation
+ *  owns: the organisation roll-up, one branch, or the student's own portal. */
+function Dashboard() {
+  const { view } = useAuth();
+  if (view === "student") return <Navigate to="/me" replace />;
+  return view === "franchise" ? <FranchiseDashboard /> : <Index />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider><ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="theme">
@@ -127,8 +129,17 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute />}>
           {/* Dashboard */}
-          <Route path="/" element={<Index />} />
-          
+          <Route path="/" element={<Dashboard />} />
+
+          {/* Student portal */}
+          <Route path="/me" element={<StudentDashboard />} />
+          <Route path="/me/classes" element={<MyClasses />} />
+          <Route path="/me/attendance" element={<MyAttendance />} />
+          <Route path="/me/fees" element={<MyFees />} />
+          <Route path="/me/results" element={<MyResults />} />
+          <Route path="/me/documents" element={<MyDocuments />} />
+          <Route path="/me/profile" element={<MyProfile />} />
+
           {/* Reception Management */}
           <Route path="/reception/enquiry" element={<EnquiriesWorkspace />} />
           <Route path="/reception/visitors" element={<EnquiriesWorkspace />} />

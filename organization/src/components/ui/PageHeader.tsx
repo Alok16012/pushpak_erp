@@ -1,5 +1,7 @@
 import { ChevronRight, Home } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { VIEWS } from "@/lib/roles";
 
 interface BreadcrumbItem {
   label: string;
@@ -14,11 +16,13 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ title, description, breadcrumbs, actions }: PageHeaderProps) {
+  // The crumb trail starts at whichever dashboard this authorisation owns.
+  const { view } = useAuth();
   return (
     <div className="mb-5 space-y-1">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="mb-3 flex items-center gap-1 overflow-hidden text-xs text-muted-foreground sm:text-sm">
-          <Link to="/" className="hover:text-foreground transition-colors">
+          <Link to={VIEWS[view].home} className="hover:text-foreground transition-colors">
             <Home className="h-4 w-4" />
           </Link>
           {breadcrumbs.map((item, index) => (

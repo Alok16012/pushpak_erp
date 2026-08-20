@@ -8,6 +8,14 @@ const FLAG = "erp-demo-mode";
 
 export const demoUser = { id: "demo-admin", name: "Demo Administrator", email: "demo@idealdigiskills.com", role: "ORGANIZATION_ADMIN", organizationId: "demo-org", branchId: "demo-branch" };
 
+/** One demo account per view, so the demo can be entered as any authorisation
+ *  level. The role on each account is what the view gate actually reads. */
+export const demoUsers = {
+  admin: demoUser,
+  franchise: { id: "demo-franchise", name: "Kothrud Franchise", email: "kothrud@idealdigiskills.com", role: "BRANCH_ADMIN", organizationId: "demo-org", branchId: "demo-branch" },
+  student: { id: "demo-student", name: "Aarav Sharma", email: "aarav.sharma@student.idealdigiskills.com", role: "STUDENT", organizationId: "demo-org", branchId: "demo-branch" },
+};
+
 export const isDemoMode = () => localStorage.getItem(FLAG) === "1";
 export const enableDemoMode = () => localStorage.setItem(FLAG, "1");
 export const disableDemoMode = () => { localStorage.removeItem(FLAG); collections = null; documents = null; };
