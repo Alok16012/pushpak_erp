@@ -50,3 +50,6 @@ tmp/
 bun.lockb
 
 .claude/
+
+# Local Netlify folder
+.netlify
