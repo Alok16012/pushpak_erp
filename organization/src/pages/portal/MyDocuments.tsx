@@ -79,15 +79,14 @@ export default function MyDocuments() {
       api<StudentProfile>("/core/student/profile"),
       api<PortalInvoice[]>("/core/portal/invoices"),
       api<PortalResult[]>("/core/portal/results"),
-      const body = await api<{ data: PortalRequest[] }>("/core/portal/requests");
-      if (body.success) setRequests(body.data.data);
+      api<{ data: PortalRequest[] }>("/core/portal/requests"),
     ])
-      .then(([profileData, invoicesData, resultsData, requestsData]) => {
+      .then(([profileData, invoicesData, resultsData, requestsRes]) => {
         if (cancelled) return;
         setProfile(profileData);
         setInvoices(invoicesData);
         setResults(resultsData);
-        setRequests(requestsData);
+        setRequests(requestsRes.data);
         setIdTemplates(localTemplates);
         setAdmitTemplates(localAdmitTemplates);
         const activeIds = localTemplates.filter((t) => t.status === "active");
