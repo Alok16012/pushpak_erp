@@ -1,7 +1,12 @@
-import { ApiError } from "./api";
-
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5050/api/v1";
 const REQUEST_TIMEOUT_MS = 30_000;
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 let refreshPromise: Promise<string> | null = null;
 async function refreshAccessToken() {
@@ -37,24 +42,39 @@ export async function api<T>(path: string, options: RequestInit = {}, retry = tr
       },
     });
   } catch (error) {
-    if (error instanceof DOMException && error.name === "TimeoutError")
-      throw new ApiError("The server took too long to respond. Please try again.", 408);
-    throw new ApiError("Could not reach the server. Check your connection and try again.", 0);
-  }
-  if (response.status === 401 && retry && path !== "/auth/login" && path !== "/auth/refresh") {
-    try {
-      await refreshAccessToken();
-      return api<T>(path, options, false);
-    } catch {
-      localStorage.removeItem("erp-access-token");
-      localStorage.removeItem("erp-refresh-token");
-      localStorage.removeItem("erp-user");
-      window.dispatchEvent(new Event("erp-session-expired"));
-      throw new ApiError("Your session has expired. Please sign in again.", 401);
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new ApiError("Request timed out", 504);
     }
+    throw new ApiError(error instanceof Error ? error.message : "Network error", 0);
   }
-  if (response.status === 204) return undefined as T;
-  const body = await response.json().catch(() => ({ message: "Unexpected server response" }));
-  if (!response.ok) throw new ApiError(body.message || "Request failed", response.status, body.errors);
-  return body.data as T;
+  if (!response.ok) {
+    if (response.status === 401 && retry) {
+      try {
+        const newToken = await refreshAccessToken();
+        response = await fetch(`${API_URL}${path}`, {
+          ...options,
+          signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${newToken}`,
+            ...options.headers,
+          },
+        });
+        if (response.ok) {
+          const body = await response.json();
+          return body as T;
+        }
+      } catch {
+        localStorage.removeItem("erp-access-token");
+        localStorage.removeItem("erp-refresh-token");
+        localStorage.removeItem("erp-user");
+        window.dispatchEvent(new Event("erp-session-expired"));
+        throw new ApiError("Session expired", 401);
+      }
+    }
+    const message = await response.text();
+    throw new ApiError(message || `HTTP ${response.status}`, response.status);
+  }
+  const body = await response.json();
+  return body as T;
 }

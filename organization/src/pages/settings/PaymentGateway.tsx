@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreditCard, Globe, Shield, CheckCircle, AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
-import { CreditCard, Globe, Shield, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const CONNECTED_KEY = "erp-gateways-connected";

@@ -79,7 +79,8 @@ export default function MyDocuments() {
       api<StudentProfile>("/core/student/profile"),
       api<PortalInvoice[]>("/core/portal/invoices"),
       api<PortalResult[]>("/core/portal/results"),
-      api<PortalRequest[]>("/core/portal/requests"),
+      const body = await api<{ data: PortalRequest[] }>("/core/portal/requests");
+      if (body.success) setRequests(body.data.data);
     ])
       .then(([profileData, invoicesData, resultsData, requestsData]) => {
         if (cancelled) return;
@@ -139,11 +140,11 @@ export default function MyDocuments() {
     if (!requestNote.trim()) return toast({ title: "Add a note", description: "Say what you need the document for.", variant: "destructive" });
     setSubmitting(true);
     try {
-      const data = await api<PortalRequest>("/core/portal/requests", {
+      const body = await api<PortalRequest>("/core/portal/requests", {
         method: "POST",
         body: JSON.stringify({ kind: requestKind, detail: requestNote.trim() }),
       });
-      setRequests((prev) => [data, ...prev]);
+      setRequests((prev) => [body.data, ...prev]);
       toast({ title: "Request sent", description: `${requestKind} · the branch office will respond on your registered email.` });
       setRequestOpen(false);
       setRequestNote("");

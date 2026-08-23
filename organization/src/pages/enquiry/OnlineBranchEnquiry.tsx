@@ -102,9 +102,9 @@ export default function OnlineBranchEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const data = await api<OnlineEnquiry[]>("/core/enquiries");
+        const body = await api<{ data: OnlineEnquiry[] }>("/core/enquiries");
         if (!cancelled) {
-          setEnquiries(data);
+          setEnquiries(body.data.data);
         }
       } catch (err) {
         if (!cancelled) {
@@ -122,8 +122,8 @@ export default function OnlineBranchEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const data = await api<OnlineEnquiry[]>("/core/enquiries");
-      setEnquiries(data);
+      const body = await api<{ data: OnlineEnquiry[] }>("/core/enquiries");
+      setEnquiries(body.data.data);
     } catch {
       // silent
     }

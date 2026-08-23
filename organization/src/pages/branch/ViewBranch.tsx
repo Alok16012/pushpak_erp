@@ -120,8 +120,8 @@ export default function ViewBranch() {
   useEffect(() => {
     const fetchBranches = async () => {
       try {
-        const data = await api<{ items: Branch[] }>("/core/branches");
-        setBranchesData(data.items);
+        const body = await api<{ items: Branch[] }>("/core/branches");
+        setBranchesData(body.data.items);
       } catch {
         toast({ title: "Failed to load branches", variant: "destructive" });
       } finally {

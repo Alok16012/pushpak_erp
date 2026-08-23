@@ -62,7 +62,7 @@ export default function BranchEnquiry() {
     setLoading(true);
     try {
       const res = await api<{ data: Enquiry[] }>("/core/enquiries");
-      setEnquiries(res.data);
+      setEnquiries(res.data.data);
     } catch {
       toast({ title: "Failed to load enquiries", variant: "destructive" });
     } finally {
@@ -140,11 +140,11 @@ export default function BranchEnquiry() {
       return;
     }
     try {
-      const data = await api<{ data: Enquiry }>(`/core/enquiries/${enquiry.id}`, {
+      const res = await api<{ data: Enquiry }>(`/core/enquiries/${enquiry.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "CONVERTED" }),
       });
-      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? data.data : e)));
+      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? res.data.data : e)));
       toast({ title: "Converted to admission", description: `${enquiry.visitorName} — continue at Student Management.` });
     } catch (err) {
       toast({ title: "Failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
@@ -153,11 +153,11 @@ export default function BranchEnquiry() {
 
   const closeEnquiry = async (enquiry: Enquiry) => {
     try {
-      const data = await api<{ data: Enquiry }>(`/core/enquiries/${enquiry.id}`, {
+      const res = await api<{ data: Enquiry }>(`/core/enquiries/${enquiry.id}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "CLOSED", closeNote: "Closed by staff" }),
       });
-      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? data.data : e)));
+      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? res.data.data : e)));
       toast({ title: "Enquiry closed", description: enquiry.visitorName });
       setClosing(null);
     } catch (err) {
@@ -388,9 +388,9 @@ export default function BranchEnquiry() {
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 {[
                   ["Visit date", new Date(details.visitDate).toLocaleDateString("en-IN")],
-                  ["Purpose", details.purpose},
+                  ["Purpose", details.purpose],
                   ["Person to Meet", details.personToMeet],
-                  ["Department", details.department},
+                  ["Department", details.department],
                   ["Next follow-up", details.followUpDate ? new Date(details.followUpDate).toLocaleDateString("en-IN") : "—"],
                   ["Status", details.status.toLowerCase()],
                 ].map(([label, value]) => (

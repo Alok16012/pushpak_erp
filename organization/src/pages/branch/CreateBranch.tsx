@@ -47,8 +47,8 @@ export default function CreateBranch() {
   useEffect(() => {
     const fetchBranches = async () => {
       try {
-        const data = await api<{ items: Branch[] }>("/core/branches");
-        setBranches(data.items);
+        const body = await api<{ items: Branch[] }>("/core/branches");
+        setBranches(body.data.items);
       } catch {
         // start with empty list on failure
       }

@@ -136,7 +136,7 @@ export default function CreateOnlineExam() {
         }),
       });
       const updated = await api<{ data: Exam[] }>("/core/exams");
-      setExams(updated.data);
+      setExams(updated.data.data);
       setForm(BLANK);
       toast({ title: "Exam created", description: `${form.title} is scheduled and ready.` });
     } catch {

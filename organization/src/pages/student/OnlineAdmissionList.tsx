@@ -121,9 +121,9 @@ export default function OnlineAdmissionList() {
   useEffect(() => {
     const fetchStudents = async () => {
       try {
-        const data = await api<{ items: OnlineAdmission[] }>("/core/students");
-        if (data.items && data.items.length > 0) {
-          setAdmissions(data.items);
+        const body = await api<{ items: OnlineAdmission[] }>("/core/students");
+        if (body.data.items && body.data.items.length > 0) {
+          setAdmissions(body.data.items);
         } else {
           setAdmissions(SEED);
         }

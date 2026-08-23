@@ -42,19 +42,10 @@ export interface Exam {
 
 export const ADMIT_CARD_TEMPLATES_KEY = "erp-admit-card-templates";
 
-export const INSTRUCTIONS =
-  "Carry this admit card and a valid photo ID to every session. Reach the centre 30 minutes before the reporting time.";
-
-export const blankAdmitCardTemplate = (): Omit<AdmitCardTemplate, "id"> => ({
-  name: "",
-  exam: "",
-  status: "draft",
-  size: "a4",
-  showQr: true,
-  showPhoto: true,
-  showSchedule: true,
-  elements: [...DEFAULT_ELEMENTS],
-});
+export const INSTITUTE = {
+  name: "Pushpak Institute",
+  address: "12 MG Road, Pune - 411001",
+};
 
 /** A readable date `offset` days from today — fixtures must stay near "now". */
 const readable = (offset: number) =>
@@ -135,6 +126,23 @@ export const PAGE_SIZES = [
   { value: "letter", label: "Letter" },
 ] as const;
 
+export const ADMIT_CARD_TEMPLATE_SEED: AdmitCardTemplate[] = [
+  { id: "1", name: "Mid-Term Exam Template", exam: "midterm", status: "active", size: "a4", showQr: true, showPhoto: true, showSchedule: true, elements: DEFAULT_ELEMENTS },
+  { id: "2", name: "Final Exam Template", exam: "final", status: "draft", size: "a4", showQr: false, showPhoto: true, showSchedule: true, elements: DEFAULT_ELEMENTS },
+  { id: "3", name: "Unit Test Template", exam: "unit", status: "active", size: "a5", showQr: true, showPhoto: false, showSchedule: false, elements: ["Student Name", "Roll Number", "Exam Name", "Exam Date"] },
+];
+
+export const ADMIT_CARD_STUDENTS: AdmitCardStudent[] = [
+  { id: "STU001", name: "Rahul Sharma", class: "10th", section: "A", rollNo: "101", feeStatus: "paid" },
+  { id: "STU002", name: "Priya Patel", class: "10th", section: "A", rollNo: "102", feeStatus: "paid" },
+  { id: "STU003", name: "Amit Kumar", class: "10th", section: "B", rollNo: "103", feeStatus: "pending" },
+  { id: "STU004", name: "Sneha Gupta", class: "9th", section: "A", rollNo: "201", feeStatus: "paid" },
+  { id: "STU005", name: "Vikram Singh", class: "9th", section: "B", rollNo: "202", feeStatus: "overdue" },
+  { id: "STU006", name: "Anita Desai", class: "8th", section: "A", rollNo: "301", feeStatus: "paid" },
+];
+
+/** The record the designer canvas renders, so the layout is never empty. */
+export const SAMPLE_STUDENT: AdmitCardStudent = ADMIT_CARD_STUDENTS[0];
 
 export const INSTRUCTIONS =
   "Carry this admit card and a valid photo ID to every session. Reach the centre 30 minutes before the reporting time.";

@@ -104,9 +104,9 @@ export default function OnlineStudentEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const data = await api<StudentEnquiry[]>("/core/enquiries");
+        const body = await api<{ data: StudentEnquiry[] }>("/core/enquiries");
         if (!cancelled) {
-          setEnquiries(data);
+          setEnquiries(body.data.data);
         }
       } catch (err) {
         if (!cancelled) {
@@ -124,8 +124,8 @@ export default function OnlineStudentEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const data = await api<StudentEnquiry[]>("/core/enquiries");
-      setEnquiries(data);
+      const body = await api<{ data: StudentEnquiry[] }>("/core/enquiries");
+      setEnquiries(body.data.data);
     } catch {
       // silent
     }

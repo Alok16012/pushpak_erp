@@ -23,10 +23,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("erp-session-expired", expire);
   }, []);
   const login = async (identifier: string, password: string) => {
-    const data = await api<{ accessToken: string; refreshToken: string; user: User }>("/auth/login", {
+    const body = await api<{ success: boolean; data: { accessToken: string; refreshToken: string; user: User } }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ identifier, password }),
     });
+    if (!body.success) throw new Error(body.data?.user ? "Login failed" : "Invalid credentials");
+    const data = body.data;
     localStorage.setItem("erp-access-token", data.accessToken);
     localStorage.setItem("erp-refresh-token", data.refreshToken);
     localStorage.setItem("erp-user", JSON.stringify(data.user));

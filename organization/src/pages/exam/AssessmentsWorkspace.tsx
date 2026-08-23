@@ -22,7 +22,6 @@ import {
   type StudentDocument,
 } from "@/lib/documents";
 import { Award, Download, FileCheck2, GraduationCap, Save } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 type Exam = {
   id: string;
@@ -184,14 +183,14 @@ export default function AssessmentsWorkspace() {
   const generate = async (kind: "admission" | "marksheet" | "certificate") => {
     if (!studentId) return;
     try {
-      const data = await api<StudentDocument>(
+      const body = await api<StudentDocument>(
         `/core/documents/students/${studentId}`,
       );
       ({
         admission: admissionPdf,
         marksheet: marksheetPdf,
         certificate: certificatePdf,
-      })[kind](data);
+      })[kind](body.data);
       toast({
         title: "PDF generated",
         description: `The ${kind} is ready in Downloads.`,

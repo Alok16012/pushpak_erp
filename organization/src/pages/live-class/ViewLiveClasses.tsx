@@ -121,7 +121,7 @@ export default function ViewLiveClasses() {
     const fetchClasses = async () => {
       try {
         const data = await api<{ items: LiveClass[] }>("/core/portal/classes");
-        setClassesData(data.items);
+        setClassesData(data.data.items);
       } catch {
         toast({ title: "Failed to load classes", variant: "destructive" });
       } finally {

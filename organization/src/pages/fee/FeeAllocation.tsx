@@ -272,8 +272,8 @@ export default function FeeAllocation() {
     }
 
     try {
-      const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
-      setInvoices(refreshed);
+      const refreshed = await api<{ data: FeeInvoice[] }>("/core/fees/invoices");
+      setInvoices(refreshed.data.data);
     } catch {
       // Refresh failed; state will reconcile on next manual action.
     }
@@ -303,8 +303,8 @@ export default function FeeAllocation() {
             dueDate: changeDue,
           }),
         });
-        const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
-        setInvoices(refreshed);
+        const refreshed = await api<{ data: FeeInvoice[] }>("/core/fees/invoices");
+        setInvoices(refreshed.data.data);
         toast({ title: "Fee group updated", description: `${changing.name} → ${group.name}.` });
       } catch {
         toast({ title: "Failed to update fee group", variant: "destructive" });
@@ -334,8 +334,8 @@ export default function FeeAllocation() {
           method: "POST",
           body: JSON.stringify({ amount, note: discount.note.trim() || (discount.mode === "percent" ? `${value}% concession` : "Flat concession") }),
         });
-        const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
-        setInvoices(refreshed);
+        const refreshed = await api<{ data: FeeInvoice[] }>("/core/fees/invoices");
+        setInvoices(refreshed.data.data);
         toast({
           title: "Discount applied",
           description: `₹${amount.toLocaleString()} off — ${discounting.name} now owes ₹${(discounting.totalFee - amount).toLocaleString()}.`,

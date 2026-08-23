@@ -297,7 +297,7 @@ export default function StudentDashboard() {
               <div key={result.id} className="flex items-center gap-3 border-b py-3 last:border-0">
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{result.exam?.subject || "Unknown"}</p><p className="text-xs text-muted-foreground">{result.exam?.name || "Unknown"} · {result.exam?.examDate ? new Date(result.exam.examDate).toLocaleDateString("en-IN") : ""}</p></div>
                 <span className="tabular text-sm font-semibold">{Number(result.marks || 0)}/{result.exam?.maxMarks || 100}</span>
-                <Badge variant={(result.marks || 0) >= (result.exam?.passMarks || 40) ? "secondary" : "destructive">{(result.marks || 0) >= (result.exam?.passMarks || 40) ? "Pass" : "Review"}</Badge>
+                <Badge variant={(result.marks || 0) >= (result.exam?.passMarks || 40) ? "secondary" : "destructive"}>{(result.marks || 0) >= (result.exam?.passMarks || 40) ? "Pass" : "Review"}</Badge>
               </div>
             ))}
             {!recent.length && <p className="py-6 text-center text-sm text-muted-foreground">No results published yet.</p>}

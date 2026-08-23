@@ -120,8 +120,8 @@ export default function LiveClassSetup() {
           api<{ items: Array<{ name: string }> }>("/core/courses"),
           api<{ items: Array<{ name: string; _count?: { students: number } }> }>("/core/batches"),
         ]);
-        setCourses(coursesRes.items.map((c) => c.name));
-        setBatches(batchesRes.items.map((b) => ({
+        setCourses(coursesRes.data.items.map((c) => c.name));
+        setBatches(batchesRes.data.items.map((b) => ({
           value: b.name,
           label: `${b.name}${b._count?.students ? ` · ${b._count.students} students` : ""}`,
         })));
@@ -138,10 +138,10 @@ export default function LiveClassSetup() {
   useEffect(() => {
     const fetchMeta = async () => {
       try {
-        const data = await api<{ items: { subject: string; instructor: string }[] }>("/core/portal/classes");
+        const body = await api<{ items: { subject: string; instructor: string }[] }>("/core/portal/classes");
         const subjSet = new Set<string>();
         const instrSet = new Set<string>();
-        data.items.forEach((c) => { subjSet.add(c.subject); instrSet.add(c.instructor); });
+        body.data.items.forEach((c) => { subjSet.add(c.subject); instrSet.add(c.instructor); });
         if (subjSet.size > 0) setSubjects(Array.from(subjSet).sort());
         if (instrSet.size > 0) setInstructors(Array.from(instrSet).sort());
       } catch {

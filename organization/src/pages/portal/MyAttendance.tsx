@@ -119,11 +119,11 @@ export default function MyAttendance() {
     if (!reason.trim()) return toast({ title: "Add a reason", description: "Tell the office what happened on that day.", variant: "destructive" });
     setSubmitting(true);
     try {
-      const data = await api<PortalRequestResponse>("/core/portal/requests", {
+      const body = await api<PortalRequestResponse>("/core/portal/requests", {
         method: "POST",
         body: JSON.stringify({ kind: "Attendance correction", detail: `${dispute.date} — ${reason.trim()}` }),
       });
-      setRequests((prev) => [{ id: data.id, kind: data.action, detail: data.details.detail, raisedAt: data.createdAt, status: "open" }, ...prev]);
+      setRequests((prev) => [{ id: body.data.id, kind: body.data.action, detail: body.data.details.detail, raisedAt: body.data.createdAt, status: "open" }, ...prev]);
       toast({ title: "Correction requested", description: `The office will review ${new Date(dispute.date).toLocaleDateString("en-IN")}.` });
       setDispute(null);
       setReason("");

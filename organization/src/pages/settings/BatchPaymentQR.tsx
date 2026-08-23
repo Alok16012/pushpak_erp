@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { QrCode, Download, Printer, School, Users } from "lucide-react";
 import { useMemo, useState, useEffect } from "react";
-import { QrCode, Download, Printer, School, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { qrDataUrl, upiUri } from "@/lib/upi";
 import { dataUrlToBytes, downloadZip, printHtml } from "@/lib/export";

@@ -70,8 +70,8 @@ export default function BranchNoticeBoard() {
   useEffect(() => {
     const fetchNotices = async () => {
       try {
-        const data = await api<{ items: Notice[] }>("/core/notices");
-        setItems(data.items);
+        const body = await api<{ items: Notice[] }>("/core/notices");
+        setItems(body.data.items);
       } catch {
         toast({ title: "Failed to load notices", variant: "destructive" });
       } finally {
@@ -115,7 +115,7 @@ export default function BranchNoticeBoard() {
           method: "POST",
           body: JSON.stringify(draft),
         });
-        setItems((list) => [created.item, ...list]);
+        setItems((list) => [created.data.item, ...list]);
         toast({ title: "Notice published", description: draft.title });
       }
       setIsDialogOpen(false);

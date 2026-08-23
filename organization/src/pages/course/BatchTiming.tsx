@@ -76,7 +76,7 @@ export default function BatchTiming() {
   const loadBatches = useCallback(async () => {
     try {
       const res = await api<{ data: Batch[] }>("/core/batches");
-      const activeBatches = res.data.filter((b) => b.isActive !== false);
+      const activeBatches = res.data.data.filter((b) => b.isActive !== false);
       setBatches(activeBatches);
       if (!selectedBatchId && activeBatches.length > 0) {
         setSelectedBatchId(activeBatches[0].id);
@@ -92,7 +92,7 @@ export default function BatchTiming() {
     setLoading(true);
     try {
       const res = await api<{ data: TimingSlot[] }>(`/core/timetable?batchId=${batchId}`);
-      setSlots(res.data);
+      setSlots(res.data.data);
     } catch {
       toast({ title: "Failed to load timetable", variant: "destructive" });
     } finally {
@@ -149,7 +149,7 @@ export default function BatchTiming() {
     }
     try {
       if (editingSlot) {
-        const data = await api<TimingSlot>(`/core/timetable/${editingSlot.id}`, {
+        const res = await api<{ data: TimingSlot }>(`/core/timetable/${editingSlot.id}`, {
           method: "PATCH",
           body: JSON.stringify({
             day: draft.day,
@@ -160,10 +160,10 @@ export default function BatchTiming() {
             instructor: draft.instructor || null,
           }),
         });
-        setSlots((list) => list.map((s) => (s.id === editingSlot.id ? data : s)));
+        setSlots((list) => list.map((s) => (s.id === editingSlot.id ? res.data : s)));
         toast({ title: "Slot updated", description: `${draft.subject} on ${DAY_LABELS[draft.day]}.` });
       } else {
-        const data = await api<TimingSlot>("/core/timetable", {
+        const res = await api<{ data: TimingSlot }>("/core/timetable", {
           method: "POST",
           body: JSON.stringify({
             batchId: draft.batchId,
@@ -176,7 +176,7 @@ export default function BatchTiming() {
             instructor: draft.instructor || undefined,
           }),
         });
-        setSlots((list) => [...list, data]);
+        setSlots((list) => [...list, res]);
         toast({ title: "Slot added", description: `${draft.subject} on ${DAY_LABELS[draft.day]} at ${draft.startTime}.` });
       }
       setIsDialogOpen(false);

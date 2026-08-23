@@ -195,9 +195,9 @@ export default function EnquiriesWorkspace() {
         createdAt: string;
       }>
     >("/core/enquiries")
-      .then((data) =>
+      .then((body) =>
         setLiveRecords(
-          data.map((item) => ({
+          (body.data ?? []).map((item) => ({
             id: item.id,
             name: item.visitorName,
             phone: item.phone,
@@ -250,7 +250,7 @@ export default function EnquiriesWorkspace() {
       );
       setLiveRecords((prev) => [
         {
-          id: created.id,
+          id: created.data.id,
           name: draft.name,
           phone: draft.phone,
           purpose: draft.purpose || "Other",

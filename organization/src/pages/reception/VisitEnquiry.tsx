@@ -14,8 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Save, X, UserPlus, Clock, Calendar } from "lucide-react";
-import { MapPin, Phone } from "lucide-react";
+import { Upload, Save, X, UserPlus, Clock, Calendar, MapPin, Phone } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
