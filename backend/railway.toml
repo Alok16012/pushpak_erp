@@ -1,9 +1,8 @@
 [build]
-builder = "nixpacks"
-buildCommand = "cd backend && npm ci && npx prisma generate && npx tsc -p tsconfig.build.json"
+builder = "dockerfile"
+dockerfilePath = "../Dockerfile"
 
 [deploy]
-startCommand = "cd backend && npm run prisma:migrate && npm start"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
