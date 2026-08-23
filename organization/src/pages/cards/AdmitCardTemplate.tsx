@@ -36,13 +36,10 @@ import {
   Table,
   GripVertical,
 } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection, newId } from "@/hooks/use-local-collection";
-import { printHtml } from "@/lib/export";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import {
   ADMIT_CARD_ELEMENTS,
-  ADMIT_CARD_TEMPLATES_KEY,
   ADMIT_CARD_TEMPLATE_SEED,
   AdmitCardTemplate as Template,
   EXAMS,
@@ -65,17 +62,48 @@ const SWITCHED: Record<string, "showPhoto" | "showQr" | "showSchedule"> = {
   "Exam Schedule": "showSchedule",
 };
 
+interface AdmitCardTemplateRow {
+  id: string;
+  name: string;
+  exam: string;
+  status: "active" | "draft";
+  size: "a4" | "a5" | "letter";
+  showQr: boolean;
+  showPhoto: boolean;
+  showSchedule: boolean;
+  elements: string[];
+}
+
 export default function AdmitCardTemplate() {
   const { toast } = useToast();
-  const { items, add, update, remove } = useLocalCollection<Template>(
-    ADMIT_CARD_TEMPLATES_KEY,
-    ADMIT_CARD_TEMPLATE_SEED,
-  );
+  const [items, setItems] = useState<AdmitCardTemplateRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState(blankAdmitCardTemplate);
+  const [draft, setDraft] = useState<Omit<AdmitCardTemplateRow, "id">>(blankAdmitCardTemplate());
 
-  const set = <K extends keyof Omit<Template, "id">>(key: K, value: Omit<Template, "id">[K]) =>
+  const set = <K extends keyof Omit<AdmitCardTemplateRow, "id">>(key: K, value: Omit<AdmitCardTemplateRow, "id">[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const raw = localStorage.getItem("erp-admit-card-templates");
+      if (raw) {
+        setItems(JSON.parse(raw));
+      } else {
+        setItems(ADMIT_CARD_TEMPLATE_SEED);
+      }
+    } catch {
+      setItems(ADMIT_CARD_TEMPLATE_SEED);
+    }
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistItems = (list: AdmitCardTemplateRow[]) => {
+    setItems(list);
+    try {
+      localStorage.setItem("erp-admit-card-templates", JSON.stringify(list));
+    } catch { /* quota */ }
+  };
 
   const exam = findExam(draft.exam);
   const examLabel = exam?.label ?? "Examination";
@@ -96,7 +124,7 @@ export default function AdmitCardTemplate() {
     );
   };
 
-  const load = (template: Template) => {
+  const load = (template: AdmitCardTemplateRow) => {
     const { id, ...rest } = template;
     setEditingId(id);
     setDraft(rest);
@@ -105,7 +133,7 @@ export default function AdmitCardTemplate() {
   const startNew = () => {
     setEditingId(null);
     setDraft(blankAdmitCardTemplate());
-    toast({ title: "New template", description: "The canvas is reset — name it and save." });
+    toast({ title: "New template", description: "The canvas is reset - name it and save." });
   };
 
   const save = () => {
@@ -114,24 +142,26 @@ export default function AdmitCardTemplate() {
       return;
     }
     if (editingId) {
-      update(editingId, draft);
+      const updated = items.map((item) => (item.id === editingId ? { ...item, ...draft } : item));
+      persistItems(updated);
       toast({ title: "Template updated", description: `${draft.name} was saved.` });
       return;
     }
-    const id = newId("tpl");
-    add({ ...draft, id });
-    setEditingId(id);
+    const newTemplate: AdmitCardTemplateRow = { ...draft, id: `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
+    persistItems([newTemplate, ...items]);
+    setEditingId(newTemplate.id);
     toast({ title: "Template saved", description: `${draft.name} was added to your templates.` });
   };
 
-  const duplicate = (template: Template) => {
+  const duplicate = (template: AdmitCardTemplateRow) => {
     const { id: _id, ...rest } = template;
-    add({ ...rest, name: `${template.name} (Copy)`, status: "draft" });
+    const newTemplate: AdmitCardTemplateRow = { ...rest, name: `${template.name} (Copy)`, status: "draft", id: `tpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
+    persistItems([newTemplate, ...items]);
     toast({ title: "Template duplicated", description: `A draft copy of ${template.name} was created.` });
   };
 
-  const destroy = (template: Template) => {
-    remove(template.id);
+  const destroy = (template: AdmitCardTemplateRow) => {
+    persistItems(items.filter((item) => item.id !== template.id));
     if (editingId === template.id) {
       setEditingId(null);
       setDraft(blankAdmitCardTemplate());
@@ -140,11 +170,13 @@ export default function AdmitCardTemplate() {
   };
 
   /** Print the sample card exactly as the generator would render it. */
-  const preview = () =>
+  const preview = () => {
+    const effective: AdmitCardTemplate = { ...draft, id: editingId ?? "preview" } as AdmitCardTemplate;
     printHtml(
       draft.name || "Admit Card",
-      admitCardHtml({ ...draft, id: editingId ?? "preview" }, SAMPLE_STUDENT),
+      admitCardHtml(effective, SAMPLE_STUDENT),
     );
+  };
 
   return (
     <AppLayout>
@@ -195,7 +227,7 @@ export default function AdmitCardTemplate() {
               );
             })}
             <p className="text-xs text-muted-foreground pt-2">
-              Click an element to place it on — or remove it from — the canvas
+              Click an element to place it on - or remove it from - the canvas
             </p>
           </CardContent>
         </Card>
@@ -205,7 +237,7 @@ export default function AdmitCardTemplate() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-lg">Template Canvas</CardTitle>
-              <Select value={draft.size} onValueChange={(v) => set("size", v as Template["size"])}>
+              <Select value={draft.size} onValueChange={(v) => set("size", v as "a4" | "a5" | "letter")}>
                 <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>

@@ -8,31 +8,31 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Globe, Image, Share2, Upload, Save, Calendar } from "lucide-react";
-import { useLocalState } from "@/hooks/use-local-collection";
+import { useEffect, useState } from "react";
 import { pickImage } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 
 const DEFAULTS = {
-  siteName: "ABC School - Main Campus",
-  tagline: "Excellence in Education Since 1990",
-  description: "Leading educational institution providing quality education...",
-  keywords: "school, education, learning, courses",
-  domain: "https://abcschool.edu",
-  subdomain: "main",
+  siteName: "",
+  tagline: "",
+  description: "",
+  keywords: "",
+  domain: "",
+  subdomain: "",
   ssl: true,
   wwwRedirect: true,
-  email: "info@abcschool.edu",
-  phone: "+91 98765 43210",
-  address: "123 Education Street, Mumbai, Maharashtra 400001",
+  email: "",
+  phone: "",
+  address: "",
   onlineAdmissions: true,
   onlineFees: true,
   studentPortal: true,
   parentPortal: false,
-  registrationDate: "2024-01-01",
-  expiryDate: "2025-01-01",
-  renewalDate: "2024-12-25",
-  bannerTitle: "Welcome to ABC School",
-  bannerSubtitle: "Shaping Tomorrow's Leaders Today",
+  registrationDate: "",
+  expiryDate: "",
+  renewalDate: "",
+  bannerTitle: "",
+  bannerSubtitle: "",
   facebook: "",
   twitter: "",
   instagram: "",
@@ -44,11 +44,26 @@ const DEFAULTS = {
   banner: "",
 };
 
+const STORAGE_KEY = "erp-website-settings";
+
 export default function BranchWebsiteSettings() {
   const { toast } = useToast();
-  const [form, setForm] = useLocalState("erp-website-settings", DEFAULTS);
+  const [form, setForm] = useState<Record<string, any>>(DEFAULTS);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setForm({ ...DEFAULTS, ...JSON.parse(raw) });
+    } catch { /* use defaults */ }
+  }, []);
+
+  const persist = (next: Record<string, any>) => {
+    setForm(next);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+
   const set = <K extends keyof typeof DEFAULTS>(key: K, value: (typeof DEFAULTS)[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
+    persist({ ...form, [key]: value });
 
   const upload = async (field: "logo" | "favicon" | "banner", accept: string) => {
     const picked = await pickImage(accept);

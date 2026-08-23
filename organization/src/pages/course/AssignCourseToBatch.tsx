@@ -20,9 +20,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BookOpen, Users, Link2, CheckCircle } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection, useLocalState } from "@/hooks/use-local-collection";
+import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
+import { newId } from "@/hooks/use-local-collection";
 
 interface CourseAssignment {
   id: string;
@@ -34,32 +35,24 @@ interface CourseAssignment {
   status: "assigned" | "pending";
 }
 
-const assignmentsData: CourseAssignment[] = [
-  { id: "1", course: "Computer Science", courseCode: "CS101", batch: "CS-2024-A", subjects: ["Data Structures", "Algorithms", "Database Systems", "Web Development"], instructors: ["Dr. Smith", "Prof. Johnson"], status: "assigned" },
-  { id: "2", course: "Computer Science", courseCode: "CS101", batch: "CS-2024-B", subjects: ["Data Structures", "Algorithms", "Database Systems", "Web Development"], instructors: ["Prof. Johnson", "Dr. Patel"], status: "assigned" },
-  { id: "3", course: "Commerce", courseCode: "COM101", batch: "COM-2024-A", subjects: ["Accounting", "Economics", "Business Studies", "Statistics"], instructors: ["Dr. Sharma", "Prof. Gupta"], status: "assigned" },
-  { id: "4", course: "Engineering", courseCode: "ENG101", batch: "ENG-2024-A", subjects: ["Mathematics", "Physics", "Chemistry", "Engineering Drawing"], instructors: ["Prof. Kumar"], status: "pending" },
-];
+interface Course {
+  id: string;
+  name: string;
+  code: string;
+}
 
-const availableCourses = [
-  { id: "cs", name: "Computer Science", code: "CS101" },
-  { id: "com", name: "Commerce", code: "COM101" },
-  { id: "eng", name: "Engineering", code: "ENG101" },
-  { id: "arts", name: "Arts", code: "ART101" },
-  { id: "sci", name: "Science", code: "SCI101" },
-];
-
-const availableBatches = [
-  { id: "csa", name: "CS-2024-A", course: "Computer Science" },
-  { id: "csb", name: "CS-2024-B", course: "Computer Science" },
-  { id: "coma", name: "COM-2024-A", course: "Commerce" },
-  { id: "enga", name: "ENG-2024-A", course: "Engineering" },
-];
+interface Batch {
+  id: string;
+  name: string;
+  course: string;
+}
 
 const availableSubjects = [
   "Data Structures", "Algorithms", "Database Systems", "Web Development",
   "Operating Systems", "Computer Networks", "Software Engineering", "Machine Learning"
 ];
+
+const INSTRUCTOR_POOL = ["Dr. Smith", "Prof. Johnson", "Dr. Patel", "Dr. Sharma", "Prof. Gupta", "Prof. Kumar"];
 
 const columns: Column<CourseAssignment>[] = [
   {
@@ -125,16 +118,13 @@ const columns: Column<CourseAssignment>[] = [
   },
 ];
 
-const INSTRUCTOR_POOL = ["Dr. Smith", "Prof. Johnson", "Dr. Patel", "Dr. Sharma", "Prof. Gupta", "Prof. Kumar"];
-
 export default function AssignCourseToBatch() {
   const { toast } = useToast();
-  const { items: assignments, add, update, remove } = useLocalCollection<CourseAssignment>(
-    "erp-course-assignments",
-    assignmentsData,
-  );
-  const [subjectsList, setSubjectsList] = useLocalState<string[]>("erp-course-subjects", availableSubjects);
-
+  const [assignments, setAssignments] = useState<CourseAssignment[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [subjectsList, setSubjectsList] = useState<string[]>(availableSubjects);
+  const [loading, setLoading] = useState(true);
   const [selectedBranch, setSelectedBranch] = useState("");
   const [selectedCourse, setSelectedCourse] = useState("");
   const [selectedBatch, setSelectedBatch] = useState("");
@@ -144,13 +134,53 @@ export default function AssignCourseToBatch() {
   const [editing, setEditing] = useState<CourseAssignment | null>(null);
   const [pendingRemove, setPendingRemove] = useState<CourseAssignment | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadReferenceData() {
+      try {
+        const [coursesData, batchesData] = await Promise.all([
+          api<Course[]>("/core/courses"),
+          api<Batch[]>("/core/batches"),
+        ]);
+        if (!cancelled) {
+          setCourses(coursesData);
+          setBatches(batchesData);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast({ title: "Failed to load courses and batches", variant: "destructive" });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    loadReferenceData();
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  const addAssignment = useCallback((assignment: Omit<CourseAssignment, "id">) => {
+    const newItem: CourseAssignment = { ...assignment, id: newId("ca") };
+    setAssignments((prev) => [newItem, ...prev]);
+    return newItem;
+  }, []);
+
+  const updateAssignment = useCallback((id: string, patch: Partial<CourseAssignment>) => {
+    setAssignments((prev) => prev.map((i) => (i.id === id ? { ...i, ...patch } : i)));
+  }, []);
+
+  const removeAssignment = useCallback((id: string) => {
+    setAssignments((prev) => prev.filter((i) => i.id !== id));
+  }, []);
+
   const handleActions = (assignment: CourseAssignment) => [
     { label: "View Details", onClick: () => setDetails(assignment) },
     { label: "Edit Assignment", onClick: () => setEditing(assignment) },
     {
       label: assignment.status === "assigned" ? "Mark Pending" : "Mark Assigned",
       onClick: () => {
-        update(assignment.id, { status: assignment.status === "assigned" ? "pending" : "assigned" });
+        updateAssignment(assignment.id, { status: assignment.status === "assigned" ? "pending" : "assigned" });
         toast({ title: "Assignment updated", description: `${assignment.course} · ${assignment.batch}` });
       },
     },
@@ -188,8 +218,8 @@ export default function AssignCourseToBatch() {
   };
 
   const assign = () => {
-    const course = availableCourses.find((c) => c.id === selectedCourse);
-    const batch = availableBatches.find((b) => b.id === selectedBatch);
+    const course = courses.find((c) => c.id === selectedCourse);
+    const batch = batches.find((b) => b.id === selectedBatch);
     if (!selectedBranch) {
       toast({ title: "Choose a branch", variant: "destructive" });
       return;
@@ -211,12 +241,11 @@ export default function AssignCourseToBatch() {
       return;
     }
 
-    add({
+    addAssignment({
       course: course.name,
       courseCode: course.code,
       batch: batch.name,
       subjects: [...selectedSubjects],
-      // Instructors are allocated later; seed a lead so the row is not blank.
       instructors: [INSTRUCTOR_POOL[assignments.length % INSTRUCTOR_POOL.length]],
       status: "pending",
     });
@@ -233,14 +262,14 @@ export default function AssignCourseToBatch() {
       toast({ title: "An assignment needs at least one subject", variant: "destructive" });
       return;
     }
-    update(editing.id, editing);
+    updateAssignment(editing.id, editing);
     toast({ title: "Assignment saved", description: `${editing.course} · ${editing.batch}` });
     setEditing(null);
   };
 
   const confirmRemove = () => {
     if (!pendingRemove) return;
-    remove(pendingRemove.id);
+    removeAssignment(pendingRemove.id);
     toast({ title: "Assignment removed", description: `${pendingRemove.course} · ${pendingRemove.batch}` });
     setPendingRemove(null);
   };
@@ -288,7 +317,7 @@ export default function AssignCourseToBatch() {
                     <SelectValue placeholder="Choose a course" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableCourses.map((course) => (
+                    {courses.map((course) => (
                       <SelectItem key={course.id} value={course.id}>
                         {course.name} ({course.code})
                       </SelectItem>
@@ -303,7 +332,7 @@ export default function AssignCourseToBatch() {
                     <SelectValue placeholder="Choose a batch" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableBatches.map((batch) => (
+                    {batches.map((batch) => (
                       <SelectItem key={batch.id} value={batch.id}>
                         {batch.name} - {batch.course}
                       </SelectItem>
@@ -317,8 +346,8 @@ export default function AssignCourseToBatch() {
               <div className="flex items-center justify-between">
                 <Label>Select Subjects</Label>
                 <div className="flex gap-2 max-w-xs">
-                  <Input 
-                    placeholder="New subject name" 
+                  <Input
+                    placeholder="New subject name"
                     value={newSubject}
                     onChange={(e) => setNewSubject(e.target.value)}
                     className="h-8"
@@ -355,7 +384,7 @@ export default function AssignCourseToBatch() {
 
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="outline" onClick={resetForm}>Cancel</Button>
-              <Button disabled={!selectedCourse || !selectedBatch} onClick={assign}>
+              <Button disabled={loading || !selectedCourse || !selectedBatch} onClick={assign}>
                 <Link2 className="h-4 w-4 mr-2" />
                 Assign Course
               </Button>
@@ -382,7 +411,7 @@ export default function AssignCourseToBatch() {
             </div>
             <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <span className="text-sm">Total Batches</span>
-              <span className="font-bold">{availableBatches.length}</span>
+              <span className="font-bold">{batches.length}</span>
             </div>
           </CardContent>
         </Card>

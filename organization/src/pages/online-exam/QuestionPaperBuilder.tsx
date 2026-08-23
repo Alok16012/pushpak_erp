@@ -21,9 +21,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, FileText, HelpCircle, CheckSquare, ListOrdered } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
 import { QUESTION_BANK_KEY, QUESTION_SEED, type Question } from "./AddQuestions";
@@ -38,13 +37,12 @@ interface QuestionPaper {
   duration: string;
   createdDate: string;
   status: "draft" | "published" | "archived";
-  /** Ids into the shared question bank; empty on the fixtures, filled by "Add Questions". */
   questionIds?: string[];
 }
 
 const PAPERS_KEY = "erp-question-papers";
 
-const papersData: QuestionPaper[] = [
+const PAPERS_SEED: QuestionPaper[] = [
   { id: "1", paperCode: "QP-2024-CS-001", title: "Mid-Term Computer Science", course: "Computer Science", totalQuestions: 50, totalMarks: 100, duration: "2 hours", createdDate: "2024-01-15", status: "published" },
   { id: "2", paperCode: "QP-2024-PHY-001", title: "Physics Unit Test", course: "Science", totalQuestions: 30, totalMarks: 50, duration: "1 hour", createdDate: "2024-01-18", status: "published" },
   { id: "3", paperCode: "QP-2024-MATH-001", title: "Mathematics Final Exam", course: "Commerce", totalQuestions: 60, totalMarks: 100, duration: "3 hours", createdDate: "2024-01-20", status: "draft" },
@@ -126,8 +124,10 @@ const BLANK = { title: "", course: COURSES[0], duration: DURATIONS[3], totalMark
 export default function QuestionPaperBuilder() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items: papers, add, update, remove } = useLocalCollection<QuestionPaper>(PAPERS_KEY, papersData);
-  const { items: bank } = useLocalCollection<Question>(QUESTION_BANK_KEY, QUESTION_SEED);
+
+  const [papers, setPapers] = useState<QuestionPaper[]>([]);
+  const [bank, setBank] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -138,6 +138,30 @@ export default function QuestionPaperBuilder() {
 
   const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    try {
+      const rawPapers = localStorage.getItem(PAPERS_KEY);
+      setPapers(rawPapers ? JSON.parse(rawPapers) : PAPERS_SEED);
+    } catch {
+      setPapers(PAPERS_SEED);
+    }
+    try {
+      const rawBank = localStorage.getItem(QUESTION_BANK_KEY);
+      setBank(rawBank ? JSON.parse(rawBank) : QUESTION_SEED);
+    } catch {
+      setBank(QUESTION_SEED);
+    }
+    if (!cancelled) setLoading(false);
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistPapers = (list: QuestionPaper[]) => {
+    setPapers(list);
+    try { localStorage.setItem(PAPERS_KEY, JSON.stringify(list)); } catch { /* quota */ }
+  };
 
   const openCreate = () => {
     setEditingId(null);
@@ -169,11 +193,12 @@ export default function QuestionPaperBuilder() {
     }
 
     if (editingId) {
-      update(editingId, { title, course: form.course, duration: form.duration, totalMarks: marks });
+      const updated = papers.map((p) => p.id === editingId ? { ...p, title, course: form.course, duration: form.duration, totalMarks: marks } : p);
+      persistPapers(updated);
       toast({ title: "Paper updated", description: title });
     } else {
       const paperCode = nextPaperCode(form.course, papers);
-      add({
+      const newPaper: QuestionPaper = {
         paperCode,
         title,
         course: form.course,
@@ -183,8 +208,9 @@ export default function QuestionPaperBuilder() {
         createdDate: new Date().toISOString().slice(0, 10),
         status: "draft",
         questionIds: [],
-      });
-      toast({ title: "Question paper created", description: `${paperCode} · add questions next.` });
+      };
+      persistPapers([newPaper, ...papers]);
+      toast({ title: "Question paper created", description: `${paperCode} - add questions next.` });
     }
     setIsFormOpen(false);
     setEditingId(null);
@@ -198,11 +224,16 @@ export default function QuestionPaperBuilder() {
   const savePicked = () => {
     if (!picking) return;
     const chosen = bank.filter((q) => pickedIds.includes(q.id));
-    update(picking.id, {
-      questionIds: pickedIds,
-      totalQuestions: chosen.length,
-      totalMarks: chosen.reduce((sum, q) => sum + (Number(q.marks) || 0), 0) || picking.totalMarks,
+    const updated = papers.map((p) => {
+      if (p.id !== picking.id) return p;
+      return {
+        ...p,
+        questionIds: pickedIds,
+        totalQuestions: chosen.length,
+        totalMarks: chosen.reduce((sum, q) => sum + (Number(q.marks) || 0), 0) || p.totalMarks,
+      };
     });
+    persistPapers(updated);
     toast({
       title: "Questions attached",
       description: `${chosen.length} question(s) on ${picking.paperCode}.`,
@@ -216,7 +247,7 @@ export default function QuestionPaperBuilder() {
       <div style="font-family:system-ui,sans-serif;max-width:720px;margin:0 auto">
         <h1 style="margin:0;font-size:22px">${paper.title}</h1>
         <p style="margin:4px 0 8px;color:#6b7280;font-size:13px">
-          ${paper.paperCode} · ${paper.course} · ${paper.duration} · ${paper.totalMarks} marks
+          ${paper.paperCode} - ${paper.course} - ${paper.duration} - ${paper.totalMarks} marks
         </p>
         <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0" />
         ${
@@ -237,28 +268,29 @@ export default function QuestionPaperBuilder() {
                   )
                   .join("")}
               </ol>`
-            : `<p style="font-size:14px;color:#6b7280">No questions attached yet — use “Add Questions” to build this paper from the question bank.</p>`
+            : `<p style="font-size:14px;color:#6b7280">No questions attached yet - use "Add Questions" to build this paper from the question bank.</p>`
         }
       </div>`;
     printHtml(paper.paperCode, body);
   };
 
   const duplicate = (paper: QuestionPaper) => {
-    const { id: _id, ...rest } = paper;
+    const { id, ...rest } = paper;
     const paperCode = nextPaperCode(paper.course, papers);
-    add({
+    const newPaper: QuestionPaper = {
       ...rest,
       paperCode,
       title: `${paper.title} (Copy)`,
       status: "draft",
       createdDate: new Date().toISOString().slice(0, 10),
-    });
+    };
+    persistPapers([newPaper, ...papers]);
     toast({ title: "Paper duplicated", description: `${paperCode} created as a draft.` });
   };
 
   const confirmDelete = () => {
     if (!pendingDelete) return;
-    remove(pendingDelete.id);
+    persistPapers(papers.filter((p) => p.id !== pendingDelete.id));
     toast({ title: "Paper deleted", description: pendingDelete.paperCode });
     setPendingDelete(null);
   };
@@ -278,7 +310,8 @@ export default function QuestionPaperBuilder() {
           });
           return;
         }
-        update(paper.id, { status: paper.status === "published" ? "draft" : "published" });
+        const updated = papers.map((p) => p.id === paper.id ? { ...p, status: paper.status === "published" ? "draft" : "published" } : p);
+        persistPapers(updated);
         toast({
           title: paper.status === "published" ? "Paper unpublished" : "Paper published",
           description: paper.paperCode,
@@ -355,8 +388,8 @@ export default function QuestionPaperBuilder() {
             <DialogTitle>{editingId ? "Edit question paper" : "New question paper"}</DialogTitle>
             <DialogDescription>
               {editingId
-                ? "Update the paper metadata; question selection lives under “Add Questions”."
-                : "The paper starts as a draft — attach questions before publishing it."}
+                ? "Update the paper metadata; question selection lives under 'Add Questions'."
+                : "The paper starts as a draft - attach questions before publishing it."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -423,7 +456,7 @@ export default function QuestionPaperBuilder() {
           <DialogHeader>
             <DialogTitle>Add questions to {picking?.paperCode}</DialogTitle>
             <DialogDescription>
-              {pickedIds.length} selected · {pickedMarks} marks. The bank is shared with the Add Questions page.
+              {pickedIds.length} selected - {pickedMarks} marks. The bank is shared with the Add Questions page.
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-80 space-y-2 overflow-y-auto rounded-lg border p-3">
@@ -450,7 +483,7 @@ export default function QuestionPaperBuilder() {
                 <span className="text-sm">
                   <span className="block">{question.text}</span>
                   <span className="text-xs text-muted-foreground">
-                    {question.topic} · {question.difficulty} · {question.marks} mark(s)
+                    {question.topic} - {question.difficulty} - {question.marks} mark(s)
                   </span>
                 </span>
               </label>
@@ -471,7 +504,7 @@ export default function QuestionPaperBuilder() {
             <AlertDialogTitle>Delete {pendingDelete?.paperCode}?</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete?.status === "published"
-                ? "This paper is published — deleting it removes it from any exam that references it."
+                ? "This paper is published - deleting it removes it from any exam that references it."
                 : "This draft paper will be removed."}
             </AlertDialogDescription>
           </AlertDialogHeader>

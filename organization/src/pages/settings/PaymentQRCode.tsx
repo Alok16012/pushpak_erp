@@ -9,7 +9,6 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { QrCode, Upload, Download, Eye, Trash2 } from "lucide-react";
-import { useLocalCollection, newId } from "@/hooks/use-local-collection";
 import { qrDataUrl, upiUri } from "@/lib/upi";
 import { pickImage, printHtml } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
@@ -24,7 +23,6 @@ type SavedQr = {
   description: string;
   isActive: boolean;
   isPrimary: boolean;
-  /** Set only when the user uploaded their own QR image instead of generating one. */
   uploadedImage?: string;
 };
 
@@ -34,28 +32,40 @@ const SEED: SavedQr[] = [
   { id: "qr-hostel", name: "Hostel Fees", upiId: "hostel@upi", merchantName: "ABC International School", paymentType: "static", amount: "25000", description: "Hostel charges", isActive: false, isPrimary: false },
 ];
 
+const STORAGE_KEY = "erp-payment-qr";
+
 const BLANK = {
   name: "",
   upiId: "",
   merchantName: "",
-  paymentType: "dynamic",
+  paymentType: "dynamic" as const,
   amount: "",
   description: "",
   isPrimary: false,
 };
 
+const newQrId = () => `qr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
 const PaymentQRCode = () => {
   const { toast } = useToast();
-  const { items, setItems, remove, update } = useLocalCollection<SavedQr>("erp-payment-qr", SEED);
-  const [form, setForm] = useState(BLANK);
+  const [items, setItems] = useState<SavedQr[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch { /* fall through */ }
+    return SEED;
+  });
+  const [form, setForm] = useState<typeof BLANK>(BLANK);
   const [upload, setUpload] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ image: string; label: string } | null>(null);
 
   const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
-  // Live preview: re-encode whenever the payer-visible fields change, so the
-  // panel always shows the QR the Generate button would save.
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }, [items]);
+
   useEffect(() => {
     if (upload) {
       setPreview({ image: upload, label: form.name || "Uploaded QR" });
@@ -69,9 +79,7 @@ const PaymentQRCode = () => {
     qrDataUrl(upiUri({ upiId: form.upiId, merchantName: form.merchantName || form.name || "Merchant", amount: form.amount, note: form.description }))
       .then((image) => live && setPreview({ image, label: form.name || form.upiId }))
       .catch(() => live && setPreview(null));
-    return () => {
-      live = false;
-    };
+    return () => { live = false; };
   }, [upload, form.upiId, form.merchantName, form.name, form.amount, form.description]);
 
   const chooseImage = async () => {
@@ -88,7 +96,7 @@ const PaymentQRCode = () => {
       toast({ title: "Missing details", description: "A name and either a UPI ID or an uploaded image are required.", variant: "destructive" });
       return;
     }
-    const record: SavedQr = { ...form, id: newId("qr"), isActive: true, uploadedImage: upload ?? undefined };
+    const record: SavedQr = { ...form, id: newQrId(), isActive: true, uploadedImage: upload ?? undefined };
     setItems((list) => [record, ...(record.isPrimary ? list.map((q) => ({ ...q, isPrimary: false })) : list)]);
     setForm(BLANK);
     setUpload(null);
@@ -111,6 +119,15 @@ const PaymentQRCode = () => {
 
   const setPrimary = (id: string) =>
     setItems((list) => list.map((q) => ({ ...q, isPrimary: q.id === id })));
+
+  const remove = (id: string) => {
+    setItems((list) => list.filter((q) => q.id !== id));
+    toast({ title: "QR code deleted" });
+  };
+
+  const update = (id: string, changes: Partial<SavedQr>) => {
+    setItems((list) => list.map((q) => (q.id === id ? { ...q, ...changes } : q)));
+  };
 
   return (
     <AppLayout>
@@ -154,7 +171,7 @@ const PaymentQRCode = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="payment-type">Payment Type</Label>
-                <Select value={form.paymentType} onValueChange={(v) => set("paymentType", v)}>
+                <Select value={form.paymentType} onValueChange={(v) => set("paymentType", v as "dynamic" | "static")}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select payment type" />
                   </SelectTrigger>
@@ -192,7 +209,7 @@ const PaymentQRCode = () => {
                 >
                   <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    {upload ? "Image attached — click to replace" : "Click to upload or drag and drop"}
+                    {upload ? "Image attached - click to replace" : "Click to upload or drag and drop"}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     PNG, JPG up to 5MB
@@ -279,10 +296,7 @@ const PaymentQRCode = () => {
                       variant="ghost"
                       size="icon"
                       className="text-destructive"
-                      onClick={() => {
-                        remove(qr.id);
-                        toast({ title: "QR code deleted", description: `${qr.name} was removed.` });
-                      }}
+                      onClick={() => remove(qr.id)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

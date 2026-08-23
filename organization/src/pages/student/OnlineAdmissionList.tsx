@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -10,10 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { GraduationCap, Clock, CheckCircle, XCircle, Download } from "lucide-react";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 import { downloadCsv } from "@/lib/export";
 
 interface OnlineAdmission {
@@ -28,7 +28,6 @@ interface OnlineAdmission {
   documents: string[];
   paymentStatus: "paid" | "pending" | "failed";
   status: "pending" | "approved" | "rejected" | "under_review";
-  /** Set by "Request Documents" / "Reject" so the decision trail survives a reload. */
   requestedDocuments?: string[];
   decisionNote?: string;
 }
@@ -42,7 +41,8 @@ const REQUIRED_DOCUMENTS = [
   "Caste Certificate",
 ];
 
-const admissionsData: OnlineAdmission[] = [
+/** Seed data shown while the API is unavailable or empty. */
+const SEED: OnlineAdmission[] = [
   { id: "1", applicationNo: "APP2024001", date: "2024-01-15", name: "Rahul Verma", email: "rahul@example.com", phone: "+91 98765 43210", course: "Computer Science", batch: "CS-2024-A", documents: ["Photo", "10th Marksheet", "12th Marksheet", "Aadhar"], paymentStatus: "paid", status: "pending" },
   { id: "2", applicationNo: "APP2024002", date: "2024-01-14", name: "Priya Singh", email: "priya@example.com", phone: "+91 87654 32109", course: "Commerce", batch: "COM-2024-A", documents: ["Photo", "10th Marksheet", "12th Marksheet"], paymentStatus: "paid", status: "under_review" },
   { id: "3", applicationNo: "APP2024003", date: "2024-01-14", name: "Amit Kumar", email: "amit@example.com", phone: "+91 76543 21098", course: "Engineering", batch: "ENG-2024-A", documents: ["Photo", "10th Marksheet", "12th Marksheet", "Aadhar", "Transfer Certificate"], paymentStatus: "paid", status: "approved" },
@@ -110,16 +110,43 @@ const columns: Column<OnlineAdmission>[] = [
 export default function OnlineAdmissionList() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items: admissions, update } = useLocalCollection<OnlineAdmission>(
-    "erp-online-admissions",
-    admissionsData,
-  );
-
+  const [admissions, setAdmissions] = useState<OnlineAdmission[]>([]);
+  const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<OnlineAdmission | null>(null);
   const [requesting, setRequesting] = useState<OnlineAdmission | null>(null);
   const [requested, setRequested] = useState<string[]>([]);
   const [rejecting, setRejecting] = useState<OnlineAdmission | null>(null);
   const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        const data = await api<{ items: OnlineAdmission[] }>("/core/students");
+        if (data.items && data.items.length > 0) {
+          setAdmissions(data.items);
+        } else {
+          setAdmissions(SEED);
+        }
+      } catch {
+        setAdmissions(SEED);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStudents();
+  }, []);
+
+  const updateAdmission = async (id: string, changes: Partial<OnlineAdmission>) => {
+    setAdmissions((prev) => prev.map((a) => (a.id === id ? { ...a, ...changes } : a)));
+    try {
+      await api(`/core/students/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(changes),
+      });
+    } catch {
+      toast({ title: "Update failed", description: "Could not save changes to the server.", variant: "destructive" });
+    }
+  };
 
   const approve = (admission: OnlineAdmission) => {
     if (admission.status === "approved") {
@@ -134,13 +161,12 @@ export default function OnlineAdmissionList() {
       });
       return;
     }
-    update(admission.id, { status: "approved", decisionNote: "" });
+    updateAdmission(admission.id, { status: "approved", decisionNote: "" });
     toast({ title: "Application approved", description: `${admission.name} · ${admission.course}` });
   };
 
   const openRequest = (admission: OnlineAdmission) => {
     setRequesting(admission);
-    // Pre-tick whatever the applicant has not uploaded yet.
     setRequested(REQUIRED_DOCUMENTS.filter((doc) => !admission.documents.includes(doc)));
   };
 
@@ -150,7 +176,7 @@ export default function OnlineAdmissionList() {
       toast({ title: "Pick at least one document to request", variant: "destructive" });
       return;
     }
-    update(requesting.id, { status: "under_review", requestedDocuments: requested });
+    updateAdmission(requesting.id, { status: "under_review", requestedDocuments: requested });
     toast({
       title: "Documents requested",
       description: `${requested.length} document(s) requested from ${requesting.name}.`,
@@ -164,7 +190,7 @@ export default function OnlineAdmissionList() {
       toast({ title: "Add a rejection reason", variant: "destructive" });
       return;
     }
-    update(rejecting.id, { status: "rejected", decisionNote: reason.trim() });
+    updateAdmission(rejecting.id, { status: "rejected", decisionNote: reason.trim() });
     toast({ title: "Application rejected", description: rejecting.applicationNo });
     setRejecting(null);
     setReason("");
@@ -209,6 +235,16 @@ export default function OnlineAdmissionList() {
     approved: admissions.filter(a => a.status === "approved").length,
     rejected: admissions.filter(a => a.status === "rejected").length,
   };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading applications...</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>

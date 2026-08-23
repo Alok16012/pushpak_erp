@@ -9,22 +9,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Copy, Eye, GripVertical, Image as ImageIcon, Plus, QrCode, Save, Trash2, Type } from "lucide-react";
-import { useState } from "react";
-import { newId, useLocalCollection } from "@/hooks/use-local-collection";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
 import { idCardsPdf } from "@/lib/id-card-pdf";
 import {
   ACCENT_OPTIONS,
   ID_CARD_FIELDS,
-  ID_CARD_TEMPLATES_KEY,
-  ID_CARD_TEMPLATE_SEED,
   IdCardTemplate as Template,
-  SAMPLE_STUDENT,
   blankIdCardTemplate,
   fieldValue,
   idCardHtml,
 } from "@/data/id-card-templates";
+
+interface IdCardTemplateRow {
+  id: string;
+  name: string;
+  orientation: "portrait" | "landscape";
+  accent: string;
+  instituteName: string;
+  instituteAddress: string;
+  fields: string[];
+  showPhoto: boolean;
+  showQr: boolean;
+  showSignature: boolean;
+  validUntil: string;
+  status: "active" | "draft";
+}
 
 /** The switches own these three, so they are not toggled from the element list. */
 const SWITCHED: Record<string, "showPhoto" | "showQr" | "showSignature"> = {
@@ -40,18 +51,49 @@ const elementList = [
   { label: "Signature Line", icon: Type },
 ];
 
+/** Blank placeholder for the canvas when no real student data is chosen. */
+const SAMPLE_STUDENT: Record<string, any> = {
+  id: "",
+  name: "",
+  class: "",
+  section: "",
+  rollNo: "",
+  photo: false,
+  dob: "",
+  bloodGroup: "",
+  parentContact: "",
+  address: "",
+};
+
 export default function IDCardTemplate() {
   const { toast } = useToast();
-  const { items, add, update, remove } = useLocalCollection<Template>(
-    ID_CARD_TEMPLATES_KEY,
-    ID_CARD_TEMPLATE_SEED,
-  );
+  const [items, setItems] = useState<IdCardTemplateRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState(blankIdCardTemplate);
-  const [deleting, setDeleting] = useState<Template | null>(null);
+  const [draft, setDraft] = useState<Omit<IdCardTemplateRow, "id">>(blankIdCardTemplate());
+  const [deleting, setDeleting] = useState<IdCardTemplateRow | null>(null);
 
-  const set = <K extends keyof Omit<Template, "id">>(key: K, value: Omit<Template, "id">[K]) =>
+  const set = <K extends keyof Omit<IdCardTemplateRow, "id">>(key: K, value: Omit<IdCardTemplateRow, "id">[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const raw = localStorage.getItem("erp-id-card-templates");
+      if (raw) {
+        setItems(JSON.parse(raw));
+      }
+    } catch {
+      // start with empty list
+    }
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistItems = (list: IdCardTemplateRow[]) => {
+    setItems(list);
+    try {
+      localStorage.setItem("erp-id-card-templates", JSON.stringify(list));
+    } catch { /* quota */ }
+  };
 
   const isPlaced = (label: string) => {
     const flag = SWITCHED[label];
@@ -69,7 +111,7 @@ export default function IDCardTemplate() {
     );
   };
 
-  const load = (template: Template) => {
+  const load = (template: IdCardTemplateRow) => {
     const { id, ...rest } = template;
     setEditingId(id);
     setDraft(rest);
@@ -78,7 +120,7 @@ export default function IDCardTemplate() {
   const startNew = () => {
     setEditingId(null);
     setDraft(blankIdCardTemplate());
-    toast({ title: "New template", description: "The canvas is reset — name it and save." });
+    toast({ title: "New template", description: "The canvas is reset - name it and save." });
   };
 
   const save = () => {
@@ -91,28 +133,31 @@ export default function IDCardTemplate() {
       return;
     }
     if (editingId) {
-      update(editingId, draft);
+      const updated = items.map((item) => (item.id === editingId ? { ...item, ...draft } : item));
+      persistItems(updated);
       toast({ title: "Template updated", description: `${draft.name} was saved.` });
       return;
     }
-    const id = newId("idtpl");
-    add({ ...draft, id });
-    setEditingId(id);
+    const newId = `idtpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const newTemplate: IdCardTemplateRow = { ...draft, id: newId };
+    persistItems([newTemplate, ...items]);
+    setEditingId(newId);
     toast({ title: "Template saved", description: `${draft.name} is now available in Generate ID Cards.` });
   };
 
-  const duplicate = (template: Template) => {
+  const duplicate = (template: IdCardTemplateRow) => {
     const { id: _id, ...rest } = template;
-    add({ ...rest, name: `${template.name} (Copy)`, status: "draft" });
+    const newTemplate: IdCardTemplateRow = { ...rest, name: `${template.name} (Copy)`, status: "draft", id: `idtpl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` };
+    persistItems([newTemplate, ...items]);
     toast({ title: "Template duplicated", description: `A draft copy of ${template.name} was created.` });
   };
 
-  const current: Template = { ...draft, id: editingId ?? "preview" };
+  const current: IdCardTemplateRow = { ...draft, id: editingId ?? "preview" };
 
   const preview = () =>
     printHtml(
       draft.name || "ID Card",
-      `<p style="font-size:12px;color:#6b7280">Sample record · ${SAMPLE_STUDENT.name}</p>${idCardHtml(current, SAMPLE_STUDENT)}`,
+      `<p style="font-size:12px;color:#6b7280">Sample record - ${SAMPLE_STUDENT.name}</p>${idCardHtml(current, SAMPLE_STUDENT)}`,
     );
 
   const downloadSample = () => {
@@ -168,7 +213,7 @@ export default function IDCardTemplate() {
               </button>
             ))}
             <p className="text-xs text-muted-foreground pt-2">
-              Click an element to place it on — or remove it from — the card
+              Click an element to place it on - or remove it from - the card
             </p>
           </CardContent>
         </Card>
@@ -179,7 +224,7 @@ export default function IDCardTemplate() {
               <CardTitle className="text-lg">Card Canvas</CardTitle>
               <Select
                 value={draft.orientation}
-                onValueChange={(value) => set("orientation", value as Template["orientation"])}
+                onValueChange={(value) => set("orientation", value as "portrait" | "landscape")}
               >
                 <SelectTrigger className="w-36">
                   <SelectValue />
@@ -339,7 +384,7 @@ export default function IDCardTemplate() {
                   <button type="button" className="text-left flex-1" onClick={() => load(template)}>
                     <p className="text-sm font-medium">{template.name}</p>
                     <p className="text-xs text-muted-foreground capitalize">
-                      {template.orientation} · {template.fields.length} fields
+                      {template.orientation} - {template.fields.length} fields
                     </p>
                   </button>
                   <div className="flex items-center gap-1">
@@ -379,7 +424,7 @@ export default function IDCardTemplate() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
                 if (!deleting) return;
-                remove(deleting.id);
+                persistItems(items.filter((item) => item.id !== deleting.id));
                 if (editingId === deleting.id) {
                   setEditingId(null);
                   setDraft(blankIdCardTemplate());

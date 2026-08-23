@@ -9,10 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Bell, Calendar, Pin, PinOff, Trash2, Edit, Eye, Users } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useLocalCollection, newId } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
 interface Notice {
   id: string;
@@ -27,16 +27,6 @@ interface Notice {
   views: number;
   type: "branch" | "batch";
 }
-
-const SEED: Notice[] = [
-  { id: "1", title: "Annual Examination Schedule Released", content: "The annual examination schedule for all courses has been released. Please check the exam portal for detailed timetable.", branch: "All Branches", priority: "high", date: "2024-01-15", expiryDate: "2024-02-15", isPinned: true, views: 1250, type: "branch" },
-  { id: "2", title: "Fee Payment Deadline Extended", content: "The last date for fee payment has been extended to January 31st. Late fee will be applicable after this date.", branch: "Main Campus", priority: "high", date: "2024-01-14", expiryDate: "2024-01-31", isPinned: true, views: 890, type: "branch" },
-  { id: "3", title: "Republic Day Celebration", content: "All students and staff are invited to attend the Republic Day celebration on January 26th at 8:00 AM in the main auditorium.", branch: "All Branches", priority: "medium", date: "2024-01-13", expiryDate: "2024-01-26", isPinned: false, views: 560, type: "branch" },
-  { id: "4", title: "Library Timings Changed", content: "The library will remain open from 8:00 AM to 8:00 PM starting from February 1st.", branch: "North Campus", priority: "low", date: "2024-01-12", expiryDate: "2024-03-01", isPinned: false, views: 320, type: "branch" },
-  { id: "5", title: "Practical Lab Session - Batch A", content: "All students of Batch A are required to attend the practical lab session on Monday at 10:00 AM.", branch: "Main Campus", batch: "Batch A - Morning", priority: "high", date: "2024-01-16", expiryDate: "2024-01-20", isPinned: true, views: 180, type: "batch" },
-  { id: "6", title: "Project Submission Deadline - Batch B", content: "Final project submission for Batch B is due on January 25th. No extensions will be granted.", branch: "Main Campus", batch: "Batch B - Evening", priority: "high", date: "2024-01-15", expiryDate: "2024-01-25", isPinned: false, views: 145, type: "batch" },
-  { id: "7", title: "Extra Classes Scheduled - Batch C", content: "Extra doubt clearing classes scheduled for Batch C on weekends.", branch: "North Campus", batch: "Batch C - Weekend", priority: "medium", date: "2024-01-14", expiryDate: "2024-02-28", isPinned: false, views: 95, type: "batch" },
-];
 
 const BATCHES = ["All Batches", "Batch A - Morning", "Batch B - Evening", "Batch C - Weekend", "Batch D - Online"];
 const BRANCHES = ["All Branches", "Main Campus", "North Campus", "South Campus"];
@@ -61,7 +51,7 @@ const blankDraft = (): Notice => ({
 const priorityVariant = (priority: string) =>
   priority === "high" ? "destructive" : priority === "medium" ? "default" : "secondary";
 
-/** Notices expiring within a week — drives the "Expiring Soon" tile. */
+/** Notices expiring within a week - drives the "Expiring Soon" tile. */
 const expiringSoon = (notices: Notice[]) => {
   const limit = Date.now() + 7 * 864e5;
   return notices.filter((n) => {
@@ -72,9 +62,24 @@ const expiringSoon = (notices: Notice[]) => {
 
 export default function BranchNoticeBoard() {
   const { toast } = useToast();
-  const { items, setItems, remove, update } = useLocalCollection<Notice>("erp-notices", SEED);
+  const [items, setItems] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [draft, setDraft] = useState<Notice>(blankDraft);
+
+  useEffect(() => {
+    const fetchNotices = async () => {
+      try {
+        const data = await api<{ items: Notice[] }>("/core/notices");
+        setItems(data.items);
+      } catch {
+        toast({ title: "Failed to load notices", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchNotices();
+  }, [toast]);
 
   const set = <K extends keyof Notice>(key: K, value: Notice[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -92,20 +97,53 @@ export default function BranchNoticeBoard() {
     setIsDialogOpen(true);
   };
 
-  const publish = () => {
+  const publish = async () => {
     if (!draft.title.trim() || !draft.content.trim()) {
       toast({ title: "Missing details", description: "Title and content are both required.", variant: "destructive" });
       return;
     }
-    if (draft.id) {
-      update(draft.id, draft);
-      toast({ title: "Notice updated", description: draft.title });
-    } else {
-      // New notices go to the top so the author sees the result immediately.
-      setItems((list) => [{ ...draft, id: newId("notice") }, ...list]);
-      toast({ title: "Notice published", description: draft.title });
+    try {
+      if (draft.id) {
+        await api(`/core/notices/${draft.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(draft),
+        });
+        setItems((list) => list.map((n) => (n.id === draft.id ? draft : n)));
+        toast({ title: "Notice updated", description: draft.title });
+      } else {
+        const created = await api<{ item: Notice }>("/core/notices", {
+          method: "POST",
+          body: JSON.stringify(draft),
+        });
+        setItems((list) => [created.item, ...list]);
+        toast({ title: "Notice published", description: draft.title });
+      }
+      setIsDialogOpen(false);
+    } catch {
+      toast({ title: "Failed to save notice", variant: "destructive" });
     }
-    setIsDialogOpen(false);
+  };
+
+  const togglePin = async (notice: Notice) => {
+    try {
+      await api(`/core/notices/${notice.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isPinned: !notice.isPinned }),
+      });
+      setItems((list) => list.map((n) => (n.id === notice.id ? { ...n, isPinned: !n.isPinned } : n)));
+    } catch {
+      toast({ title: "Failed to update notice", variant: "destructive" });
+    }
+  };
+
+  const deleteNotice = async (notice: Notice) => {
+    try {
+      await api(`/core/notices/${notice.id}`, { method: "DELETE" });
+      setItems((list) => list.filter((n) => n.id !== notice.id));
+      toast({ title: "Notice deleted", description: notice.title });
+    } catch {
+      toast({ title: "Failed to delete notice", variant: "destructive" });
+    }
   };
 
   const NoticeCard = (notice: Notice) => (
@@ -144,7 +182,7 @@ export default function BranchNoticeBoard() {
               variant="ghost"
               size="icon"
               title={notice.isPinned ? "Unpin notice" : "Pin notice"}
-              onClick={() => update(notice.id, { isPinned: !notice.isPinned })}
+              onClick={() => togglePin(notice)}
             >
               {notice.isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
             </Button>
@@ -155,10 +193,7 @@ export default function BranchNoticeBoard() {
               variant="ghost"
               size="icon"
               title="Delete notice"
-              onClick={() => {
-                remove(notice.id);
-                toast({ title: "Notice deleted", description: notice.title });
-              }}
+              onClick={() => deleteNotice(notice)}
             >
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
@@ -167,6 +202,16 @@ export default function BranchNoticeBoard() {
       </CardContent>
     </Card>
   );
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading notices...</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>

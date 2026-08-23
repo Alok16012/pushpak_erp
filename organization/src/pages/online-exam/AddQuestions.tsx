@@ -10,18 +10,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Save, Trash2, Image, Upload, Download } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection, newId } from "@/hooks/use-local-collection";
-import { downloadCsv, parseCsv, pickFile, pickImage } from "@/lib/export";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { downloadCsv, parseCsv, pickFile, pickImage } from "@/lib/export";
+import { api } from "@/lib/api";
 
-type QuestionType = "mcq" | "true-false" | "short" | "long";
+export type QuestionType = "mcq" | "true-false" | "short" | "long";
 
-/**
- * One entry of the question bank. The API does not model question banks yet, so
- * this lives in localStorage — see `use-local-collection`.
- */
-export type Question = {
+export interface Question {
   id: string;
   type: QuestionType;
   subject: string;
@@ -29,7 +25,6 @@ export type Question = {
   text: string;
   image?: string;
   options?: string[];
-  /** MCQ: index of the correct option. True/False: "true" | "false". */
   answer?: string;
   keywords?: string;
   wordLimit?: string;
@@ -41,7 +36,7 @@ export type Question = {
   negativeMarks?: string;
   timeLimit?: string;
   explanation?: string;
-};
+}
 
 export const QUESTION_BANK_KEY = "erp-question-bank";
 
@@ -115,21 +110,23 @@ const BLANK_META = {
 };
 
 const blankOptions = () => [
-  { id: newId("opt"), text: "" },
-  { id: newId("opt"), text: "" },
-  { id: newId("opt"), text: "" },
-  { id: newId("opt"), text: "" },
+  { id: `opt-${Date.now()}-0`, text: "" },
+  { id: `opt-${Date.now()}-1`, text: "" },
+  { id: `opt-${Date.now()}-2`, text: "" },
+  { id: `opt-${Date.now()}-3`, text: "" },
 ];
 
 export default function AddQuestions() {
   const { toast } = useToast();
-  const { items, setItems, add, remove } = useLocalCollection<Question>(QUESTION_BANK_KEY, QUESTION_SEED);
+
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Shared "Question Details" / "Question Settings" panel, used by the MCQ tab.
   const [meta, setMeta] = useState(BLANK_META);
   const [text, setText] = useState("");
   const [image, setImage] = useState("");
-  const [options, setOptions] = useState(blankOptions);
+  const [options, setOptions] = useState(() => blankOptions());
   const [correctId, setCorrectId] = useState("");
 
   // The other three tabs are self-contained forms.
@@ -139,6 +136,30 @@ export default function AddQuestions() {
 
   const setMetaField = <K extends keyof typeof BLANK_META>(key: K, value: string) =>
     setMeta((m) => ({ ...m, [key]: value }));
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    // Load question bank from localStorage (question bank has no dedicated API yet).
+    try {
+      const raw = localStorage.getItem(QUESTION_BANK_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Question[];
+        if (!cancelled) setQuestions(parsed);
+      } else {
+        if (!cancelled) setQuestions(QUESTION_SEED);
+      }
+    } catch {
+      if (!cancelled) setQuestions(QUESTION_SEED);
+    }
+    if (!cancelled) setLoading(false);
+    return () => { cancelled = true; };
+  }, []);
+
+  const persist = (list: Question[]) => {
+    setQuestions(list);
+    try { localStorage.setItem(QUESTION_BANK_KEY, JSON.stringify(list)); } catch { /* quota */ }
+  };
 
   const resetMcq = () => {
     setText("");
@@ -161,7 +182,7 @@ export default function AddQuestions() {
       toast({ title: "Limit reached", description: "A question can have at most six options.", variant: "destructive" });
       return;
     }
-    setOptions((list) => [...list, { id: newId("opt"), text: "" }]);
+    setOptions((list) => [...list, { id: `opt-${Date.now()}-${list.length}`, text: "" }]);
   };
 
   const removeOption = (id: string) => {
@@ -189,9 +210,9 @@ export default function AddQuestions() {
       toast({ title: "No correct answer", description: "Select the radio button next to the correct option.", variant: "destructive" });
       return false;
     }
-    // Store the answer against the filtered list so blank options never shift it.
     const kept = options.filter((o) => o.text.trim());
-    add({
+    const newQ: Question = {
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: "mcq",
       subject: meta.subject,
       topic: meta.topic,
@@ -204,7 +225,8 @@ export default function AddQuestions() {
       negativeMarks: meta.negativeMarks || undefined,
       timeLimit: meta.timeLimit || undefined,
       explanation: meta.explanation || undefined,
-    });
+    };
+    persist([newQ, ...questions]);
     toast({ title: "Question saved", description: `Added to the ${TYPE_LABEL.mcq} bank.` });
     return true;
   };
@@ -217,7 +239,6 @@ export default function AddQuestions() {
   };
 
   const saveAndNext = () => {
-    // Keep subject/topic/difficulty so a run of questions can be typed quickly.
     if (saveMcq()) resetMcq();
   };
 
@@ -226,7 +247,8 @@ export default function AddQuestions() {
       toast({ title: "Question required", description: "Enter the statement to be judged.", variant: "destructive" });
       return;
     }
-    add({
+    const newQ: Question = {
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: "true-false",
       subject: meta.subject || "general",
       topic: meta.topic,
@@ -234,7 +256,8 @@ export default function AddQuestions() {
       answer: tf.answer,
       difficulty: meta.difficulty || "easy",
       marks: meta.marks || "1",
-    });
+    };
+    persist([newQ, ...questions]);
     setTf({ text: "", answer: "true" });
     toast({ title: "Question saved", description: `Added to the ${TYPE_LABEL["true-false"]} bank.` });
   };
@@ -244,7 +267,8 @@ export default function AddQuestions() {
       toast({ title: "Question required", description: "Enter the question text.", variant: "destructive" });
       return;
     }
-    add({
+    const newQ: Question = {
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: "short",
       subject: meta.subject || "general",
       topic: meta.topic,
@@ -253,7 +277,8 @@ export default function AddQuestions() {
       wordLimit: short.wordLimit || undefined,
       difficulty: meta.difficulty || "medium",
       marks: meta.marks || "2",
-    });
+    };
+    persist([newQ, ...questions]);
     setShort({ text: "", keywords: "", wordLimit: "" });
     toast({ title: "Question saved", description: `Added to the ${TYPE_LABEL.short} bank.` });
   };
@@ -267,7 +292,8 @@ export default function AddQuestions() {
       toast({ title: "Check the word limits", description: "Minimum words cannot exceed maximum words.", variant: "destructive" });
       return;
     }
-    add({
+    const newQ: Question = {
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type: "long",
       subject: meta.subject || "general",
       topic: meta.topic,
@@ -277,7 +303,8 @@ export default function AddQuestions() {
       maxWords: long.maxWords || undefined,
       difficulty: meta.difficulty || "hard",
       marks: meta.marks || "5",
-    });
+    };
+    persist([newQ, ...questions]);
     setLong({ text: "", modelAnswer: "", minWords: "", maxWords: "" });
     toast({ title: "Question saved", description: `Added to the ${TYPE_LABEL.long} bank.` });
   };
@@ -299,7 +326,7 @@ export default function AddQuestions() {
     const imported = (Array.isArray(rows) ? rows : [])
       .filter((row) => String(row.text ?? "").trim())
       .map<Question>((row) => ({
-        id: newId("q"),
+        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         type: (["mcq", "true-false", "short", "long"] as const).includes(row.type as QuestionType)
           ? (row.type as QuestionType)
           : "mcq",
@@ -317,14 +344,14 @@ export default function AddQuestions() {
       toast({ title: "Nothing imported", description: "No rows with a `text` column were found.", variant: "destructive" });
       return;
     }
-    setItems((list) => [...imported, ...list]);
+    persist([...imported, ...questions]);
     toast({ title: "Import complete", description: `${imported.length} question(s) added to the bank.` });
   };
 
   const exportBank = () =>
     downloadCsv(
       "question-bank.csv",
-      items.map((q) => ({
+      questions.map((q) => ({
         type: q.type,
         subject: q.subject,
         topic: q.topic,
@@ -339,6 +366,10 @@ export default function AddQuestions() {
       ["type", "subject", "topic", "text", "options", "answer", "difficulty", "marks", "negativeMarks", "explanation"],
     );
 
+  const remove = (id: string) => {
+    persist(questions.filter((q) => q.id !== id));
+  };
+
   const topics = TOPICS[meta.subject] ?? [];
 
   return (
@@ -352,7 +383,7 @@ export default function AddQuestions() {
         ]}
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-2" onClick={exportBank} disabled={!items.length}>
+            <Button variant="outline" className="gap-2" onClick={exportBank} disabled={!questions.length}>
               <Download className="h-4 w-4" />
               Export Bank
             </Button>
@@ -682,13 +713,14 @@ export default function AddQuestions() {
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>Question Bank ({items.length})</CardTitle>
+          <CardTitle>Question Bank ({questions.length})</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {items.length === 0 && (
+          {loading && <p className="text-sm text-muted-foreground">Loading question bank...</p>}
+          {!loading && questions.length === 0 && (
             <p className="text-sm text-muted-foreground">No questions yet. Save one above or use Bulk Import.</p>
           )}
-          {items.map((q) => (
+          {questions.map((q) => (
             <div key={q.id} className="flex items-start justify-between gap-4 border rounded-lg p-3">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -696,14 +728,14 @@ export default function AddQuestions() {
                   <Badge variant="outline" className="capitalize">{q.difficulty}</Badge>
                   <span className="text-xs text-muted-foreground">
                     {SUBJECTS.find((s) => s.value === q.subject)?.label ?? q.subject}
-                    {q.topic ? ` • ${q.topic}` : ""} • {q.marks} mark(s)
+                    {q.topic ? ` - ${q.topic}` : ""} - {q.marks} mark(s)
                   </span>
                 </div>
                 <p className="text-sm">{q.text}</p>
                 {q.options && (
                   <p className="text-xs text-muted-foreground">
                     {q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("   ")}
-                    {q.answer !== undefined && ` — correct: ${String.fromCharCode(65 + Number(q.answer))}`}
+                    {q.answer !== undefined && ` - correct: ${String.fromCharCode(65 + Number(q.answer))}`}
                   </p>
                 )}
                 {q.type === "true-false" && (

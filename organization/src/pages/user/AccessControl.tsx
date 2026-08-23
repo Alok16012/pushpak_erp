@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
-import { useLocalState } from "@/hooks/use-local-collection";
 import { Shield, Lock, Eye, Edit, Save, RefreshCcw } from "lucide-react";
 
 interface PermissionCategory {
@@ -32,7 +31,6 @@ interface Permission {
   id: string;
   name: string;
   description: string;
-  /** The Manager baseline; other roles derive from it in `defaultsFor`. */
   enabled: boolean;
   locked?: boolean;
 }
@@ -110,7 +108,6 @@ const ALL_PERMISSIONS = CATEGORIES.flatMap((c) => c.permissions);
 
 const BASE_ROLES = ["Admin", "Manager", "Employee", "HR Manager"];
 
-/** Starting grant set for a role. Unknown (custom) roles start read-only. */
 const defaultsFor = (role: string): Record<string, boolean> =>
   Object.fromEntries(
     ALL_PERMISSIONS.map((permission) => {
@@ -128,18 +125,33 @@ const defaultsFor = (role: string): Record<string, boolean> =>
 const defaultMatrix = () =>
   Object.fromEntries(BASE_ROLES.map((role) => [role, defaultsFor(role)]));
 
+const ROLES_KEY = "erp-access-roles";
+const MATRIX_KEY = "erp-access-matrix";
+
 const AccessControl = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [roles, setRoles] = useLocalState<string[]>("erp-access-roles", BASE_ROLES);
-  const [matrix, setMatrix] = useLocalState<Record<string, Record<string, boolean>>>(
-    "erp-access-matrix",
-    defaultMatrix(),
-  );
+  const [roles, setRoles] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(ROLES_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch { /* fall through */ }
+    return BASE_ROLES;
+  });
+  const [matrix, setMatrix] = useState<Record<string, Record<string, boolean>>>(() => {
+    try {
+      const stored = localStorage.getItem(MATRIX_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch { /* fall through */ }
+    return defaultMatrix();
+  });
   const [selectedRole, setSelectedRole] = useState("Manager");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [newRole, setNewRole] = useState("");
+
+  useEffect(() => { localStorage.setItem(ROLES_KEY, JSON.stringify(roles)); }, [roles]);
+  useEffect(() => { localStorage.setItem(MATRIX_KEY, JSON.stringify(matrix)); }, [matrix]);
 
   const grants = matrix[selectedRole] ?? defaultsFor(selectedRole);
   const grantedCount = ALL_PERMISSIONS.filter((p) => grants[p.id]).length;
@@ -152,8 +164,6 @@ const AccessControl = () => {
   };
 
   const handleSaveChanges = () => {
-    // The matrix is written through on every toggle; this confirms the state and
-    // is where a PUT /roles/:role/permissions belongs once the API models it.
     toast({
       title: "Settings Saved",
       description: `${selectedRole} now has ${grantedCount} of ${ALL_PERMISSIONS.length} permissions.`,
@@ -178,7 +188,6 @@ const AccessControl = () => {
       toast({ title: "Role exists", description: `${name} is already in the list.`, variant: "destructive" });
       return;
     }
-    // Clone the role on screen so the copy is a starting point, not a blank slate.
     setRoles((list) => [...list, name]);
     setMatrix((current) => ({ ...current, [name]: { ...grants } }));
     setSelectedRole(name);
@@ -268,8 +277,6 @@ const AccessControl = () => {
                       <Switch
                         id={permission.id}
                         checked={Boolean(grants[permission.id])}
-                        // Locked permissions stay editable for Admin only; every
-                        // other role is barred from the destructive ones.
                         disabled={permission.locked && selectedRole !== "Admin"}
                         onCheckedChange={(value) => handleTogglePermission(permission.id, value)}
                       />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -10,16 +10,13 @@ import { DirectorInfoSection } from "@/components/branch/DirectorInfoSection";
 import { BranchSpaceSection } from "@/components/branch/BranchSpaceSection";
 import { BranchDocumentsSection } from "@/components/branch/BranchDocumentsSection";
 import { BranchAdminSection } from "@/components/branch/BranchAdminSection";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
-import {
-  BRANCHES_KEY,
-  BRANCH_SEED,
-  BRANCH_TYPES,
-  INSTITUTE_TYPES,
-  titleCase,
-  type Branch,
-} from "@/data/branches";
+import { api } from "@/lib/api";
+
+interface Branch {
+  id: string;
+  code: string;
+}
 
 /** Fields the register cannot do without, in the order they appear on the page. */
 const REQUIRED: Array<[string, string]> = [
@@ -44,11 +41,23 @@ const REQUIRED: Array<[string, string]> = [
 export default function CreateBranch() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items, add } = useLocalCollection<Branch>(BRANCHES_KEY, BRANCH_SEED);
-  // The sections are uncontrolled, so the form itself is the source of truth —
-  // `FormData` reads every named input, textarea, Select and Switch in one go.
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const data = await api<{ items: Branch[] }>("/core/branches");
+        setBranches(data.items);
+      } catch {
+        // start with empty list on failure
+      }
+    };
+    fetchBranches();
+  }, []);
+
+  // The sections are uncontrolled, so the form itself is the source of truth -
+  // `FormData` reads every named input, textarea, Select and Switch in one go.
   const submit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -65,7 +74,7 @@ export default function CreateBranch() {
     }
 
     const code = value("branchCode").toUpperCase();
-    if (items.some((branch) => branch.code.toUpperCase() === code)) {
+    if (branches.some((branch) => branch.code.toUpperCase() === code)) {
       toast({
         title: "Branch code already used",
         description: `${code} belongs to an existing branch. Pick another code.`,
@@ -79,25 +88,31 @@ export default function CreateBranch() {
     }
 
     setSaving(true);
-    add({
-      name: value("branchName"),
-      code,
-      type: BRANCH_TYPES[value("branchType")] ?? "Sub Branch",
-      instituteType: INSTITUTE_TYPES[value("instituteType")] ?? "Other",
-      city: value("city"),
-      state: titleCase(value("state")),
-      students: 0,
-      staff: Number(value("numFaculty")) || 0,
-      revenue: 0,
-      // A brand-new branch is only live if the admin left "Active Status" on.
-      status: data.get("activeStatus") ? "active" : "inactive",
-      expiryDate: value("expiryDate") || value("validDate") || "—",
+    api("/core/branches", {
+      method: "POST",
+      body: JSON.stringify({
+        name: value("branchName"),
+        code,
+        type: value("branchType") || "Sub Branch",
+        instituteType: value("instituteType") || "Other",
+        city: value("city"),
+        state: value("state").replace(/\b\w/g, (c) => c.toUpperCase()),
+        students: 0,
+        staff: Number(value("numFaculty")) || 0,
+        revenue: 0,
+        status: data.get("activeStatus") ? "active" : "inactive",
+        expiryDate: value("expiryDate") || value("validDate") || "—",
+      }),
+    }).then(() => {
+      toast({
+        title: "Branch created",
+        description: `${value("branchName")} (${code}) was added to the register.`,
+      });
+      navigate("/branch/view");
+    }).catch(() => {
+      toast({ title: "Failed to create branch", variant: "destructive" });
+      setSaving(false);
     });
-    toast({
-      title: "Branch created",
-      description: `${value("branchName")} (${code}) was added to the register.`,
-    });
-    navigate("/branch/view");
   };
 
   return (
@@ -130,7 +145,7 @@ export default function CreateBranch() {
             Cancel
           </Button>
           <Button type="submit" disabled={saving}>
-            {saving ? "Creating…" : "Create Branch"}
+            {saving ? "Creating..." : "Create Branch"}
           </Button>
         </div>
       </form>

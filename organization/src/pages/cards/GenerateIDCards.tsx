@@ -15,27 +15,38 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Printer, Download, Eye, Search, Users, CreditCard, Image as ImageIcon, QrCode } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
 import { idCardsPdf } from "@/lib/id-card-pdf";
 import {
-  ID_CARD_STUDENTS,
   ID_CARD_TEMPLATES_KEY,
-  ID_CARD_TEMPLATE_SEED,
   IdCardTemplate,
   fieldValue,
   idCardSheetHtml,
 } from "@/data/id-card-templates";
+import { api } from "@/lib/api";
+
+interface IdCardStudent {
+  id: string;
+  name: string;
+  class: string;
+  section: string;
+  rollNo: string;
+  photo: boolean;
+  dob: string;
+  bloodGroup: string;
+  parentContact: string;
+  address: string;
+}
+
+const STORAGE_KEY = ID_CARD_TEMPLATES_KEY;
 
 export default function GenerateIDCards() {
   const { toast } = useToast();
-  const { items: templates } = useLocalCollection<IdCardTemplate>(
-    ID_CARD_TEMPLATES_KEY,
-    ID_CARD_TEMPLATE_SEED,
-  );
-
+  const [templates, setTemplates] = useState<IdCardTemplate[]>([]);
+  const [students, setStudents] = useState<IdCardStudent[]>([]);
+  const [loading, setLoading] = useState(true);
   const [templateId, setTemplateId] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [sectionFilter, setSectionFilter] = useState("all");
@@ -44,11 +55,54 @@ export default function GenerateIDCards() {
   const [searchTerm, setSearchTerm] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  const template = templates.find((item) => item.id === templateId) ?? null;
-  const classes = Array.from(new Set(ID_CARD_STUDENTS.map((s) => s.class)));
-  const sections = Array.from(new Set(ID_CARD_STUDENTS.map((s) => s.section))).sort();
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setTemplates(JSON.parse(raw));
+    } catch { /* use empty */ }
+    return () => { cancelled = true; };
+  }, []);
 
-  const filteredStudents = ID_CARD_STUDENTS.filter(
+  const persistTemplates = (next: IdCardTemplate[]) => {
+    setTemplates(next);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api<{ data: any[]; meta?: { total: number } }>("/core/students?limit=100")
+      .then((res) => {
+        if (cancelled) return;
+        const mapped: IdCardStudent[] = (res.data ?? []).map((s: any) => ({
+          id: s.id,
+          name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
+          class: s.batch?.name?.split(/\s+/)[0] ?? s.course?.name ?? "—",
+          section: s.batch?.name?.split(/\s+/)[1] ?? "—",
+          rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
+          photo: !!s.photo,
+          dob: s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—",
+          bloodGroup: s.bloodGroup ?? "—",
+          parentContact: s.fatherName ? `Guardian: ${s.fatherName}` : s.phone ?? "—",
+          address: [s.streetAddress, s.city, s.state, s.pincode].filter(Boolean).join(", ") || "—",
+        }));
+        setStudents(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast({ title: "Failed to load students", description: "Could not fetch student list.", variant: "destructive" });
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  const template = templates.find((item) => item.id === templateId) ?? null;
+  const classes = Array.from(new Set(students.map((s) => s.class))).sort();
+  const sections = Array.from(new Set(students.map((s) => s.section))).sort();
+
+  const filteredStudents = students.filter(
     (s) =>
       (classFilter === "all" || s.class === classFilter) &&
       (sectionFilter === "all" || s.section === sectionFilter) &&
@@ -91,7 +145,7 @@ export default function GenerateIDCards() {
   const printCards = () => {
     if (!ready() || !template) return;
     printHtml(
-      `ID Cards · ${template.name} · ${academicYear}`,
+      `ID Cards - ${template.name} - ${academicYear}`,
       idCardSheetHtml(template, chosen),
     );
   };
@@ -101,7 +155,7 @@ export default function GenerateIDCards() {
     const { pages } = idCardsPdf(template, chosen, `id-cards-${academicYear}.pdf`);
     toast({
       title: "PDF generated",
-      description: `${chosen.length} card${chosen.length === 1 ? "" : "s"} across ${pages} page${pages === 1 ? "" : "s"} — check your Downloads.`,
+      description: `${chosen.length} card${chosen.length === 1 ? "" : "s"} across ${pages} page${pages === 1 ? "" : "s"} - check your Downloads.`,
     });
   };
 
@@ -147,7 +201,7 @@ export default function GenerateIDCards() {
               </Select>
               {!templates.length && (
                 <p className="text-xs text-muted-foreground">
-                  No templates yet — create one in ID Card Template.
+                  No templates yet - create one in ID Card Template.
                 </p>
               )}
             </div>
@@ -206,7 +260,7 @@ export default function GenerateIDCards() {
               </div>
               {missingPhotos > 0 && (
                 <p className="text-xs text-destructive">
-                  {missingPhotos} selected student{missingPhotos === 1 ? "" : "s"} have no photo — those cards print a blank frame.
+                  {missingPhotos} selected student{missingPhotos === 1 ? "" : "s"} have no photo - those cards print a blank frame.
                 </p>
               )}
             </div>
@@ -245,6 +299,10 @@ export default function GenerateIDCards() {
             </div>
           </CardHeader>
           <CardContent>
+            {loading && (
+              <div className="text-center py-8 text-muted-foreground">Loading students...</div>
+            )}
+            {!loading && (
             <div className="border rounded-lg overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-muted/50">
@@ -282,8 +340,9 @@ export default function GenerateIDCards() {
                 </tbody>
               </table>
             </div>
+            )}
 
-            {filteredStudents.length === 0 && (
+            {!loading && filteredStudents.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 No students found matching your search
               </div>
@@ -297,7 +356,7 @@ export default function GenerateIDCards() {
           <DialogHeader>
             <DialogTitle>Card preview</DialogTitle>
             <DialogDescription>
-              {template?.name} · {chosen.length} card{chosen.length === 1 ? "" : "s"} · {academicYear}
+              {template?.name} - {chosen.length} card{chosen.length === 1 ? "" : "s"} - {academicYear}
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto">

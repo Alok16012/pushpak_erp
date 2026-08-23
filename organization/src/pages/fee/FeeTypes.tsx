@@ -20,23 +20,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { FEE_GROUPS_KEY, FEE_TYPES_KEY, FeeGroup, FeeType, suggestCode } from "@/data/fee-catalog";
 import { Plus, IndianRupee, Tags, Edit } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
-import {
-  COURSE_OPTIONS,
-  FEE_CATEGORIES,
-  FEE_FREQUENCIES,
-  FEE_GROUPS_KEY,
-  FEE_GROUP_SEED,
-  FEE_TYPES_KEY,
-  FEE_TYPE_SEED,
-  suggestCode,
-  type FeeGroup,
-  type FeeType,
-} from "@/data/fee-catalog";
+
+const FEE_CATEGORIES = ["Academic", "Facility", "One-time", "Optional"] as const;
+const FEE_FREQUENCIES = ["One-time", "Monthly", "Quarterly", "Per Semester", "Yearly", "Per Exam"] as const;
+const COURSE_OPTIONS = ["All Courses", "Computer Science", "Engineering", "Commerce", "Science"] as const;
 
 const columns: Column<FeeType>[] = [
   {
@@ -99,8 +91,8 @@ const columns: Column<FeeType>[] = [
 const BLANK = {
   name: "",
   code: "",
-  category: "Academic",
-  defaultAmount: "",
+  category: "Academic" as const,
+  defaultAmount: "" as string | number,
   frequency: "Yearly",
   applicableTo: "All Courses",
   description: "",
@@ -110,21 +102,40 @@ const BLANK = {
 export default function FeeTypes() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items: feeTypes, add, update, remove } = useLocalCollection<FeeType>(FEE_TYPES_KEY, FEE_TYPE_SEED);
-  const { items: feeGroups } = useLocalCollection<FeeGroup>(FEE_GROUPS_KEY, FEE_GROUP_SEED);
-
+  const [feeTypes, setFeeTypes] = useState<FeeType[]>([]);
+  const [feeGroups, setFeeGroups] = useState<FeeGroup[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...BLANK });
   const [usage, setUsage] = useState<FeeType | null>(null);
   const [pendingDelete, setPendingDelete] = useState<FeeType | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const t = localStorage.getItem(FEE_TYPES_KEY);
+      if (t) setFeeTypes(JSON.parse(t));
+      const g = localStorage.getItem(FEE_GROUPS_KEY);
+      if (g) setFeeGroups(JSON.parse(g));
+    } catch { /* use empty */ }
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistFeeTypes = (next: FeeType[]) => {
+    setFeeTypes(next);
+    try { localStorage.setItem(FEE_TYPES_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+  const persistFeeGroups = (next: FeeGroup[]) => {
+    setFeeGroups(next);
+    try { localStorage.setItem(FEE_GROUPS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+
   const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
   const openCreate = () => {
     setEditingId(null);
-    setForm({ ...BLANK });
+    setForm({ ...BLANK, defaultAmount: "" });
     setIsDialogOpen(true);
   };
 
@@ -152,7 +163,7 @@ export default function FeeTypes() {
       toast({ title: "Fee name is required", variant: "destructive" });
       return;
     }
-    if (!form.defaultAmount.trim() || !Number.isFinite(amount) || amount < 0) {
+    if (!form.defaultAmount || !Number.isFinite(amount) || amount < 0) {
       toast({ title: "Enter a valid default amount", variant: "destructive" });
       return;
     }
@@ -161,7 +172,8 @@ export default function FeeTypes() {
       return;
     }
 
-    const payload = {
+    const payload: FeeType = {
+      id: editingId ?? `${Date.now().toString(36)}`,
       name,
       code,
       category: form.category,
@@ -173,28 +185,28 @@ export default function FeeTypes() {
     };
 
     if (editingId) {
-      update(editingId, payload);
+      persistFeeTypes((prev) => prev.map((f) => (f.id === editingId ? payload : f)));
       toast({ title: "Fee type updated", description: `${name} was saved.` });
     } else {
-      add(payload);
+      persistFeeTypes((prev) => [payload, ...prev]);
       toast({ title: "Fee type added", description: `${name} (${code}) is now available.` });
     }
     setIsDialogOpen(false);
     setEditingId(null);
-    setForm({ ...BLANK });
+    setForm({ ...BLANK, defaultAmount: "" });
   };
 
   const duplicate = (fee: FeeType) => {
     const name = `${fee.name} (Copy)`;
-    const { id: _id, ...rest } = fee;
-    add({ ...rest, name, code: suggestCode(fee.name, feeTypes), status: "inactive" });
+    const copy: FeeType = { ...fee, id: `${Date.now().toString(36)}`, name, code: suggestCode(fee.name, feeTypes), status: "inactive" };
+    persistFeeTypes((prev) => [copy, ...prev]);
     toast({ title: "Fee type duplicated", description: `${name} was created as inactive.` });
   };
 
   const confirmDelete = () => {
     if (!pendingDelete) return;
     const usedBy = feeGroups.filter((g) => g.feeTypes.includes(pendingDelete.name));
-    remove(pendingDelete.id);
+    persistFeeTypes((prev) => prev.filter((f) => f.id !== pendingDelete.id));
     toast({
       title: "Fee type deleted",
       description: usedBy.length
@@ -211,7 +223,7 @@ export default function FeeTypes() {
     {
       label: fee.status === "active" ? "Deactivate" : "Activate",
       onClick: () => {
-        update(fee.id, { status: fee.status === "active" ? "inactive" : "active" });
+        persistFeeTypes((prev) => prev.map((f) => (f.id === fee.id ? { ...f, status: f.status === "active" ? "inactive" : "active" } : f)));
         toast({ title: fee.status === "active" ? "Fee type deactivated" : "Fee type activated", description: fee.name });
       },
     },
@@ -330,7 +342,7 @@ export default function FeeTypes() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={form.category} onValueChange={(v) => set("category", v)}>
+                <Select value={form.category} onValueChange={(v) => set("category", v as typeof FEE_CATEGORIES[number])}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
@@ -348,7 +360,7 @@ export default function FeeTypes() {
                   type="number"
                   min={0}
                   placeholder="e.g., 5000"
-                  value={form.defaultAmount}
+                  value={String(form.defaultAmount)}
                   onChange={(e) => set("defaultAmount", e.target.value)}
                 />
               </div>

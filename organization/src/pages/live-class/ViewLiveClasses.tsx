@@ -11,12 +11,31 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Video, Users, Calendar, Clock, Play } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
-import { LIVE_CLASSES_KEY, LIVE_CLASS_SEED, type LiveClass } from "@/data/live-classes";
+import { api } from "@/lib/api";
+
+interface LiveClass {
+  id: string;
+  title: string;
+  subject: string;
+  instructor: string;
+  course: string;
+  batch: string;
+  date: string;
+  time: string;
+  duration: string;
+  platform: string;
+  meetingLink?: string;
+  meetingId?: string;
+  description?: string;
+  attendees: number;
+  totalStudents: number;
+  status: "scheduled" | "active" | "completed" | "cancelled";
+  recorded?: boolean;
+}
 
 const columns: Column<LiveClass>[] = [
   {
@@ -93,9 +112,24 @@ const columns: Column<LiveClass>[] = [
 export default function ViewLiveClasses() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items: classesData, update } = useLocalCollection<LiveClass>(LIVE_CLASSES_KEY, LIVE_CLASS_SEED);
+  const [classesData, setClassesData] = useState<LiveClass[]>([]);
+  const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<LiveClass | null>(null);
   const [editing, setEditing] = useState<LiveClass | null>(null);
+
+  useEffect(() => {
+    const fetchClasses = async () => {
+      try {
+        const data = await api<{ items: LiveClass[] }>("/core/portal/classes");
+        setClassesData(data.items);
+      } catch {
+        toast({ title: "Failed to load classes", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchClasses();
+  }, [toast]);
 
   const join = (liveClass: LiveClass) => {
     if (!liveClass.meetingLink) {
@@ -106,9 +140,17 @@ export default function ViewLiveClasses() {
     toast({ title: "Opening the class", description: `${liveClass.platform} · ${liveClass.title}` });
   };
 
-  const cancelClass = (liveClass: LiveClass) => {
-    update(liveClass.id, { status: "cancelled" });
-    toast({ title: "Class cancelled", description: `${liveClass.title} was marked cancelled.` });
+  const cancelClass = async (liveClass: LiveClass) => {
+    try {
+      await api(`/core/timetable/${liveClass.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      setClassesData((prev) => prev.map((c) => (c.id === liveClass.id ? { ...c, status: "cancelled" } : c)));
+      toast({ title: "Class cancelled", description: `${liveClass.title} was marked cancelled.` });
+    } catch {
+      toast({ title: "Failed to cancel class", variant: "destructive" });
+    }
   };
 
   const recording = (liveClass: LiveClass) => {
@@ -140,15 +182,23 @@ export default function ViewLiveClasses() {
     toast({ title: "Attendance report exported" });
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editing) return;
     if (!editing.title.trim()) {
       toast({ title: "Class title is required", variant: "destructive" });
       return;
     }
-    update(editing.id, editing);
-    toast({ title: "Class updated", description: `${editing.title} was saved.` });
-    setEditing(null);
+    try {
+      await api(`/core/timetable/${editing.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(editing),
+      });
+      setClassesData((prev) => prev.map((c) => (c.id === editing.id ? editing : c)));
+      toast({ title: "Class updated", description: `${editing.title} was saved.` });
+      setEditing(null);
+    } catch {
+      toast({ title: "Failed to update class", variant: "destructive" });
+    }
   };
 
   const handleActions = (liveClass: LiveClass) => {
@@ -179,6 +229,16 @@ export default function ViewLiveClasses() {
         finished.reduce((sum, c) => sum + (c.attendees / c.totalStudents) * 100, 0) / finished.length,
       )
     : 0;
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading classes...</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>

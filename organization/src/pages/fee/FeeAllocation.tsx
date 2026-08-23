@@ -10,11 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { Users, IndianRupee, CheckCircle, Link2, AlertCircle } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { FEE_GROUPS_KEY, FEE_GROUP_SEED, FeeGroup } from "@/data/fee-catalog";
-import { dayOffset } from "@/data/enquiries";
+import { api } from "@/lib/api";
+import { FEE_GROUPS_KEY, FeeGroup } from "@/data/fee-catalog";
 
 interface StudentAllocation {
   id: string;
@@ -30,16 +29,23 @@ interface StudentAllocation {
   discountNote?: string;
 }
 
-const ALLOCATIONS_KEY = "erp-fee-allocations";
+interface Student {
+  id: string;
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  course: string;
+  batch: string;
+}
 
-const allocationData: StudentAllocation[] = [
-  { id: "1", studentId: "STU001", name: "Rahul Sharma", course: "Computer Science", batch: "CS-2024-A", feeGroup: "Standard Fee Package", totalFee: 59000, allocated: true, dueDate: dayOffset(30) },
-  { id: "2", studentId: "STU002", name: "Priya Patel", course: "Computer Science", batch: "CS-2024-A", feeGroup: "Science Stream Package", totalFee: 62000, allocated: true, dueDate: dayOffset(30) },
-  { id: "3", studentId: "STU003", name: "Amit Kumar", course: "Commerce", batch: "COM-2024-A", feeGroup: "Standard Fee Package", totalFee: 59000, allocated: true, dueDate: dayOffset(30) },
-  { id: "4", studentId: "STU004", name: "Sneha Gupta", course: "Engineering", batch: "ENG-2024-A", feeGroup: "", totalFee: 0, allocated: false, dueDate: "-" },
-  { id: "5", studentId: "STU005", name: "Vikram Singh", course: "Arts", batch: "ART-2024-A", feeGroup: "", totalFee: 0, allocated: false, dueDate: "-" },
-  { id: "6", studentId: "STU006", name: "Anita Reddy", course: "Science", batch: "SCI-2024-A", feeGroup: "Science Stream Package", totalFee: 62000, allocated: true, dueDate: dayOffset(30) },
-];
+interface FeeInvoice {
+  id: string;
+  studentId: string;
+  feeGroupId: string;
+  totalAmount: number;
+  paidAmount: number;
+  dueDate: string;
+}
 
 /** What the student actually owes once any discount is applied. */
 const netFee = (student: StudentAllocation) => Math.max(0, student.totalFee - (student.discount ?? 0));
@@ -85,7 +91,7 @@ const columns: Column<StudentAllocation>[] = [
         <div>
           <span className="font-medium">₹{netFee(student).toLocaleString()}</span>
           {!!student.discount && (
-            <p className="text-xs text-success">−₹{student.discount.toLocaleString()} discount</p>
+            <p className="text-xs text-success">-₹{student.discount.toLocaleString()} discount</p>
           )}
         </div>
       ) : (
@@ -125,26 +131,95 @@ const columns: Column<StudentAllocation>[] = [
 
 export default function FeeAllocation() {
   const { toast } = useToast();
-  const { items: allocations, setItems, update } = useLocalCollection<StudentAllocation>(
-    ALLOCATIONS_KEY,
-    allocationData,
-  );
-  const { items: feeGroups } = useLocalCollection<FeeGroup>(FEE_GROUPS_KEY, FEE_GROUP_SEED);
-  const activeGroups = feeGroups.filter((group) => group.status === "active");
-
+  const [allocations, setAllocations] = useState<StudentAllocation[]>([]);
+  const [feeGroups, setFeeGroups] = useState<FeeGroup[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [invoices, setInvoices] = useState<FeeInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedFeeGroup, setSelectedFeeGroup] = useState("");
   const [courseFilter, setCourseFilter] = useState("all");
   const [batchFilter, setBatchFilter] = useState("all");
-  const [dueDate, setDueDate] = useState(dayOffset(30));
+  const [dueDate, setDueDate] = useState(new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10));
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [details, setDetails] = useState<StudentAllocation | null>(null);
   const [changing, setChanging] = useState<StudentAllocation | null>(null);
   const [changeGroup, setChangeGroup] = useState("");
-  const [changeDue, setChangeDue] = useState(dayOffset(30));
+  const [changeDue, setChangeDue] = useState(new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10));
   const [discounting, setDiscounting] = useState<StudentAllocation | null>(null);
   const [discount, setDiscount] = useState({ mode: "amount", value: "", note: "" });
   const [removing, setRemoving] = useState<StudentAllocation | null>(null);
+
+  const activeGroups = feeGroups.filter((group) => group.status === "active");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadData() {
+      try {
+        const [studentsData, invoicesData, groupsData] = await Promise.all([
+          api<Student[]>("/core/students"),
+          api<FeeInvoice[]>("/core/fees/invoices"),
+          (async () => {
+            try {
+              const raw = localStorage.getItem(FEE_GROUPS_KEY);
+              return raw ? JSON.parse(raw) : [];
+            } catch { return []; }
+          })(),
+        ]);
+        if (!cancelled) {
+          setStudents(studentsData);
+          setInvoices(invoicesData);
+          setFeeGroups(groupsData);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast({ title: "Failed to load fee allocation data", variant: "destructive" });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    loadData();
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  // Build allocations view from students + invoices.
+  useEffect(() => {
+    const invoiceMap = new Map(invoices.map((inv) => [inv.studentId, inv]));
+    const built: StudentAllocation[] = students.map((stu) => {
+      const inv = invoiceMap.get(stu.id);
+      if (inv) {
+        const group = feeGroups.find((g) => g.id === inv.feeGroupId);
+        return {
+          id: inv.id,
+          studentId: stu.studentId,
+          name: `${stu.firstName} ${stu.lastName}`,
+          course: stu.course,
+          batch: stu.batch,
+          feeGroup: group?.name ?? "",
+          totalFee: inv.totalAmount - inv.paidAmount,
+          allocated: true,
+          dueDate: inv.dueDate,
+          discount: inv.paidAmount > 0 ? inv.paidAmount : undefined,
+          discountNote: inv.paidAmount > 0 ? "Partial payment" : undefined,
+        };
+      }
+      return {
+        id: stu.id,
+        studentId: stu.studentId,
+        name: `${stu.firstName} ${stu.lastName}`,
+        course: stu.course,
+        batch: stu.batch,
+        feeGroup: "",
+        totalFee: 0,
+        allocated: false,
+        dueDate: "-",
+      };
+    });
+    setAllocations(built);
+  }, [students, invoices, feeGroups]);
 
   const courses = Array.from(new Set(allocations.map((s) => s.course))).sort();
   const batches = Array.from(new Set(allocations.map((s) => s.batch))).sort();
@@ -155,28 +230,9 @@ export default function FeeAllocation() {
       (batchFilter === "all" || student.batch === batchFilter),
   );
 
-  /** Only rows still on screen can be acted on — filtering out a row deselects it. */
   const targetIds = selectedIds.filter((id) => visible.some((student) => student.id === id));
 
-  const applyGroup = (ids: string[], group: FeeGroup, due: string) => {
-    setItems((list) =>
-      list.map((student) =>
-        ids.includes(student.id)
-          ? {
-              ...student,
-              feeGroup: group.name,
-              totalFee: group.totalAmount,
-              allocated: true,
-              dueDate: due,
-              discount: undefined,
-              discountNote: undefined,
-            }
-          : student,
-      ),
-    );
-  };
-
-  const allocateSelected = () => {
+  const allocateSelected = async () => {
     const group = activeGroups.find((item) => item.id === selectedFeeGroup);
     if (!group) {
       toast({ title: "Pick a fee group first", variant: "destructive" });
@@ -190,26 +246,74 @@ export default function FeeAllocation() {
       toast({ title: "Pick a due date", variant: "destructive" });
       return;
     }
-    applyGroup(targetIds, group, dueDate);
+
+    for (const id of targetIds) {
+      const existing = invoices.find((inv) => inv.studentId === id);
+      if (existing) {
+        await api(`/core/fees/invoices/${existing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            feeGroupId: group.id,
+            totalAmount: group.totalAmount,
+            dueDate,
+          }),
+        });
+      } else {
+        await api<FeeInvoice>("/core/fees/invoices", {
+          method: "POST",
+          body: JSON.stringify({
+            studentId: id,
+            feeGroupId: group.id,
+            totalAmount: group.totalAmount,
+            dueDate,
+          }),
+        });
+      }
+    }
+
+    try {
+      const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
+      setInvoices(refreshed);
+    } catch {
+      // Refresh failed; state will reconcile on next manual action.
+    }
+
     toast({
       title: "Fee group allocated",
       description: `${group.name} applied to ${targetIds.length} student${targetIds.length === 1 ? "" : "s"} · ₹${(group.totalAmount * targetIds.length).toLocaleString()} billed.`,
     });
+    setSelectedIds([]);
   };
 
-  const saveChange = () => {
+  const saveChange = async () => {
     if (!changing) return;
     const group = activeGroups.find((item) => item.id === changeGroup);
     if (!group) {
       toast({ title: "Pick a fee group", variant: "destructive" });
       return;
     }
-    applyGroup([changing.id], group, changeDue);
-    toast({ title: "Fee group updated", description: `${changing.name} → ${group.name}.` });
+    const existing = invoices.find((inv) => inv.studentId === changing.id);
+    if (existing) {
+      try {
+        await api(`/core/fees/invoices/${existing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            feeGroupId: group.id,
+            totalAmount: group.totalAmount,
+            dueDate: changeDue,
+          }),
+        });
+        const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
+        setInvoices(refreshed);
+        toast({ title: "Fee group updated", description: `${changing.name} → ${group.name}.` });
+      } catch {
+        toast({ title: "Failed to update fee group", variant: "destructive" });
+      }
+    }
     setChanging(null);
   };
 
-  const saveDiscount = () => {
+  const saveDiscount = async () => {
     if (!discounting) return;
     const value = Number(discount.value);
     if (!Number.isFinite(value) || value <= 0) {
@@ -223,14 +327,23 @@ export default function FeeAllocation() {
       toast({ title: "Discount exceeds the total fee", description: `Maximum is ₹${discounting.totalFee.toLocaleString()}.`, variant: "destructive" });
       return;
     }
-    update(discounting.id, {
-      discount: amount,
-      discountNote: discount.note.trim() || (discount.mode === "percent" ? `${value}% concession` : "Flat concession"),
-    });
-    toast({
-      title: "Discount applied",
-      description: `₹${amount.toLocaleString()} off — ${discounting.name} now owes ₹${(discounting.totalFee - amount).toLocaleString()}.`,
-    });
+    const existing = invoices.find((inv) => inv.studentId === discounting.id);
+    if (existing) {
+      try {
+        await api(`/core/fees/invoices/${existing.id}/payments`, {
+          method: "POST",
+          body: JSON.stringify({ amount, note: discount.note.trim() || (discount.mode === "percent" ? `${value}% concession` : "Flat concession") }),
+        });
+        const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
+        setInvoices(refreshed);
+        toast({
+          title: "Discount applied",
+          description: `₹${amount.toLocaleString()} off — ${discounting.name} now owes ₹${(discounting.totalFee - amount).toLocaleString()}.`,
+        });
+      } catch {
+        toast({ title: "Failed to apply discount", variant: "destructive" });
+      }
+    }
     setDiscounting(null);
   };
 
@@ -240,7 +353,7 @@ export default function FeeAllocation() {
       label: "Change Fee Group",
       onClick: () => {
         setChangeGroup(activeGroups.find((g) => g.name === student.feeGroup)?.id ?? "");
-        setChangeDue(student.dueDate !== "-" ? student.dueDate : dayOffset(30));
+        setChangeDue(student.dueDate !== "-" ? student.dueDate : new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10));
         setChanging(student);
       },
     },
@@ -366,7 +479,7 @@ export default function FeeAllocation() {
               <Label>Due Date</Label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
-            <Button className="w-full" disabled={!selectedFeeGroup || !targetIds.length} onClick={allocateSelected}>
+            <Button className="w-full" disabled={loading || !selectedFeeGroup || !targetIds.length} onClick={allocateSelected}>
               Allocate to Selected{targetIds.length ? ` (${targetIds.length})` : ""}
             </Button>
             {!targetIds.length && (
@@ -427,7 +540,7 @@ export default function FeeAllocation() {
               onClick={() => {
                 if (!details) return;
                 setChangeGroup(activeGroups.find((g) => g.name === details.feeGroup)?.id ?? "");
-                setChangeDue(details.dueDate !== "-" ? details.dueDate : dayOffset(30));
+                setChangeDue(details.dueDate !== "-" ? details.dueDate : new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10));
                 setChanging(details);
                 setDetails(null);
               }}
@@ -532,17 +645,19 @@ export default function FeeAllocation() {
             <AlertDialogCancel>Keep it</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
+              onClick={async () => {
                 if (!removing) return;
-                update(removing.id, {
-                  feeGroup: "",
-                  totalFee: 0,
-                  allocated: false,
-                  dueDate: "-",
-                  discount: undefined,
-                  discountNote: undefined,
-                });
-                toast({ title: "Allocation removed", description: `${removing.name} is pending allocation.` });
+                const existing = invoices.find((inv) => inv.studentId === removing.id);
+                if (existing) {
+                  try {
+                    await api(`/core/fees/invoices/${existing.id}`, { method: "DELETE" });
+                    const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
+                    setInvoices(refreshed);
+                    toast({ title: "Allocation removed", description: `${removing.name} is pending allocation.` });
+                  } catch {
+                    toast({ title: "Failed to remove allocation", variant: "destructive" });
+                  }
+                }
                 setRemoving(null);
               }}
             >

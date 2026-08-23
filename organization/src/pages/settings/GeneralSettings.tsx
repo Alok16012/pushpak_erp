@@ -14,9 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useEffect, useState } from "react";
 import { Settings, Bell, Shield, Palette, Save, RotateCcw } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useLocalState } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
 
 const NOTIFICATIONS = [
@@ -29,15 +29,15 @@ const NOTIFICATIONS = [
 ];
 
 const DEFAULTS = {
-  schoolName: "ABC International School",
-  schoolCode: "ABC2024",
-  email: "info@abcschool.edu",
-  phone: "+91 1234567890",
-  address: "123 Education Street, Knowledge City",
-  city: "Mumbai",
-  state: "Maharashtra",
+  schoolName: "",
+  schoolCode: "",
+  email: "",
+  phone: "",
+  address: "",
+  city: "",
+  state: "",
   country: "India",
-  academicYear: "2024",
+  academicYear: "",
   timezone: "ist",
   currency: "inr",
   dateFormat: "dd-mm-yyyy",
@@ -49,20 +49,33 @@ const DEFAULTS = {
   compact: false,
 };
 
+const STORAGE_KEY = "erp-settings-general";
+
 export default function GeneralSettings() {
   const { toast } = useToast();
   const { theme, setTheme } = useTheme();
-  const [form, setForm] = useLocalState("erp-settings-general", DEFAULTS);
+  const [form, setForm] = useState<Record<string, any>>(DEFAULTS);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setForm({ ...DEFAULTS, ...JSON.parse(raw) });
+    } catch { /* use defaults */ }
+  }, []);
+
+  const persist = (next: Record<string, any>) => {
+    setForm(next);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+
   const set = <K extends keyof typeof DEFAULTS>(key: K, value: (typeof DEFAULTS)[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
+    persist({ ...form, [key]: value });
 
   const save = () => {
-    // useLocalState already persists on change; this confirms the write and is
-    // where a PUT /settings call belongs once the API models this screen.
     toast({ title: "Settings saved", description: "Your changes are stored on this device." });
   };
   const resetAll = () => {
-    setForm(DEFAULTS);
+    persist(DEFAULTS);
     setTheme("system");
     toast({ title: "Settings restored", description: "Every field is back to its default." });
   };

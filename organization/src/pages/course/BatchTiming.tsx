@@ -8,35 +8,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Clock, Plus, Edit, Trash2, Calendar } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection, newId } from "@/hooks/use-local-collection";
+import { useState, useEffect, useCallback } from "react";
+import { api } from "@/lib/api";
 import { downloadCsv } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 
+interface Batch {
+  id: string;
+  name: string;
+  code: string;
+  course: { id: string; name: string };
+}
+
 interface TimingSlot {
   id: string;
-  batch: string;
-  course: string;
+  batchId: string;
+  courseId: string;
   day: string;
   startTime: string;
   endTime: string;
-  subject: string;
-  instructor: string;
-  room: string;
+  roomNo?: string;
+  subject?: string;
+  instructor?: string;
+  batch?: { course: { name: string } };
 }
 
-const SEED: TimingSlot[] = [
-  { id: "1", batch: "CS-2024-A", course: "Computer Science", day: "Monday", startTime: "09:00", endTime: "10:30", subject: "Data Structures", instructor: "Dr. Smith", room: "Lab 101" },
-  { id: "2", batch: "CS-2024-A", course: "Computer Science", day: "Monday", startTime: "10:45", endTime: "12:15", subject: "Algorithms", instructor: "Prof. Johnson", room: "Room 202" },
-  { id: "3", batch: "CS-2024-A", course: "Computer Science", day: "Tuesday", startTime: "09:00", endTime: "10:30", subject: "Database Systems", instructor: "Dr. Patel", room: "Lab 102" },
-  { id: "4", batch: "CS-2024-A", course: "Computer Science", day: "Tuesday", startTime: "10:45", endTime: "12:15", subject: "Web Development", instructor: "Prof. Kumar", room: "Lab 103" },
-  { id: "5", batch: "CS-2024-A", course: "Computer Science", day: "Wednesday", startTime: "09:00", endTime: "10:30", subject: "Operating Systems", instructor: "Dr. Smith", room: "Room 201" },
-  { id: "6", batch: "CS-2024-A", course: "Computer Science", day: "Wednesday", startTime: "10:45", endTime: "12:15", subject: "Computer Networks", instructor: "Prof. Johnson", room: "Room 203" },
-  { id: "7", batch: "CS-2024-A", course: "Computer Science", day: "Thursday", startTime: "09:00", endTime: "10:30", subject: "Data Structures Lab", instructor: "Dr. Smith", room: "Lab 101" },
-  { id: "8", batch: "CS-2024-A", course: "Computer Science", day: "Friday", startTime: "09:00", endTime: "10:30", subject: "Project Work", instructor: "Dr. Patel", room: "Lab 104" },
-];
+const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+const DAY_LABELS: Record<string, string> = {
+  MONDAY: "Monday", TUESDAY: "Tuesday", WEDNESDAY: "Wednesday",
+  THURSDAY: "Thursday", FRIDAY: "Friday", SATURDAY: "Saturday",
+};
+const DAY_ENUM = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 
-const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const timeSlots = [
   { start: "09:00", end: "10:30" },
   { start: "10:45", end: "12:15" },
@@ -48,83 +51,173 @@ const timeSlots = [
 const SUBJECTS = ["Data Structures", "Algorithms", "Database Systems", "Web Development", "Operating Systems", "Computer Networks", "Project Work"];
 const INSTRUCTORS = ["Dr. Smith", "Prof. Johnson", "Dr. Patel", "Prof. Kumar"];
 const ROOMS = ["Lab 101", "Lab 102", "Lab 103", "Lab 104", "Room 201", "Room 202", "Room 203"];
-const BATCH_COURSES: Record<string, string> = {
-  "CS-2024-A": "Computer Science",
-  "CS-2024-B": "Computer Science",
-  "COM-2024-A": "Commerce",
-  "ENG-2024-A": "Engineering",
-};
 
-const blankSlot = (batch: string): TimingSlot => ({
-  id: "",
-  batch,
-  course: BATCH_COURSES[batch] ?? "",
-  day: "Monday",
+const blankSlot = (batchId: string, courseId: string): Omit<TimingSlot, "id"> => ({
+  batchId,
+  courseId,
+  day: "MONDAY",
   startTime: "09:00",
   endTime: "10:30",
   subject: SUBJECTS[0],
   instructor: INSTRUCTORS[0],
-  room: ROOMS[0],
+  roomNo: ROOMS[0],
 });
 
 export default function BatchTiming() {
   const { toast } = useToast();
-  const { items, setItems, remove, update } = useLocalCollection<TimingSlot>("erp-batch-timings", SEED);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [slots, setSlots] = useState<TimingSlot[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [selectedBatch, setSelectedBatch] = useState("CS-2024-A");
-  const [branch, setBranch] = useState("main");
-  const [draft, setDraft] = useState<TimingSlot>(() => blankSlot("CS-2024-A"));
+  const [selectedBatchId, setSelectedBatchId] = useState("");
+  const [editingSlot, setEditingSlot] = useState<TimingSlot | null>(null);
+  const [draft, setDraft] = useState<Omit<TimingSlot, "id">>(() => blankSlot("", ""));
 
-  const set = <K extends keyof TimingSlot>(key: K, value: TimingSlot[K]) =>
+  const loadBatches = useCallback(async () => {
+    try {
+      const res = await api<{ data: Batch[] }>("/core/batches");
+      const activeBatches = res.data.filter((b) => b.isActive !== false);
+      setBatches(activeBatches);
+      if (!selectedBatchId && activeBatches.length > 0) {
+        setSelectedBatchId(activeBatches[0].id);
+        setDraft((d) => blankSlot(activeBatches[0].id, activeBatches[0].course.id));
+      }
+    } catch {
+      toast({ title: "Failed to load batches", variant: "destructive" });
+    }
+  }, [selectedBatchId, toast]);
+
+  const loadSlots = useCallback(async (batchId: string) => {
+    if (!batchId) return;
+    setLoading(true);
+    try {
+      const res = await api<{ data: TimingSlot[] }>(`/core/timetable?batchId=${batchId}`);
+      setSlots(res.data);
+    } catch {
+      toast({ title: "Failed to load timetable", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { loadBatches(); }, [loadBatches]);
+  useEffect(() => { if (selectedBatchId) loadSlots(selectedBatchId); }, [selectedBatchId, loadSlots]);
+
+  const currentBatch = batches.find((b) => b.id === selectedBatchId);
+
+  const set = <K extends keyof Omit<TimingSlot, "id">>(key: K, value: TimingSlot[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
-  const getSlotForDayTime = (day: string, start: string, end: string) =>
-    items.find(
-      (slot) => slot.batch === selectedBatch && slot.day === day && slot.startTime === start && slot.endTime === end
-    );
-
   const openAdd = () => {
-    setDraft(blankSlot(selectedBatch));
+    if (!selectedBatchId) return;
+    const batch = batches.find((b) => b.id === selectedBatchId);
+    setEditingSlot(null);
+    setDraft(blankSlot(selectedBatchId, batch?.course.id || ""));
     setIsDialogOpen(true);
   };
 
   const openEdit = (slot: TimingSlot) => {
-    setDraft(slot);
+    setEditingSlot(slot);
+    setDraft({
+      batchId: slot.batchId,
+      courseId: slot.courseId,
+      day: slot.day,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      roomNo: slot.roomNo || "",
+      subject: slot.subject || "",
+      instructor: slot.instructor || "",
+    });
     setIsDialogOpen(true);
   };
 
-  const saveSlot = () => {
-    if (draft.startTime >= draft.endTime) {
-      toast({ title: "Invalid time range", description: "The end time must be after the start time.", variant: "destructive" });
+  const saveSlot = async () => {
+    if (!draft.startTime || !draft.endTime) {
+      toast({ title: "Fill all required fields", variant: "destructive" });
       return;
     }
-    // Two classes in one cell would silently hide one another in the grid, so
-    // block the clash rather than accept it.
-    const clash = items.find(
-      (s) => s.id !== draft.id && s.batch === draft.batch && s.day === draft.day && s.startTime === draft.startTime,
+    if (draft.startTime >= draft.endTime) {
+      toast({ title: "Invalid time range", description: "End time must be after start time.", variant: "destructive" });
+      return;
+    }
+    const clash = slots.find(
+      (s) => s.id !== editingSlot?.id && s.batchId === draft.batchId && s.day === draft.day && s.startTime === draft.startTime,
     );
     if (clash) {
-      toast({ title: "Slot already taken", description: `${clash.subject} is already scheduled then.`, variant: "destructive" });
+      toast({ title: "Slot already taken", description: `${clash.subject || "A class"} is already scheduled then.`, variant: "destructive" });
       return;
     }
-    if (draft.id) {
-      update(draft.id, draft);
-      toast({ title: "Slot updated", description: `${draft.subject} on ${draft.day}.` });
-    } else {
-      setItems((list) => [...list, { ...draft, id: newId("slot") }]);
-      toast({ title: "Slot added", description: `${draft.subject} on ${draft.day} at ${draft.startTime}.` });
+    try {
+      if (editingSlot) {
+        const data = await api<TimingSlot>(`/core/timetable/${editingSlot.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            day: draft.day,
+            startTime: draft.startTime,
+            endTime: draft.endTime,
+            roomNo: draft.roomNo || null,
+            subject: draft.subject || null,
+            instructor: draft.instructor || null,
+          }),
+        });
+        setSlots((list) => list.map((s) => (s.id === editingSlot.id ? data : s)));
+        toast({ title: "Slot updated", description: `${draft.subject} on ${DAY_LABELS[draft.day]}.` });
+      } else {
+        const data = await api<TimingSlot>("/core/timetable", {
+          method: "POST",
+          body: JSON.stringify({
+            batchId: draft.batchId,
+            courseId: draft.courseId,
+            day: draft.day,
+            startTime: draft.startTime,
+            endTime: draft.endTime,
+            roomNo: draft.roomNo || undefined,
+            subject: draft.subject || undefined,
+            instructor: draft.instructor || undefined,
+          }),
+        });
+        setSlots((list) => [...list, data]);
+        toast({ title: "Slot added", description: `${draft.subject} on ${DAY_LABELS[draft.day]} at ${draft.startTime}.` });
+      }
+      setIsDialogOpen(false);
+    } catch (err) {
+      toast({ title: "Save failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
     }
-    setIsDialogOpen(false);
+  };
+
+  const removeSlot = async (id: string) => {
+    try {
+      await api<void>(`/core/timetable/${id}`, { method: "DELETE" });
+      setSlots((list) => list.filter((s) => s.id !== id));
+      toast({ title: "Slot removed", description: "Time slot deleted." });
+    } catch (err) {
+      toast({ title: "Delete failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    }
   };
 
   const exportSchedule = () => {
-    const rows = items.filter((s) => s.batch === selectedBatch);
+    const rows = slots.filter((s) => s.batchId === selectedBatchId);
     if (!rows.length) {
       toast({ title: "Nothing to export", description: "This batch has no scheduled slots.", variant: "destructive" });
       return;
     }
-    downloadCsv(`${selectedBatch}-timetable.csv`, rows, ["day", "startTime", "endTime", "subject", "instructor", "room"]);
+    downloadCsv(
+      `${currentBatch?.code || "batch"}-timetable.csv`,
+      rows.map((r) => ({
+        day: DAY_LABELS[r.day] || r.day,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        subject: r.subject || "",
+        instructor: r.instructor || "",
+        roomNo: r.roomNo || "",
+      })),
+      ["day", "startTime", "endTime", "subject", "instructor", "roomNo"],
+    );
+    toast({ title: "Exported", description: `${rows.length} slot(s) downloaded.` });
   };
+
+  const getSlotForDayTime = (day: string, start: string, end: string) =>
+    slots.find((slot) => slot.batchId === selectedBatchId && slot.day === day && slot.startTime === start && slot.endTime === end);
 
   return (
     <AppLayout>
@@ -136,7 +229,7 @@ export default function BatchTiming() {
           { label: "Batch Timing" },
         ]}
         actions={
-          <Button className="gap-2" onClick={openAdd}>
+          <Button className="gap-2" onClick={openAdd} disabled={!selectedBatchId}>
             <Plus className="h-4 w-4" />
             Add Time Slot
           </Button>
@@ -146,7 +239,7 @@ export default function BatchTiming() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{draft.id ? "Edit Time Slot" : "Add Time Slot"}</DialogTitle>
+            <DialogTitle>{editingSlot ? "Edit Time Slot" : "Add Time Slot"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-4">
             <div className="grid gap-4 md:grid-cols-2">
@@ -157,14 +250,14 @@ export default function BatchTiming() {
                     <SelectValue placeholder="Select day" />
                   </SelectTrigger>
                   <SelectContent>
-                    {days.map((day) => (
-                      <SelectItem key={day} value={day}>{day}</SelectItem>
+                    {DAY_ENUM.map((d) => (
+                      <SelectItem key={d} value={d}>{DAY_LABELS[d]}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Subject *</Label>
+                <Label>Subject</Label>
                 <Select value={draft.subject} onValueChange={(v) => set("subject", v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select subject" />
@@ -189,7 +282,7 @@ export default function BatchTiming() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Instructor *</Label>
+                <Label>Instructor</Label>
                 <Select value={draft.instructor} onValueChange={(v) => set("instructor", v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select instructor" />
@@ -202,8 +295,8 @@ export default function BatchTiming() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Room/Lab *</Label>
-                <Select value={draft.room} onValueChange={(v) => set("room", v)}>
+                <Label>Room/Lab</Label>
+                <Select value={draft.roomNo} onValueChange={(v) => set("roomNo", v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select room" />
                   </SelectTrigger>
@@ -217,7 +310,7 @@ export default function BatchTiming() {
             </div>
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button onClick={saveSlot}>{draft.id ? "Save Changes" : "Add Slot"}</Button>
+              <Button onClick={saveSlot}>{editingSlot ? "Save Changes" : "Add Slot"}</Button>
             </div>
           </div>
         </DialogContent>
@@ -227,35 +320,22 @@ export default function BatchTiming() {
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-4">
             <div className="space-y-1">
-              <Label>Select Branch</Label>
-              <Select value={branch} onValueChange={setBranch}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="Select branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="main">Main Branch</SelectItem>
-                  <SelectItem value="north">North Campus</SelectItem>
-                  <SelectItem value="south">South Campus</SelectItem>
-                  <SelectItem value="east">East Campus</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
               <Label>Select Batch</Label>
-              <Select value={selectedBatch} onValueChange={setSelectedBatch}>
-                <SelectTrigger className="w-64">
-                  <SelectValue />
+              <Select value={selectedBatchId} onValueChange={setSelectedBatchId}>
+                <SelectTrigger className="w-72">
+                  <SelectValue placeholder="Select batch" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="CS-2024-A">CS-2024-A (Computer Science)</SelectItem>
-                  <SelectItem value="CS-2024-B">CS-2024-B (Computer Science)</SelectItem>
-                  <SelectItem value="COM-2024-A">COM-2024-A (Commerce)</SelectItem>
-                  <SelectItem value="ENG-2024-A">ENG-2024-A (Engineering)</SelectItem>
+                  {batches.map((batch) => (
+                    <SelectItem key={batch.id} value={batch.id}>
+                      {batch.code} — {batch.name} ({batch.course.name})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-2 ml-auto">
-              <Button variant="outline" className="gap-2" onClick={exportSchedule}>
+            <div className="flex gap-2 ml-auto mt-5">
+              <Button variant="outline" className="gap-2" onClick={exportSchedule} disabled={!selectedBatchId}>
                 <Calendar className="h-4 w-4" />
                 Export Schedule
               </Button>
@@ -268,17 +348,20 @@ export default function BatchTiming() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Clock className="h-5 w-5" />
-            Weekly Timetable - {selectedBatch}
+            Weekly Timetable {currentBatch ? `— ${currentBatch.code}` : ""}
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {loading ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">Loading schedule...</p>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr>
                   <th className="border border-border p-3 bg-muted text-left font-medium">Time</th>
-                  {days.map((day) => (
-                    <th key={day} className="border border-border p-3 bg-muted text-left font-medium">{day}</th>
+                  {DAYS.map((day) => (
+                    <th key={day} className="border border-border p-3 bg-muted text-left font-medium">{DAY_LABELS[day]}</th>
                   ))}
                 </tr>
               </thead>
@@ -289,15 +372,15 @@ export default function BatchTiming() {
                       <span className="font-medium text-sm">{slot.start}</span>
                       <span className="text-muted-foreground text-sm"> - {slot.end}</span>
                     </td>
-                    {days.map((day) => {
+                    {DAYS.map((day) => {
                       const timing = getSlotForDayTime(day, slot.start, slot.end);
                       return (
                         <td key={day} className="border border-border p-2 min-w-[150px]">
                           {timing ? (
                             <div className="bg-primary/10 rounded-lg p-2 relative group">
-                              <p className="font-medium text-sm text-primary">{timing.subject}</p>
+                              <p className="font-medium text-sm text-primary">{timing.subject || "Class"}</p>
                               <p className="text-xs text-muted-foreground">{timing.instructor}</p>
-                              <Badge variant="outline" className="mt-1 text-xs">{timing.room}</Badge>
+                              <Badge variant="outline" className="mt-1 text-xs">{timing.roomNo || "TBD"}</Badge>
                               <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
                                 <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit slot" onClick={() => openEdit(timing)}>
                                   <Edit className="h-3 w-3" />
@@ -308,8 +391,7 @@ export default function BatchTiming() {
                                   className="h-6 w-6 text-destructive"
                                   title="Remove slot"
                                   onClick={() => {
-                                    remove(timing.id);
-                                    toast({ title: "Slot removed", description: `${timing.subject} on ${timing.day}.` });
+                                    removeSlot(timing.id);
                                   }}
                                 >
                                   <Trash2 className="h-3 w-3" />
@@ -329,6 +411,7 @@ export default function BatchTiming() {
               </tbody>
             </table>
           </div>
+          )}
         </CardContent>
       </Card>
     </AppLayout>

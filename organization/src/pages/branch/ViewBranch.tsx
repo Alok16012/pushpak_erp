@@ -10,12 +10,26 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Building2, Users, GraduationCap, IndianRupee, CalendarClock } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
-import { BRANCHES_KEY, BRANCH_SEED, type Branch } from "@/data/branches";
+import { api } from "@/lib/api";
+
+interface Branch {
+  id: string;
+  name: string;
+  code: string;
+  type: string;
+  instituteType: string;
+  city: string;
+  state: string;
+  students: number;
+  staff: number;
+  revenue: number;
+  status: "active" | "inactive";
+  expiryDate: string;
+}
 
 const columns: Column<Branch>[] = [
   {
@@ -66,7 +80,7 @@ const columns: Column<Branch>[] = [
     key: "revenue",
     header: "Revenue",
     sortable: true,
-    cell: (branch) => <span className="font-medium text-success">₹{(branch.revenue / 100000).toFixed(1)}L</span>,
+    cell: (branch) => <span className="font-medium text-success">Rs.{(branch.revenue / 100000).toFixed(1)}L</span>,
   },
   {
      key: "expiryDate",
@@ -97,20 +111,35 @@ const columns: Column<Branch>[] = [
 export default function ViewBranch() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items: branchesData, update, remove } = useLocalCollection<Branch>(BRANCHES_KEY, BRANCH_SEED);
+  const [branchesData, setBranchesData] = useState<Branch[]>([]);
+  const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<Branch | null>(null);
   const [editing, setEditing] = useState<Branch | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Branch | null>(null);
 
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const data = await api<{ items: Branch[] }>("/core/branches");
+        setBranchesData(data.items);
+      } catch {
+        toast({ title: "Failed to load branches", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBranches();
+  }, [toast]);
+
   const certificate = (branch: Branch) =>
     printHtml(
-      `Center Certificate — ${branch.code}`,
+      `Center Certificate - ${branch.code}`,
       `<div style="border:6px double #1f2937;padding:48px;text-align:center;font-family:Georgia,serif">
          <p style="letter-spacing:.3em;font-size:12px;text-transform:uppercase;color:#6b7280">Pushpak Institute</p>
          <h1 style="margin:16px 0 4px;font-size:30px">Center Certificate</h1>
          <p style="color:#6b7280;font-size:13px">This is to certify that the centre named below is authorised to operate</p>
          <h2 style="margin:28px 0 4px;font-size:24px">${branch.name}</h2>
-         <p style="font-size:14px">Centre code <strong>${branch.code}</strong> · ${branch.instituteType}</p>
+         <p style="font-size:14px">Centre code <strong>${branch.code}</strong> - ${branch.instituteType}</p>
          <p style="font-size:14px">${branch.city}, ${branch.state}</p>
          <table style="margin:28px auto 0;font-size:13px;border-collapse:collapse">
            <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Category</td><td style="padding:4px 16px;text-align:left"><strong>${branch.type}</strong></td></tr>
@@ -130,21 +159,34 @@ export default function ViewBranch() {
     { label: "Delete", onClick: () => setPendingDelete(branch), destructive: true },
   ];
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editing) return;
     if (!editing.name.trim() || !editing.code.trim()) {
       toast({ title: "Name and code are required", variant: "destructive" });
       return;
     }
-    update(editing.id, editing);
-    toast({ title: "Branch updated", description: `${editing.name} was saved.` });
-    setEditing(null);
+    try {
+      await api(`/core/branches/${editing.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(editing),
+      });
+      setBranchesData((prev) => prev.map((b) => (b.id === editing.id ? editing : b)));
+      toast({ title: "Branch updated", description: `${editing.name} was saved.` });
+      setEditing(null);
+    } catch {
+      toast({ title: "Failed to update branch", variant: "destructive" });
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!pendingDelete) return;
-    remove(pendingDelete.id);
-    toast({ title: "Branch removed", description: `${pendingDelete.name} is no longer in the register.` });
+    try {
+      await api(`/core/branches/${pendingDelete.id}`, { method: "DELETE" });
+      setBranchesData((prev) => prev.filter((b) => b.id !== pendingDelete.id));
+      toast({ title: "Branch removed", description: `${pendingDelete.name} is no longer in the register.` });
+    } catch {
+      toast({ title: "Failed to delete branch", variant: "destructive" });
+    }
     setPendingDelete(null);
   };
 
@@ -152,6 +194,16 @@ export default function ViewBranch() {
   const totalStaff = branchesData.reduce((sum, b) => sum + b.staff, 0);
   const totalRevenue = branchesData.reduce((sum, b) => sum + b.revenue, 0);
   const activeBranches = branchesData.filter(b => b.status === "active").length;
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading branches...</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -193,7 +245,7 @@ export default function ViewBranch() {
         />
         <StatsCard
           title="Total Revenue"
-          value={`₹${(totalRevenue / 100000).toFixed(1)}L`}
+          value={`Rs.${(totalRevenue / 100000).toFixed(1)}L`}
           subtitle="This month"
           icon={IndianRupee}
           trend={{ value: 8, isPositive: true }}
@@ -211,7 +263,7 @@ export default function ViewBranch() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{details?.name}</DialogTitle>
-            <DialogDescription>{details?.code} · {details?.instituteType}</DialogDescription>
+            <DialogDescription>{details?.code} - {details?.instituteType}</DialogDescription>
           </DialogHeader>
           {details && (
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -220,7 +272,7 @@ export default function ViewBranch() {
                 ["Location", `${details.city}, ${details.state}`],
                 ["Students", details.students.toLocaleString()],
                 ["Staff", String(details.staff)],
-                ["Revenue", `₹${(details.revenue / 100000).toFixed(1)}L`],
+                ["Revenue", `Rs.${(details.revenue / 100000).toFixed(1)}L`],
                 ["Expiry", details.expiryDate],
                 ["Status", details.status === "active" ? "Active" : "Inactive"],
               ].map(([label, value]) => (

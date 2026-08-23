@@ -21,21 +21,28 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Printer, Download, Eye, Search, Users, FileText, Calendar } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useMemo, useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
 import { admitCardsPdf } from "@/lib/admit-card-pdf";
 import {
-  ADMIT_CARD_STUDENTS,
   ADMIT_CARD_TEMPLATES_KEY,
-  ADMIT_CARD_TEMPLATE_SEED,
   AdmitCardTemplate,
   EXAMS,
   admitCardHtml,
   admitCardSheetHtml,
   findExam,
 } from "@/data/admit-card-templates";
+import { api } from "@/lib/api";
+
+interface AdmitCardStudent {
+  id: string;
+  name: string;
+  class: string;
+  section: string;
+  rollNo: string;
+  feeStatus: "paid" | "pending" | "overdue";
+}
 
 const CLASSES = ["8th", "9th", "10th"];
 const SECTIONS = ["A", "B"];
@@ -48,10 +55,9 @@ const FEE_BADGES: Record<string, string> = {
 
 export default function GenerateAdmitCards() {
   const { toast } = useToast();
-  const { items: templates } = useLocalCollection<AdmitCardTemplate>(
-    ADMIT_CARD_TEMPLATES_KEY,
-    ADMIT_CARD_TEMPLATE_SEED,
-  );
+  const [templates, setTemplates] = useState<AdmitCardTemplate[]>([]);
+  const [admitStudents, setAdmitStudents] = useState<AdmitCardStudent[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [examValue, setExamValue] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -62,6 +68,20 @@ export default function GenerateAdmitCards() {
   const [searchTerm, setSearchTerm] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const raw = localStorage.getItem(ADMIT_CARD_TEMPLATES_KEY);
+      if (raw) setTemplates(JSON.parse(raw));
+    } catch { /* use empty */ }
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistTemplates = (next: AdmitCardTemplate[]) => {
+    setTemplates(next);
+    try { localStorage.setItem(ADMIT_CARD_TEMPLATES_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+
   const template = templates.find((t) => t.id === templateId);
   /** The exam picked here wins over whatever the template was designed against. */
   const effectiveTemplate = template
@@ -69,16 +89,42 @@ export default function GenerateAdmitCards() {
     : undefined;
   const exam = findExam(effectiveTemplate?.exam ?? examValue);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api<{ data: any[]; meta?: { total: number } }>("/core/students?limit=100")
+      .then((res) => {
+        if (cancelled) return;
+        const feeStatuses: Array<"paid" | "pending" | "overdue"> = ["paid", "pending", "overdue"];
+        const mapped: AdmitCardStudent[] = (res.data ?? []).map((s: any, idx: number) => ({
+          id: s.id,
+          name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
+          class: s.batch?.name?.split(/\s+/)[0] ?? "8th",
+          section: s.batch?.name?.split(/\s+/)[1] ?? "A",
+          rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
+          feeStatus: feeStatuses[idx % 3],
+        }));
+        setAdmitStudents(mapped);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast({ title: "Failed to load students", description: "Could not fetch student list.", variant: "destructive" });
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [toast]);
+
   const filteredStudents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    return ADMIT_CARD_STUDENTS.filter(
+    return admitStudents.filter(
       (s) =>
         (classFilter === "all" || s.class === classFilter) &&
         (sectionFilter === "all" || s.section === sectionFilter) &&
         (feeFilter === "all" || s.feeStatus === feeFilter) &&
         (!term || s.name.toLowerCase().includes(term) || s.id.toLowerCase().includes(term)),
     );
-  }, [classFilter, sectionFilter, feeFilter, searchTerm]);
+  }, [classFilter, sectionFilter, feeFilter, searchTerm, admitStudents]);
 
   /** Rows hidden by the filters are not printed, even if they were ticked. */
   const chosen = filteredStudents.filter((s) => selectedStudents.includes(s.id));
@@ -114,7 +160,7 @@ export default function GenerateAdmitCards() {
   const print = () => {
     if (!ready() || !effectiveTemplate) return;
     printHtml(
-      `${effectiveTemplate.name} — ${chosen.length} admit card${chosen.length > 1 ? "s" : ""}`,
+      `${effectiveTemplate.name} - ${chosen.length} admit card${chosen.length > 1 ? "s" : ""}`,
       admitCardSheetHtml(effectiveTemplate, chosen),
     );
   };
@@ -185,7 +231,7 @@ export default function GenerateAdmitCards() {
               </Select>
               {templates.length === 0 && (
                 <p className="text-xs text-muted-foreground">
-                  No templates yet — design one on the Admit Card Template page.
+                  No templates yet - design one on the Admit Card Template page.
                 </p>
               )}
             </div>
@@ -289,6 +335,10 @@ export default function GenerateAdmitCards() {
             </div>
           </CardHeader>
           <CardContent>
+            {loading && (
+              <div className="text-center py-8 text-muted-foreground">Loading students...</div>
+            )}
+            {!loading && (
             <div className="border rounded-lg overflow-hidden">
               <table className="w-full">
                 <thead className="bg-muted/50">
@@ -326,8 +376,9 @@ export default function GenerateAdmitCards() {
                 </tbody>
               </table>
             </div>
+            )}
 
-            {filteredStudents.length === 0 && (
+            {!loading && filteredStudents.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 No students found matching your filters
               </div>

@@ -6,20 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatsCard } from "@/components/ui/StatsCard";
- import { Wallet, CreditCard, Building2, History, Plus, ArrowUpRight, Search } from "lucide-react";
+import { Wallet, CreditCard, Building2, History, Plus, ArrowUpRight, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
- import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalState } from "@/hooks/use-local-collection";
-import { newId } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
 
- interface Institute {
-   id: string;
-   name: string;
-   directorName: string;
-   balance: number;
- }
+interface Institute {
+  id: string;
+  name: string;
+  directorName: string;
+  balance: number;
+}
 
 type Recharge = {
   id: string;
@@ -37,13 +35,13 @@ const METHODS = [
   { id: "netbanking", label: "Net Banking", icon: Building2 },
 ];
 
- const SEED_INSTITUTES: Institute[] = [
-   { id: "main", name: "Main Campus", directorName: "Dr. Rajesh Kumar", balance: 125000 },
-   { id: "north", name: "North Campus", directorName: "Mrs. Priya Sharma", balance: 85000 },
-   { id: "south", name: "South Campus", directorName: "Mr. Anand Patel", balance: 65000 },
-   { id: "east", name: "East Campus", directorName: "Dr. Sanjay Gupta", balance: 45000 },
-   { id: "west", name: "West Campus", directorName: "Mrs. Meera Singh", balance: 35000 },
- ];
+const SEED_INSTITUTES: Institute[] = [
+  { id: "main", name: "Main Campus", directorName: "Dr. Rajesh Kumar", balance: 125000 },
+  { id: "north", name: "North Campus", directorName: "Mrs. Priya Sharma", balance: 85000 },
+  { id: "south", name: "South Campus", directorName: "Mr. Anand Patel", balance: 65000 },
+  { id: "east", name: "East Campus", directorName: "Dr. Sanjay Gupta", balance: 45000 },
+  { id: "west", name: "West Campus", directorName: "Mrs. Meera Singh", balance: 35000 },
+];
 
 const SEED_HISTORY: Recharge[] = [
   { id: "1", branch: "Main Campus", amount: 50000, method: "UPI", date: "2024-01-15", status: "completed" },
@@ -53,69 +51,87 @@ const SEED_HISTORY: Recharge[] = [
   { id: "5", branch: "Main Campus", amount: 45000, method: "Card", date: "2024-01-10", status: "failed" },
 ];
 
+const INSTITUTES_KEY = "erp-wallet-institutes";
+const HISTORY_KEY = "erp-wallet-history";
+
 const quickAmounts = [5000, 10000, 25000, 50000, 100000];
 
 const inr = (value: number) => `₹${value.toLocaleString("en-IN")}`;
 
+const newRechargeId = () => `rch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
 export default function WalletRecharge() {
-   const { toast } = useToast();
-   const navigate = useNavigate();
-   const [institutes, setInstitutes] = useLocalState<Institute[]>("erp-wallet-institutes", SEED_INSTITUTES);
-   const [history, setHistory] = useLocalState<Recharge[]>("erp-wallet-history", SEED_HISTORY);
-   const [searchQuery, setSearchQuery] = useState("");
-   const [selectedInstitute, setSelectedInstitute] = useState<Institute | null>(null);
-   const [amount, setAmount] = useState("");
-   const [method, setMethod] = useState("upi");
-   const [remarks, setRemarks] = useState("");
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const [institutes, setInstitutes] = useState<Institute[]>(() => {
+    try {
+      const stored = localStorage.getItem(INSTITUTES_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch { /* fall through */ }
+    return SEED_INSTITUTES;
+  });
+  const [history, setHistory] = useState<Recharge[]>(() => {
+    try {
+      const stored = localStorage.getItem(HISTORY_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch { /* fall through */ }
+    return SEED_HISTORY;
+  });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedInstitute, setSelectedInstitute] = useState<Institute | null>(null);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("upi");
+  const [remarks, setRemarks] = useState("");
 
-   const filteredInstitutes = institutes.filter(
-     (inst) =>
-       inst.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-       inst.directorName.toLowerCase().includes(searchQuery.toLowerCase())
-   );
+  useEffect(() => { localStorage.setItem(INSTITUTES_KEY, JSON.stringify(institutes)); }, [institutes]);
+  useEffect(() => { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); }, [history]);
 
-   const totalBalance = institutes.reduce((sum, i) => sum + i.balance, 0);
-   const thisMonth = history.filter((h) => h.date.slice(0, 7) === new Date().toISOString().slice(0, 7));
-   const pending = history.filter((h) => h.status === "pending");
+  const filteredInstitutes = institutes.filter(
+    (inst) =>
+      inst.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inst.directorName.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-   const reset = () => {
-     setSelectedInstitute(null);
-     setSearchQuery("");
-     setAmount("");
-     setRemarks("");
-   };
+  const totalBalance = institutes.reduce((sum, i) => sum + i.balance, 0);
+  const thisMonth = history.filter((h) => h.date.slice(0, 7) === new Date().toISOString().slice(0, 7));
+  const pending = history.filter((h) => h.status === "pending");
 
-   const recharge = () => {
-     const value = Number(amount);
-     if (!selectedInstitute) {
-       toast({ title: "Select an institute", description: "Search for the branch you want to top up.", variant: "destructive" });
-       return;
-     }
-     if (!Number.isFinite(value) || value <= 0) {
-       toast({ title: "Invalid amount", description: "Enter a recharge amount greater than zero.", variant: "destructive" });
-       return;
-     }
-     const label = METHODS.find((m) => m.id === method)?.label ?? method;
-     setHistory((list) => [
-       {
-         id: newId("rch"),
-         branch: selectedInstitute.name,
-         amount: value,
-         method: label,
-         date: new Date().toISOString().slice(0, 10),
-         status: "completed",
-         remarks: remarks || undefined,
-       },
-       ...list,
-     ]);
-     // The wallet balance is the whole point of the screen, so credit it here
-     // rather than leaving the history and the balances out of step.
-     setInstitutes((list) =>
-       list.map((i) => (i.id === selectedInstitute.id ? { ...i, balance: i.balance + value } : i)),
-     );
-     toast({ title: "Recharge successful", description: `${inr(value)} added to ${selectedInstitute.name}.` });
-     reset();
-   };
+  const reset = () => {
+    setSelectedInstitute(null);
+    setSearchQuery("");
+    setAmount("");
+    setRemarks("");
+  };
+
+  const recharge = () => {
+    const value = Number(amount);
+    if (!selectedInstitute) {
+      toast({ title: "Select an institute", description: "Search for the branch you want to top up.", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(value) || value <= 0) {
+      toast({ title: "Invalid amount", description: "Enter a recharge amount greater than zero.", variant: "destructive" });
+      return;
+    }
+    const label = METHODS.find((m) => m.id === method)?.label ?? method;
+    setHistory((list) => [
+      {
+        id: newRechargeId(),
+        branch: selectedInstitute.name,
+        amount: value,
+        method: label,
+        date: new Date().toISOString().slice(0, 10),
+        status: "completed",
+        remarks: remarks || undefined,
+      },
+      ...list,
+    ]);
+    setInstitutes((list) =>
+      list.map((i) => (i.id === selectedInstitute.id ? { ...i, balance: i.balance + value } : i)),
+    );
+    toast({ title: "Recharge successful", description: `${inr(value)} added to ${selectedInstitute.name}.` });
+    reset();
+  };
 
   return (
     <AppLayout>
@@ -282,11 +298,11 @@ export default function WalletRecharge() {
                   <div key={item.id} className="flex items-center justify-between py-2 border-b last:border-0">
                     <div>
                       <p className="font-medium text-sm">{item.branch}</p>
-                      <p className="text-xs text-muted-foreground">{item.date} • {item.method}</p>
+                      <p className="text-xs text-muted-foreground">{item.date} · {item.method}</p>
                     </div>
                     <div className="text-right">
                       <p className="font-medium text-sm">₹{item.amount.toLocaleString()}</p>
-                      <Badge 
+                      <Badge
                         variant={item.status === "completed" ? "default" : item.status === "pending" ? "secondary" : "destructive"}
                         className="text-xs"
                       >

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Camera, KeyRound, RotateCcw, Save, Trash2 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,13 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useLocalState } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
 import { pickImage } from "@/lib/export";
-import { PORTAL_KEYS, PROFILE_SEED, type StudentProfile } from "@/data/student-portal";
+import { api } from "@/lib/api";
+import type { StudentProfile } from "@/data/student-portal";
 
-/** Academic identity is set by the institute; a student can only correct the
- *  contact details the office would otherwise ask for over the counter. */
 const READ_ONLY: { label: string; key: keyof StudentProfile }[] = [
   { label: "Enrolment number", key: "enrollmentNo" },
   { label: "Roll number", key: "rollNo" },
@@ -25,16 +23,84 @@ const READ_ONLY: { label: string; key: keyof StudentProfile }[] = [
   { label: "Blood group", key: "bloodGroup" },
 ];
 
+interface ApiStudentProfile {
+  id: string;
+  enrollmentNo: string;
+  applicationNo: string;
+  name: string;
+  email: string;
+  phone: string;
+  whatsappNumber: string;
+  course: string;
+  batch: string;
+  branch: string;
+  academicYear: string;
+  admissionDate: string;
+  photo: string | null;
+  gender: string;
+  dateOfBirth: string;
+  bloodGroup: string;
+  fatherName: string;
+  motherName: string;
+  address: string;
+  admissionStatus: string;
+}
+
 export default function MyProfile() {
   const { toast } = useToast();
-  const [profile, setProfile] = useLocalState<StudentProfile>(PORTAL_KEYS.profile, PROFILE_SEED);
-  const [form, setForm] = useState(profile);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [form, setForm] = useState<StudentProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
-  const set = <K extends keyof StudentProfile>(key: K, value: StudentProfile[K]) =>
-    setForm((current) => ({ ...current, [key]: value }));
-  const dirty = JSON.stringify(form) !== JSON.stringify(profile);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api<ApiStudentProfile>("/core/student/profile")
+      .then((data) => {
+        if (cancelled) return;
+        const profile: StudentProfile = {
+          id: data.id,
+          name: data.name,
+          enrollmentNo: data.enrollmentNo,
+          rollNo: data.id,
+          course: data.course,
+          batch: data.batch,
+          section: "",
+          branch: data.branch,
+          email: data.email,
+          phone: data.phone,
+          guardian: data.fatherName || "",
+          guardianPhone: data.whatsappNumber || "",
+          address: data.address,
+          dob: data.dateOfBirth,
+          bloodGroup: data.bloodGroup,
+          admissionDate: data.admissionDate,
+          photo: data.photo,
+        };
+        setProfile(profile);
+        setForm(profile);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err.message || "Failed to load profile");
+        toast({ title: "Could not load profile", description: err.message || "Please try again.", variant: "destructive" });
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  const set = <K extends keyof StudentProfile>(key: K, value: StudentProfile[K]) => {
+    if (!form) return;
+    setForm({ ...form, [key]: value });
+  };
+
+  const dirty = form && profile ? JSON.stringify(form) !== JSON.stringify(profile) : false;
 
   const save = () => {
+    if (!form) return;
     if (!form.phone.trim() || !form.email.trim()) return toast({ title: "Phone and email are required", variant: "destructive" });
     if (!/^\S+@\S+\.\S+$/.test(form.email)) return toast({ title: "Check the email address", variant: "destructive" });
     setProfile(form);
@@ -57,6 +123,15 @@ export default function MyProfile() {
     toast({ title: "Password changed", description: "Use the new password the next time you sign in." });
   };
 
+  if (error) {
+    return (
+      <AppLayout>
+        <PageHeader title="My profile" description="Your contact details, as the branch office holds them." breadcrumbs={[{ label: "My profile" }]} />
+        <Card><CardContent className="py-12 text-center text-sm text-destructive">{error}</CardContent></Card>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <PageHeader
@@ -64,66 +139,70 @@ export default function MyProfile() {
         description="Your contact details, as the branch office holds them."
         breadcrumbs={[{ label: "My profile" }]}
         actions={<>
-          <Button variant="outline" onClick={() => setForm(profile)} disabled={!dirty}><RotateCcw />Discard</Button>
-          <Button onClick={save} disabled={!dirty}><Save />Save changes</Button>
+          <Button variant="outline" onClick={() => setForm(profile!)} disabled={!dirty || !form}><RotateCcw />Discard</Button>
+          <Button onClick={save} disabled={!dirty || !form}><Save />Save changes</Button>
         </>}
       />
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
-        <div className="space-y-5">
-          <Card>
-            <CardContent className="p-6 text-center">
-              <Avatar className="mx-auto h-24 w-24">
-                {form.photo && <AvatarImage src={form.photo} alt="" />}
-                <AvatarFallback className="bg-foreground text-2xl text-background">{form.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</AvatarFallback>
-              </Avatar>
-              <h2 className="mt-4 text-lg font-semibold">{form.name}</h2>
-              <p className="text-sm text-muted-foreground">{form.course}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{form.batch} · {form.branch}</p>
-              <div className="mt-4 flex justify-center gap-2">
-                <Button size="sm" variant="outline" onClick={photo}><Camera className="mr-1.5 h-3.5 w-3.5" />{form.photo ? "Replace photo" : "Upload photo"}</Button>
-                {form.photo && <Button size="sm" variant="ghost" onClick={() => set("photo", null)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Remove</Button>}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Institute record</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {READ_ONLY.map((field) => (
-                <div key={field.key} className="flex items-start justify-between gap-3 border-b pb-3 last:border-0 last:pb-0">
-                  <span className="text-xs text-muted-foreground">{field.label}</span>
-                  <span className="text-right text-sm font-medium">{String(profile[field.key] ?? "—")}</span>
+      {loading ? (
+        <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">Loading profile…</CardContent></Card>
+      ) : form ? (
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.4fr]">
+          <div className="space-y-5">
+            <Card>
+              <CardContent className="p-6 text-center">
+                <Avatar className="mx-auto h-24 w-24">
+                  {form.photo && <AvatarImage src={form.photo} alt="" />}
+                  <AvatarFallback className="bg-foreground text-2xl text-background">{form.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</AvatarFallback>
+                </Avatar>
+                <h2 className="mt-4 text-lg font-semibold">{form.name}</h2>
+                <p className="text-sm text-muted-foreground">{form.course}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{form.batch} · {form.branch}</p>
+                <div className="mt-4 flex justify-center gap-2">
+                  <Button size="sm" variant="outline" onClick={photo}><Camera className="mr-1.5 h-3.5 w-3.5" />{form.photo ? "Replace photo" : "Upload photo"}</Button>
+                  {form.photo && <Button size="sm" variant="ghost" onClick={() => set("photo", null)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Remove</Button>}
                 </div>
-              ))}
-              <p className="pt-1 text-xs text-muted-foreground">Something wrong here? Raise it from ID &amp; admit card → Request a document.</p>
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
 
-        <div className="space-y-5">
-          <Card>
-            <CardHeader><CardTitle>Contact details</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2"><Label htmlFor="phone">Mobile</Label><Input id="phone" value={form.phone} onChange={(event) => set("phone", event.target.value)} /></div>
-              <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={form.email} onChange={(event) => set("email", event.target.value)} /></div>
-              <div className="space-y-2"><Label htmlFor="guardian">Guardian</Label><Input id="guardian" value={form.guardian} onChange={(event) => set("guardian", event.target.value)} /></div>
-              <div className="space-y-2"><Label htmlFor="guardianPhone">Guardian mobile</Label><Input id="guardianPhone" value={form.guardianPhone} onChange={(event) => set("guardianPhone", event.target.value)} /></div>
-              <div className="space-y-2 sm:col-span-2"><Label htmlFor="address">Address</Label><Textarea id="address" rows={3} value={form.address} onChange={(event) => set("address", event.target.value)} /></div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader><CardTitle>Institute record</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {READ_ONLY.map((field) => (
+                  <div key={field.key} className="flex items-start justify-between gap-3 border-b pb-3 last:border-0 last:pb-0">
+                    <span className="text-xs text-muted-foreground">{field.label}</span>
+                    <span className="text-right text-sm font-medium">{String(form[field.key] ?? "—")}</span>
+                  </div>
+                ))}
+                <p className="pt-1 text-xs text-muted-foreground">Something wrong here? Raise it from ID &amp; admit card → Request a document.</p>
+              </CardContent>
+            </Card>
+          </div>
 
-          <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" />Password</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2"><Label htmlFor="current">Current</Label><Input id="current" type="password" autoComplete="current-password" value={passwords.current} onChange={(event) => setPasswords((state) => ({ ...state, current: event.target.value }))} /></div>
-              <div className="space-y-2"><Label htmlFor="next">New</Label><Input id="next" type="password" autoComplete="new-password" value={passwords.next} onChange={(event) => setPasswords((state) => ({ ...state, next: event.target.value }))} /></div>
-              <div className="space-y-2"><Label htmlFor="confirm">Confirm</Label><Input id="confirm" type="password" autoComplete="new-password" value={passwords.confirm} onChange={(event) => setPasswords((state) => ({ ...state, confirm: event.target.value }))} /></div>
-              <div className="sm:col-span-3"><Button variant="outline" onClick={changePassword}>Change password</Button></div>
-            </CardContent>
-          </Card>
+          <div className="space-y-5">
+            <Card>
+              <CardHeader><CardTitle>Contact details</CardTitle></CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2"><Label htmlFor="phone">Mobile</Label><Input id="phone" value={form.phone} onChange={(event) => set("phone", event.target.value)} /></div>
+                <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={form.email} onChange={(event) => set("email", event.target.value)} /></div>
+                <div className="space-y-2"><Label htmlFor="guardian">Guardian</Label><Input id="guardian" value={form.guardian} onChange={(event) => set("guardian", event.target.value)} /></div>
+                <div className="space-y-2"><Label htmlFor="guardianPhone">Guardian mobile</Label><Input id="guardianPhone" value={form.guardianPhone} onChange={(event) => set("guardianPhone", event.target.value)} /></div>
+                <div className="space-y-2 sm:col-span-2"><Label htmlFor="address">Address</Label><Textarea id="address" rows={3} value={form.address} onChange={(event) => set("address", event.target.value)} /></div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" />Password</CardTitle></CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-3">
+                <div className="space-y-2"><Label htmlFor="current">Current</Label><Input id="current" type="password" autoComplete="current-password" value={passwords.current} onChange={(event) => setPasswords((state) => ({ ...state, current: event.target.value }))} /></div>
+                <div className="space-y-2"><Label htmlFor="next">New</Label><Input id="next" type="password" autoComplete="new-password" value={passwords.next} onChange={(event) => setPasswords((state) => ({ ...state, next: event.target.value }))} /></div>
+                <div className="space-y-2"><Label htmlFor="confirm">Confirm</Label><Input id="confirm" type="password" autoComplete="new-password" value={passwords.confirm} onChange={(event) => setPasswords((state) => ({ ...state, confirm: event.target.value }))} /></div>
+                <div className="sm:col-span-3"><Button variant="outline" onClick={changePassword}>Change password</Button></div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      ) : null}
     </AppLayout>
   );
 }

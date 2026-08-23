@@ -9,25 +9,39 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Save, RotateCcw, Video, Settings, Users, Bell, Link2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
-import {
-  BATCHES,
-  BATCH_SIZE,
-  COURSES,
-  DURATIONS,
-  INSTRUCTORS,
-  LIVE_CLASSES_KEY,
-  LIVE_CLASS_SEED,
-  PLATFORMS,
-  SUBJECTS,
-  generateMeetingLink,
-  type LiveClass,
-} from "@/data/live-classes";
+import { api } from "@/lib/api";
 
-const BLANK = {
+interface FormData {
+  title: string;
+  subject: string;
+  course: string;
+  batch: string;
+  instructor: string;
+  description: string;
+  date: string;
+  time: string;
+  duration: string;
+  platform: string;
+  meetingLink: string;
+  meetingId: string;
+  password: string;
+  waitingRoom: boolean;
+  muteOnEntry: boolean;
+  screenShare: boolean;
+  recording: boolean;
+  chat: boolean;
+  emailNotify: boolean;
+  smsNotify: boolean;
+  pushNotify: boolean;
+  reminder: string;
+  recurring: boolean;
+  repeat: string;
+}
+
+const BLANK: FormData = {
   title: "",
   subject: "",
   course: "",
@@ -54,7 +68,7 @@ const BLANK = {
   repeat: "weekly",
 };
 
-const REQUIRED: Array<[keyof typeof BLANK, string]> = [
+const REQUIRED: Array<[keyof FormData, string]> = [
   ["title", "Class Title"],
   ["subject", "Subject"],
   ["course", "Course"],
@@ -66,20 +80,78 @@ const REQUIRED: Array<[keyof typeof BLANK, string]> = [
   ["platform", "Platform"],
 ];
 
-/** "14:30" → "2:30 PM", the format the class list renders. */
+/** "14:30" -> "2:30 PM", the format the class list renders. */
 const to12Hour = (time: string) => {
   const [hours, minutes] = time.split(":").map(Number);
   const suffix = hours >= 12 ? "PM" : "AM";
   return `${((hours + 11) % 12) + 1}:${String(minutes).padStart(2, "0")} ${suffix}`;
 };
 
+const DURATIONS = [
+  { value: "30", label: "30 minutes" },
+  { value: "45", label: "45 minutes" },
+  { value: "60", label: "1 hour" },
+  { value: "90", label: "1.5 hours" },
+  { value: "120", label: "2 hours" },
+];
+
+const generateMeetingLink = (platform: string) => {
+  const id = Math.floor(Math.random() * 9_000_000_000 + 1_000_000_000);
+  if (platform === "Google Meet") return `https://meet.google.com/${String(id).slice(0, 3)}-${String(id).slice(3, 7)}-${String(id).slice(7, 10)}`;
+  if (platform === "Microsoft Teams") return `https://teams.microsoft.com/l/meetup-join/${id}`;
+  if (platform === "Cisco Webex") return `https://webex.com/meet/${id}`;
+  return `https://zoom.us/j/${id}`;
+};
+
 export default function LiveClassSetup() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { add } = useLocalCollection<LiveClass>(LIVE_CLASSES_KEY, LIVE_CLASS_SEED);
-  const [form, setForm] = useState(BLANK);
+  const [form, setForm] = useState<FormData>(BLANK);
+  const [subjects, setSubjects] = useState<string[]>([]);
+  const [courses, setCourses] = useState<string[]>([]);
+  const [batches, setBatches] = useState<Array<{ value: string; label: string }>>([]);
+  const [instructors, setInstructors] = useState<string[]>([]);
+  const [loadingLookups, setLoadingLookups] = useState(true);
 
-  const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
+  useEffect(() => {
+    const fetchLookups = async () => {
+      try {
+        const [coursesRes, batchesRes] = await Promise.all([
+          api<{ items: Array<{ name: string }> }>("/core/courses"),
+          api<{ items: Array<{ name: string; _count?: { students: number } }> }>("/core/batches"),
+        ]);
+        setCourses(coursesRes.items.map((c) => c.name));
+        setBatches(batchesRes.items.map((b) => ({
+          value: b.name,
+          label: `${b.name}${b._count?.students ? ` · ${b._count.students} students` : ""}`,
+        })));
+      } catch {
+        // Keep empty arrays on failure
+      } finally {
+        setLoadingLookups(false);
+      }
+    };
+    fetchLookups();
+  }, []);
+
+  // Load subjects and instructors from the class list endpoint as a convenience.
+  useEffect(() => {
+    const fetchMeta = async () => {
+      try {
+        const data = await api<{ items: { subject: string; instructor: string }[] }>("/core/portal/classes");
+        const subjSet = new Set<string>();
+        const instrSet = new Set<string>();
+        data.items.forEach((c) => { subjSet.add(c.subject); instrSet.add(c.instructor); });
+        if (subjSet.size > 0) setSubjects(Array.from(subjSet).sort());
+        if (instrSet.size > 0) setInstructors(Array.from(instrSet).sort());
+      } catch {
+        // keep defaults empty
+      }
+    };
+    fetchMeta();
+  }, []);
+
+  const set = <K extends keyof FormData>(key: K, value: FormData[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
 
   const fillLink = () => {
@@ -114,7 +186,12 @@ export default function LiveClassSetup() {
 
     const duration = DURATIONS.find((option) => option.value === form.duration)?.label ?? "1 hour";
     const link = form.meetingLink.trim() || generateMeetingLink(form.platform);
-    add({
+
+    // No dedicated live-class API endpoint yet; persist to localStorage.
+    const storageKey = "erp-live-classes";
+    const existing = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    const entry = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `lc-${Date.now()}`,
       title: form.title.trim(),
       subject: form.subject,
       instructor: form.instructor,
@@ -128,10 +205,11 @@ export default function LiveClassSetup() {
       meetingId: form.meetingId.trim() || undefined,
       description: form.description.trim() || undefined,
       attendees: 0,
-      totalStudents: BATCH_SIZE[form.batch] ?? 30,
-      status: "scheduled",
+      totalStudents: 30,
+      status: "scheduled" as const,
       recorded: form.recording,
-    });
+    };
+    localStorage.setItem(storageKey, JSON.stringify([entry, ...existing]));
 
     const channels = [form.emailNotify && "email", form.smsNotify && "SMS", form.pushNotify && "push"]
       .filter(Boolean)
@@ -150,7 +228,7 @@ export default function LiveClassSetup() {
     toast({ title: "Form reset", description: "All fields are back to their defaults." });
   };
 
-  const participantSettings: Array<[keyof typeof BLANK, string, string]> = [
+  const participantSettings: Array<[keyof FormData, string, string]> = [
     ["waitingRoom", "Waiting Room", "Admit participants manually"],
     ["muteOnEntry", "Mute on Entry", "Mute participants when they join"],
     ["screenShare", "Allow Screen Sharing", "Participants can share their screen"],
@@ -158,7 +236,7 @@ export default function LiveClassSetup() {
     ["chat", "Enable Chat", "Allow participants to chat"],
   ];
 
-  const notifications: Array<[keyof typeof BLANK, string]> = [
+  const notifications: Array<[keyof FormData, string]> = [
     ["emailNotify", "Send email invitation"],
     ["smsNotify", "Send SMS reminder"],
     ["pushNotify", "Push notification"],
@@ -199,10 +277,10 @@ export default function LiveClassSetup() {
                   <Label htmlFor="subject">Subject *</Label>
                   <Select value={form.subject} onValueChange={(value) => set("subject", value)}>
                     <SelectTrigger id="subject">
-                      <SelectValue placeholder="Select subject" />
+                      <SelectValue placeholder={loadingLookups ? "Loading..." : "Select subject"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {SUBJECTS.map((subject) => <SelectItem key={subject} value={subject}>{subject}</SelectItem>)}
+                      {subjects.map((subject) => <SelectItem key={subject} value={subject}>{subject}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -213,10 +291,10 @@ export default function LiveClassSetup() {
                   <Label htmlFor="course">Course *</Label>
                   <Select value={form.course} onValueChange={(value) => set("course", value)}>
                     <SelectTrigger id="course">
-                      <SelectValue placeholder="Select course" />
+                      <SelectValue placeholder={loadingLookups ? "Loading..." : "Select course"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {COURSES.map((course) => <SelectItem key={course} value={course}>{course}</SelectItem>)}
+                      {courses.map((course) => <SelectItem key={course} value={course}>{course}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -224,11 +302,11 @@ export default function LiveClassSetup() {
                   <Label htmlFor="batch">Batch *</Label>
                   <Select value={form.batch} onValueChange={(value) => set("batch", value)}>
                     <SelectTrigger id="batch">
-                      <SelectValue placeholder="Select batch" />
+                      <SelectValue placeholder={loadingLookups ? "Loading..." : "Select batch"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {BATCHES.map((batch) => (
-                        <SelectItem key={batch} value={batch}>{batch} · {BATCH_SIZE[batch]} students</SelectItem>
+                      {batches.map((batch) => (
+                        <SelectItem key={batch.value} value={batch.value}>{batch.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -239,10 +317,10 @@ export default function LiveClassSetup() {
                 <Label htmlFor="instructor">Instructor *</Label>
                 <Select value={form.instructor} onValueChange={(value) => set("instructor", value)}>
                   <SelectTrigger id="instructor">
-                    <SelectValue placeholder="Select instructor" />
+                    <SelectValue placeholder={loadingLookups ? "Loading..." : "Select instructor"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {INSTRUCTORS.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                    {instructors.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -300,7 +378,11 @@ export default function LiveClassSetup() {
                       <SelectValue placeholder="Select platform" />
                     </SelectTrigger>
                     <SelectContent>
-                      {PLATFORMS.map((platform) => <SelectItem key={platform} value={platform}>{platform}</SelectItem>)}
+                      <SelectItem value="Zoom">Zoom</SelectItem>
+                      <SelectItem value="Google Meet">Google Meet</SelectItem>
+                      <SelectItem value="Microsoft Teams">Microsoft Teams</SelectItem>
+                      <SelectItem value="Cisco Webex">Cisco Webex</SelectItem>
+                      <SelectItem value="Custom Link">Custom Link</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -350,7 +432,7 @@ export default function LiveClassSetup() {
                   <Switch
                     id={key}
                     checked={Boolean(form[key])}
-                    onCheckedChange={(checked) => set(key, checked as (typeof BLANK)[typeof key])}
+                    onCheckedChange={(checked) => set(key, checked as FormData[typeof key])}
                   />
                 </div>
               ))}
@@ -372,7 +454,7 @@ export default function LiveClassSetup() {
                   <Checkbox
                     id={key}
                     checked={Boolean(form[key])}
-                    onCheckedChange={(checked) => set(key, (checked === true) as (typeof BLANK)[typeof key])}
+                    onCheckedChange={(checked) => set(key, (checked === true) as FormData[typeof key])}
                   />
                   <Label htmlFor={key} className="font-normal">{label}</Label>
                 </div>

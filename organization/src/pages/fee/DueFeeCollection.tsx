@@ -9,10 +9,49 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, IndianRupee, Users, Clock, Download, Bell } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 import { downloadCsv } from "@/lib/export";
+
+interface BackendInvoice {
+  id: string;
+  invoiceNo: string;
+  studentId: string;
+  branchId: string;
+  description: string;
+  amount: number;
+  dueDate: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  student: {
+    firstName: string;
+    lastName: string;
+    enrollmentNo: string;
+  };
+  payments: {
+    id: string;
+    amount: number;
+    method: string;
+    referenceNo?: string;
+    receiptNo?: string;
+    paidAt: string;
+    receivedById: string;
+  }[];
+}
+
+interface BackendPaymentResponse {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  method: string;
+  referenceNo?: string;
+  receiptNo: string;
+  paidAt: string;
+  receivedById: string;
+  reversedAt: string | null;
+}
 
 interface Receipt {
   date: string;
@@ -39,17 +78,9 @@ interface DueFee {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Due dates are stored relative to today so the overdue counts stay truthful. */
-const dueOn = (offsetDays: number) => {
-  const date = new Date();
-  date.setDate(date.getDate() + offsetDays);
-  return date.toISOString().slice(0, 10);
-};
-
 const daysBetween = (dueDate: string) =>
   Math.round((Date.parse(today()) - Date.parse(dueDate)) / 86_400_000);
 
-/** Status and overdue days are derived from the due date, never stored stale. */
 const derive = (fee: DueFee): DueFee => {
   if (fee.totalDue <= 0) return { ...fee, daysOverdue: 0, status: "cleared" };
   const daysOverdue = daysBetween(fee.dueDate);
@@ -59,15 +90,6 @@ const derive = (fee: DueFee): DueFee => {
     status: daysOverdue > 0 ? "overdue" : daysOverdue === 0 ? "due_today" : "due_soon",
   };
 };
-
-const SEED: DueFee[] = [
-  { id: "1", studentId: "STU001", name: "Rahul Sharma", course: "Computer Science", batch: "CS-2024-A", phone: "+91 98765 43210", totalDue: 25000, dueDate: dueOn(-14), daysOverdue: 14, lastReminder: dueOn(-4), status: "overdue", history: [{ date: dueOn(-45), amount: 15000, method: "UPI", reference: "UPI-441290" }] },
-  { id: "2", studentId: "STU002", name: "Priya Patel", course: "Commerce", batch: "COM-2024-A", phone: "+91 87654 32109", totalDue: 15000, dueDate: dueOn(-10), daysOverdue: 10, lastReminder: dueOn(-3), status: "overdue", history: [] },
-  { id: "3", studentId: "STU003", name: "Amit Kumar", course: "Engineering", batch: "ENG-2024-A", phone: "+91 76543 21098", totalDue: 35000, dueDate: dueOn(0), daysOverdue: 0, lastReminder: "-", status: "due_today", history: [{ date: dueOn(-60), amount: 20000, method: "Bank Transfer", reference: "NEFT-88210" }] },
-  { id: "4", studentId: "STU004", name: "Sneha Gupta", course: "Science", batch: "SCI-2024-A", phone: "+91 65432 10987", totalDue: 12000, dueDate: dueOn(5), daysOverdue: -5, lastReminder: "-", status: "due_soon", history: [] },
-  { id: "5", studentId: "STU005", name: "Vikram Singh", course: "Arts", batch: "ART-2024-A", phone: "+91 54321 09876", totalDue: 8000, dueDate: dueOn(-31), daysOverdue: 31, lastReminder: dueOn(-9), status: "overdue", history: [{ date: dueOn(-90), amount: 6000, method: "Cash", reference: "CASH-1180" }] },
-  { id: "6", studentId: "STU006", name: "Anita Reddy", course: "Computer Science", batch: "CS-2024-B", phone: "+91 43210 98765", totalDue: 20000, dueDate: dueOn(3), daysOverdue: -3, lastReminder: "-", status: "due_soon", history: [] },
-];
 
 const STATUS_LABEL: Record<DueFee["status"], string> = {
   overdue: "Overdue",
@@ -154,14 +176,59 @@ const BLANK_PAYMENT = { amount: "", method: "", lateFee: "", reference: "" };
 
 export default function DueFeeCollection() {
   const { toast } = useToast();
-  const { items, setItems, update } = useLocalCollection<DueFee>("erp-due-fees", SEED);
-  const fees = items.map(derive);
+  const [fees, setFees] = useState<DueFee[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [collecting, setCollecting] = useState<DueFee | null>(null);
   const [payment, setPayment] = useState(BLANK_PAYMENT);
   const [history, setHistory] = useState<DueFee | null>(null);
   const [penalty, setPenalty] = useState<DueFee | null>(null);
   const [penaltyAmount, setPenaltyAmount] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchFees = () => {
+    setLoading(true);
+    setError(null);
+    api<BackendInvoice[]>("/core/fees/invoices")
+      .then((data) => {
+        const mapped: DueFee[] = data.map((invoice) => {
+          const paid = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+          const totalDue = Math.max(0, Number(invoice.amount) - paid);
+          const lastPayment = invoice.payments.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime())[0];
+          const history: Receipt[] = invoice.payments.map((p) => ({
+            date: p.paidAt,
+            amount: Number(p.amount),
+            method: p.method,
+            reference: p.referenceNo || p.receiptNo || "—",
+          }));
+          return {
+            id: invoice.id,
+            studentId: invoice.student.enrollmentNo,
+            name: `${invoice.student.firstName} ${invoice.student.lastName}`,
+            course: invoice.description,
+            batch: "",
+            phone: "",
+            totalDue,
+            dueDate: invoice.dueDate,
+            daysOverdue: 0,
+            lastReminder: "-",
+            status: "cleared",
+            history,
+          };
+        });
+        setFees(mapped.map(derive));
+      })
+      .catch((err) => {
+        setError(err.message || "Failed to load fee data");
+        toast({ title: "Could not load fees", description: err.message || "Please try again.", variant: "destructive" });
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchFees();
+  }, [toast]);
 
   const openCollect = (fee: DueFee) => {
     setCollecting(fee);
@@ -169,10 +236,10 @@ export default function DueFeeCollection() {
   };
 
   const remind = (fee: DueFee) => {
-    update(fee.id, { lastReminder: today() });
+    setFees((prev) => prev.map((f) => (f.id === fee.id ? { ...f, lastReminder: today() } : f)));
     toast({
       title: "Reminder sent",
-      description: `${fee.name} was texted at ${fee.phone} about ₹${fee.totalDue.toLocaleString()}.`,
+      description: `${fee.name} was notified about ₹${fee.totalDue.toLocaleString()}.`,
     });
   };
 
@@ -183,8 +250,7 @@ export default function DueFeeCollection() {
       return;
     }
     const stamped = today();
-    const ids = new Set(pending.map((fee) => fee.id));
-    setItems((list) => list.map((fee) => (ids.has(fee.id) ? { ...fee, lastReminder: stamped } : fee)));
+    setFees((prev) => prev.map((fee) => (pending.some((p) => p.id === fee.id) ? { ...fee, lastReminder: stamped } : fee)));
     toast({
       title: `Reminders sent to ${pending.length} students`,
       description: `₹${pending.reduce((sum, fee) => sum + fee.totalDue, 0).toLocaleString()} chased in this run.`,
@@ -210,7 +276,7 @@ export default function DueFeeCollection() {
     toast({ title: "Report exported", description: `${fees.length} rows written to CSV.` });
   };
 
-  const collect = () => {
+  const collect = async () => {
     if (!collecting) return;
     const amount = Number(payment.amount);
     if (!amount || amount <= 0) {
@@ -229,28 +295,28 @@ export default function DueFeeCollection() {
       toast({ title: "Pick a payment method", variant: "destructive" });
       return;
     }
-    const lateFee = Number(payment.lateFee) || 0;
-    const remaining = collecting.totalDue - amount + lateFee;
-    update(collecting.id, {
-      totalDue: remaining,
-      history: [
-        {
-          date: today(),
+    setSubmitting(true);
+    try {
+      await api<BackendPaymentResponse>(`/core/fees/invoices/${collecting.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
           amount,
-          method: payment.method,
-          reference: payment.reference.trim() || "—",
-          note: lateFee ? `Late fee ₹${lateFee.toLocaleString()} added` : undefined,
-        },
-        ...collecting.history,
-      ],
-    });
-    toast({
-      title: "Payment collected",
-      description: remaining > 0
-        ? `₹${amount.toLocaleString()} received · ₹${remaining.toLocaleString()} still due.`
-        : `₹${amount.toLocaleString()} received · balance cleared.`,
-    });
-    setCollecting(null);
+          method: payment.method.toUpperCase().replace(/\s+/g, "_"),
+          referenceNo: payment.reference.trim() || undefined,
+        }),
+      });
+      toast({
+        title: "Payment collected",
+        description: `₹${amount.toLocaleString()} received successfully.`,
+      });
+      setCollecting(null);
+      setPayment(BLANK_PAYMENT);
+      fetchFees();
+    } catch (err) {
+      toast({ title: "Payment failed", description: err.message || "Please try again.", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const applyPenalty = () => {
@@ -260,10 +326,15 @@ export default function DueFeeCollection() {
       toast({ title: "Enter a penalty amount", variant: "destructive" });
       return;
     }
-    update(penalty.id, {
-      totalDue: penalty.totalDue + amount,
-      history: [{ date: today(), amount: -amount, method: "Penalty", reference: "—" }, ...penalty.history],
-    });
+    setFees((prev) => prev.map((fee) =>
+      fee.id === penalty.id
+        ? {
+            ...fee,
+            totalDue: fee.totalDue + amount,
+            history: [{ date: today(), amount: -amount, method: "Penalty", reference: "—" }, ...fee.history],
+          }
+        : fee
+    ));
     toast({ title: "Penalty added", description: `₹${amount.toLocaleString()} charged to ${penalty.name}.` });
     setPenalty(null);
     setPenaltyAmount("");
@@ -276,10 +347,15 @@ export default function DueFeeCollection() {
       return;
     }
     const total = charged.reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
-    update(fee.id, {
-      totalDue: Math.max(0, fee.totalDue - total),
-      history: fee.history.filter((entry) => entry.method !== "Penalty"),
-    });
+    setFees((prev) => prev.map((f) =>
+      f.id === fee.id
+        ? {
+            ...f,
+            totalDue: Math.max(0, f.totalDue - total),
+            history: f.history.filter((entry) => entry.method !== "Penalty"),
+          }
+        : f
+    ));
     toast({ title: "Late fee waived", description: `₹${total.toLocaleString()} removed from ${fee.name}'s balance.` });
   };
 
@@ -291,10 +367,27 @@ export default function DueFeeCollection() {
     { label: "Waive Late Fee", onClick: () => waive(fee) },
   ];
 
-  const totalDue = fees.reduce((sum, f) => sum + f.totalDue, 0);
-  const overdueCount = fees.filter(f => f.status === "overdue").length;
-  const dueTodayCount = fees.filter(f => f.status === "due_today").length;
-  const pendingCount = fees.filter(f => f.totalDue > 0).length;
+  const derivedFees = fees.map(derive);
+  const totalDue = derivedFees.reduce((sum, f) => sum + f.totalDue, 0);
+  const overdueCount = derivedFees.filter(f => f.status === "overdue").length;
+  const dueTodayCount = derivedFees.filter(f => f.status === "due_today").length;
+  const pendingCount = derivedFees.filter(f => f.totalDue > 0).length;
+
+  if (error) {
+    return (
+      <AppLayout>
+        <PageHeader
+          title="Due Fee Collection"
+          description="Track and collect overdue fees from students"
+          breadcrumbs={[
+            { label: "Fee Management", href: "/fee/collection" },
+            { label: "Due Fee Collection" },
+          ]}
+        />
+        <Card><CardContent className="py-12 text-center text-sm text-destructive">{error}</CardContent></Card>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -319,40 +412,46 @@ export default function DueFeeCollection() {
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
-        <StatsCard
-          title="Total Due Amount"
-          value={`₹${(totalDue / 1000).toFixed(0)}K`}
-          subtitle="From all students"
-          icon={IndianRupee}
-        />
-        <StatsCard
-          title="Students with Dues"
-          value={pendingCount}
-          subtitle="Need follow-up"
-          icon={Users}
-        />
-        <StatsCard
-          title="Overdue"
-          value={overdueCount}
-          subtitle="Past due date"
-          icon={AlertTriangle}
-        />
-        <StatsCard
-          title="Due Today"
-          value={dueTodayCount}
-          subtitle="Payment expected"
-          icon={Clock}
-        />
-      </div>
+      {loading ? (
+        <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">Loading fee data…</CardContent></Card>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-4 mb-6">
+            <StatsCard
+              title="Total Due Amount"
+              value={`₹${(totalDue / 1000).toFixed(0)}K`}
+              subtitle="From all students"
+              icon={IndianRupee}
+            />
+            <StatsCard
+              title="Students with Dues"
+              value={pendingCount}
+              subtitle="Need follow-up"
+              icon={Users}
+            />
+            <StatsCard
+              title="Overdue"
+              value={overdueCount}
+              subtitle="Past due date"
+              icon={AlertTriangle}
+            />
+            <StatsCard
+              title="Due Today"
+              value={dueTodayCount}
+              subtitle="Payment expected"
+              icon={Clock}
+            />
+          </div>
 
-      <DataTable
-        data={fees}
-        columns={columns}
-        searchPlaceholder="Search students with dues..."
-        actions={handleActions}
-        selectable
-      />
+          <DataTable
+            data={derivedFees}
+            columns={columns}
+            searchPlaceholder="Search students with dues..."
+            actions={handleActions}
+            selectable
+          />
+        </>
+      )}
 
       <Dialog open={!!collecting} onOpenChange={(open) => !open && setCollecting(null)}>
         <DialogContent className="max-w-lg">
@@ -423,9 +522,9 @@ export default function DueFeeCollection() {
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <Button variant="outline" onClick={() => setCollecting(null)}>Cancel</Button>
-                <Button onClick={collect}>
+                <Button onClick={collect} disabled={submitting}>
                   <IndianRupee className="h-4 w-4 mr-2" />
-                  Collect Payment
+                  {submitting ? "Processing…" : "Collect Payment"}
                 </Button>
               </div>
             </div>

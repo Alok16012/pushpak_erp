@@ -64,85 +64,18 @@ export const ACCENT_OPTIONS = [
   { label: "Slate", value: "#334155" },
 ];
 
-export const ID_CARD_TEMPLATE_SEED: IdCardTemplate[] = [
-  {
-    id: "1",
-    name: "Standard Blue Template",
-    orientation: "portrait",
-    accent: "#1d4ed8",
-    instituteName: "Pushpak Institute",
-    instituteAddress: "12 MG Road, Pune - 411001",
-    fields: DEFAULT_ID_FIELDS,
-    showPhoto: true,
-    showQr: true,
-    showSignature: true,
-    validUntil: "31 May 2027",
-    status: "active",
-  },
-  {
-    id: "2",
-    name: "Modern Green Template",
-    orientation: "landscape",
-    accent: "#15803d",
-    instituteName: "Pushpak Institute",
-    instituteAddress: "12 MG Road, Pune - 411001",
-    fields: [...DEFAULT_ID_FIELDS, "Parent Contact"],
-    showPhoto: true,
-    showQr: true,
-    showSignature: false,
-    validUntil: "31 May 2027",
-    status: "active",
-  },
-  {
-    id: "3",
-    name: "Classic Red Template",
-    orientation: "portrait",
-    accent: "#b91c1c",
-    instituteName: "Pushpak Institute",
-    instituteAddress: "12 MG Road, Pune - 411001",
-    fields: ["Student Name", "Student ID", "Class & Section", "Roll Number"],
-    showPhoto: true,
-    showQr: false,
-    showSignature: true,
-    validUntil: "31 May 2027",
-    status: "draft",
-  },
-];
-
-export const ID_CARD_STUDENTS: IdCardStudent[] = [
-  { id: "STU001", name: "Rahul Sharma", class: "10th", section: "A", rollNo: "101", photo: true, dob: "12 Mar 2009", bloodGroup: "B+", parentContact: "+91 98765 43210", address: "24 Shivaji Nagar, Pune" },
-  { id: "STU002", name: "Priya Patel", class: "10th", section: "A", rollNo: "102", photo: true, dob: "04 Jul 2009", bloodGroup: "O+", parentContact: "+91 87654 32109", address: "8 Kothrud, Pune" },
-  { id: "STU003", name: "Amit Kumar", class: "10th", section: "B", rollNo: "103", photo: false, dob: "29 Nov 2008", bloodGroup: "A+", parentContact: "+91 76543 21098", address: "51 Aundh, Pune" },
-  { id: "STU004", name: "Sneha Gupta", class: "9th", section: "A", rollNo: "201", photo: true, dob: "16 Jan 2010", bloodGroup: "AB+", parentContact: "+91 65432 10987", address: "3 Baner Road, Pune" },
-  { id: "STU005", name: "Vikram Singh", class: "9th", section: "B", rollNo: "202", photo: true, dob: "22 Sep 2010", bloodGroup: "B-", parentContact: "+91 54321 09876", address: "77 Hadapsar, Pune" },
-  { id: "STU006", name: "Anita Desai", class: "8th", section: "A", rollNo: "301", photo: true, dob: "09 Apr 2011", bloodGroup: "O-", parentContact: "+91 43210 98765", address: "19 Viman Nagar, Pune" },
-];
-
-/** The sample record the designer canvas renders, so the layout is never empty. */
-export const SAMPLE_STUDENT: IdCardStudent = {
-  id: "STU001",
-  name: "Rahul Sharma",
-  class: "10th",
-  section: "A",
-  rollNo: "101",
-  photo: true,
-  dob: "12 Mar 2009",
-  bloodGroup: "B+",
-  parentContact: "+91 98765 43210",
-  address: "24 Shivaji Nagar, Pune",
-};
 
 export const blankIdCardTemplate = (): Omit<IdCardTemplate, "id"> => ({
   name: "",
   orientation: "portrait",
   accent: ACCENT_OPTIONS[0].value,
-  instituteName: "Pushpak Institute",
-  instituteAddress: "12 MG Road, Pune - 411001",
+  instituteName: "",
+  instituteAddress: "",
   fields: [...DEFAULT_ID_FIELDS],
   showPhoto: true,
   showQr: true,
   showSignature: true,
-  validUntil: "31 May 2027",
+  validUntil: "",
   status: "draft",
 });
 

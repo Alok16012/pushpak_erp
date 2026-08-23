@@ -136,7 +136,11 @@ model VisitEnquiry {
   // Documents & Media
   visitorPhoto    Json?          // Changed from String?
   idDocument      Json?          // Changed from String?
-  
+
+  // Enquiry status tracking
+  status          EnquiryStatus  @default(NEW)
+  closeNote       String?        @db.Text
+
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -216,6 +220,13 @@ model ItemReceive {
 // ============================================
 // Reception Enums
 // ============================================
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  CONVERTED
+  CLOSED
+}
 
 enum VisitPurpose {
   ADMISSION

@@ -435,8 +435,8 @@ const AttendanceLogs = () => {
                       src={detail.mode === "in" ? detail.log.punchInPhoto : detail.log.punchOutPhoto}
                       alt={`Punch ${detail.mode} capture`}
                       className="mx-auto max-h-72 rounded object-contain"
-                      // The demo dataset points at photos that were never uploaded,
-                      // so fall back to a readable message instead of a broken image.
+                      // Fall back to a readable message instead of a broken image
+                      // if the photo was never uploaded.
                       onError={(e) => {
                         e.currentTarget.style.display = "none";
                         e.currentTarget.nextElementSibling?.classList.remove("hidden");

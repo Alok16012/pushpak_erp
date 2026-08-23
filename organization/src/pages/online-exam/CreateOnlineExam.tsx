@@ -10,27 +10,27 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Save, RotateCcw, Monitor, Clock, Shield, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
-type OnlineExam = typeof BLANK & { id: string; createdAt: string };
+type Course = { id: string; name: string; code?: string };
+type Batch = { id: string; name: string; code?: string; course?: { id: string; name: string } };
 
-const COURSES = [
-  { value: "cs", label: "Computer Science" },
-  { value: "science", label: "Science" },
-  { value: "commerce", label: "Commerce" },
-];
-
-const BATCHES = [
-  { value: "2024-a", label: "2024-A" },
-  { value: "2024-b", label: "2024-B" },
-];
+interface Exam {
+  id: string;
+  name: string;
+  subject: string;
+  examDate: string;
+  maxMarks: number;
+  passMarks: number;
+  course?: { name: string };
+  batch?: { name: string };
+}
 
 const BLANK = {
   title: "",
-  code: "",
   course: "",
   batch: "",
   description: "",
@@ -53,38 +53,45 @@ const BLANK = {
   autoSubmit: true,
 };
 
-const SEED: OnlineExam[] = [
-  {
-    ...BLANK,
-    id: "exam-seed-1",
-    title: "Online Mid-Term Test",
-    code: "OMT-2024-001",
-    course: "cs",
-    batch: "2024-a",
-    startDate: "2025-01-15T09:00",
-    endDate: "2025-01-15T10:00",
-    duration: "60",
-    totalQuestions: "50",
-    totalMarks: "100",
-    passingMarks: "35",
-    questionPaper: "qp1",
-    createdAt: "2025-01-02",
-  },
-];
-
 export default function CreateOnlineExam() {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { items, add, remove } = useLocalCollection<OnlineExam>("erp-online-exams", SEED);
+
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [form, setForm] = useState(BLANK);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      api<Course[]>("/core/courses"),
+      api<Batch[]>("/core/batches"),
+      api<{ data: Exam[] }>("/core/exams"),
+    ])
+      .then(([coursesData, batchesData, examsRes]) => {
+        if (cancelled) return;
+        setCourses(coursesData);
+        setBatches(batchesData);
+        setExams(examsRes.data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        toast({ title: "Failed to load data", description: "Could not fetch courses, batches, or exams.", variant: "destructive" });
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [toast]);
 
   const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
-  const create = () => {
+  const create = async () => {
     const required: Array<[keyof typeof BLANK, string]> = [
       ["title", "Exam Title"],
-      ["code", "Exam Code"],
       ["course", "Course"],
       ["batch", "Batch"],
       ["startDate", "Start Date & Time"],
@@ -107,19 +114,58 @@ export default function CreateOnlineExam() {
       toast({ title: "Check the marks", description: "Passing marks cannot exceed total marks.", variant: "destructive" });
       return;
     }
-    if (items.some((e) => e.code.toLowerCase() === form.code.trim().toLowerCase())) {
-      toast({ title: "Duplicate exam code", description: `${form.code} is already in use.`, variant: "destructive" });
+    if (exams.some((e) => e.name.toLowerCase() === form.title.trim().toLowerCase())) {
+      toast({ title: "Duplicate exam name", description: `${form.title} is already in use.`, variant: "destructive" });
       return;
     }
-    add({ ...form, createdAt: new Date().toISOString().slice(0, 10) });
-    setForm(BLANK);
-    toast({ title: "Exam created", description: `${form.title} is scheduled and ready.` });
+    try {
+      const subject = courses.find((c) => c.id === form.course)?.name ?? form.course;
+      const maxMarks = Number(form.totalMarks);
+      const passMarks = Number(form.passingMarks);
+      const examDate = new Date(form.startDate);
+      await api("/core/exams", {
+        method: "POST",
+        body: JSON.stringify({
+          courseId: form.course,
+          batchId: form.batch || undefined,
+          name: form.title,
+          subject,
+          examDate: examDate.toISOString(),
+          maxMarks,
+          passMarks,
+        }),
+      });
+      const updated = await api<{ data: Exam[] }>("/core/exams");
+      setExams(updated.data);
+      setForm(BLANK);
+      toast({ title: "Exam created", description: `${form.title} is scheduled and ready.` });
+    } catch {
+      toast({ title: "Failed to create exam", description: "Please try again.", variant: "destructive" });
+    }
+  };
+
+  const remove = async (id: string) => {
+    const paper = exams.find((e) => e.id === id);
+    if (!paper) return;
+    try {
+      await api(`/core/exams/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "archived" }),
+      });
+      setExams((prev) => prev.filter((e) => e.id !== id));
+      toast({ title: "Exam archived", description: `${paper.name} has been archived.` });
+    } catch {
+      toast({ title: "Failed to archive", description: "Please try again.", variant: "destructive" });
+    }
   };
 
   const reset = () => {
     setForm(BLANK);
     toast({ title: "Form reset", description: "Every field is back to its default." });
   };
+
+  const batchLabel = (batch: Batch) => batch.code ?? batch.name;
 
   return (
     <AppLayout>
@@ -147,10 +193,6 @@ export default function CreateOnlineExam() {
                   <Label htmlFor="examTitle">Exam Title *</Label>
                   <Input id="examTitle" placeholder="e.g., Online Mid-Term Test" value={form.title} onChange={(e) => set("title", e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="examCode">Exam Code *</Label>
-                  <Input id="examCode" placeholder="e.g., OMT-2024-001" value={form.code} onChange={(e) => set("code", e.target.value)} />
-                </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -161,8 +203,8 @@ export default function CreateOnlineExam() {
                       <SelectValue placeholder="Select course" />
                     </SelectTrigger>
                     <SelectContent>
-                      {COURSES.map((c) => (
-                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      {courses.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -174,8 +216,8 @@ export default function CreateOnlineExam() {
                       <SelectValue placeholder="Select batch" />
                     </SelectTrigger>
                     <SelectContent>
-                      {BATCHES.map((b) => (
-                        <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>
+                      {batches.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{batchLabel(b)}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -361,19 +403,20 @@ export default function CreateOnlineExam() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Scheduled Exams ({items.length})</CardTitle>
+              <CardTitle>Scheduled Exams ({exams.length})</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {items.length === 0 && (
+              {loading && <p className="text-sm text-muted-foreground">Loading exams...</p>}
+              {!loading && exams.length === 0 && (
                 <p className="text-sm text-muted-foreground">No online exams created yet.</p>
               )}
-              {items.map((exam) => (
+              {exams.map((exam) => (
                 <div key={exam.id} className="flex items-center justify-between gap-2 border rounded-lg p-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{exam.title}</p>
+                    <p className="text-sm font-medium truncate">{exam.name}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {exam.code} • {BATCHES.find((b) => b.value === exam.batch)?.label ?? exam.batch}
-                      {exam.startDate ? ` • ${exam.startDate.replace("T", " ")}` : ""}
+                      {exam.course?.name ?? "—"} • {exam.batch?.name ?? "—"}
+                      {exam.examDate ? ` • ${new Date(exam.examDate).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -382,10 +425,7 @@ export default function CreateOnlineExam() {
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7 text-destructive"
-                      onClick={() => {
-                        remove(exam.id);
-                        toast({ title: "Exam removed", description: `${exam.title} was deleted.` });
-                      }}
+                      onClick={() => remove(exam.id)}
                     >
                       <Trash2 className="h-3 w-3" />
                     </Button>

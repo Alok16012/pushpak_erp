@@ -8,9 +8,12 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreditCard, Globe, Shield, CheckCircle, AlertCircle } from "lucide-react";
-import { useState } from "react";
-import { useLocalState } from "@/hooks/use-local-collection";
+import { useEffect, useState } from "react";
+import { CreditCard, Globe, Shield, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const CONNECTED_KEY = "erp-gateways-connected";
+const CONFIGS_KEY = "erp-gateway-configs";
 
 const GATEWAYS = [
   { id: "razorpay", name: "Razorpay", description: "Accept payments via UPI, Cards, Netbanking, Wallets", logo: "🔷" },
@@ -37,33 +40,38 @@ const BLANK_CONFIG: GatewayConfig = {
 
 const PaymentGateway = () => {
   const { toast } = useToast();
-  const [connected, setConnected] = useLocalState<string[]>("erp-gateways-connected", ["razorpay"]);
-  const [configs, setConfigs] = useLocalState<Record<string, GatewayConfig>>("erp-gateway-configs", {});
-  // Which gateway the Settings tab is editing; Configure switches it.
+  const [connected, setConnected] = useState<string[]>([]);
+  const [configs, setConfigs] = useState<Record<string, GatewayConfig>>({});
   const [active, setActive] = useState("razorpay");
   const [tab, setTab] = useState("gateways");
 
   const activeName = GATEWAYS.find((g) => g.id === active)?.name ?? active;
   const config = configs[active] ?? BLANK_CONFIG;
-  const setConfig = <K extends keyof GatewayConfig>(key: K, value: GatewayConfig[K]) =>
-    setConfigs((all) => ({ ...all, [active]: { ...(all[active] ?? BLANK_CONFIG), [key]: value } }));
+
+  useEffect(() => {
+    try {
+      const c = localStorage.getItem(CONNECTED_KEY);
+      if (c) setConnected(JSON.parse(c));
+      const cfg = localStorage.getItem(CONFIGS_KEY);
+      if (cfg) setConfigs(JSON.parse(cfg));
+    } catch { /* use empty defaults */ }
+  }, []);
+
+  const persistConnected = (next: string[]) => { setConnected(next); try { localStorage.setItem(CONNECTED_KEY, JSON.stringify(next)); } catch { } };
+  const persistConfigs = (next: Record<string, GatewayConfig>) => { setConfigs(next); try { localStorage.setItem(CONFIGS_KEY, JSON.stringify(next)); } catch { } };
+
+  const setConfig = (value: GatewayConfig) => persistConfigs({ ...configs, [active]: value });
 
   const connect = (id: string, name: string) => {
-    setConnected((list) => (list.includes(id) ? list : [...list, id]));
+    if (!connected.includes(id)) persistConnected([...connected, id]);
     setActive(id);
     setTab("settings");
     toast({ title: `${name} connected`, description: "Add your API credentials to start accepting payments." });
   };
 
   const disconnect = (id: string, name: string) => {
-    setConnected((list) => list.filter((g) => g !== id));
-    // Credentials go with the connection; leaving them behind would silently
-    // re-arm the gateway on the next connect.
-    setConfigs((all) => {
-      const next = { ...all };
-      delete next[id];
-      return next;
-    });
+    persistConnected(connected.filter((g) => g !== id));
+    persistConfigs((all) => { const next = { ...all }; delete next[id]; return next; });
     toast({ title: `${name} disconnected`, description: "Stored credentials were cleared." });
   };
 

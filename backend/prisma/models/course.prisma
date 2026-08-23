@@ -144,14 +144,16 @@ model Batch {
 
 model BatchTiming {
   id              String         @id @default(cuid())
-  
+
   batchId         String
   batch           Batch          @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  
+
   day             DayOfWeek
   startTime       String         // "HH:mm" e.g., "09:00"
   endTime         String         // "HH:mm" e.g., "11:00"
   roomNo          String?        // Classroom reference
+  subject         String?        // Subject name for this slot
+  instructor      String?        // Instructor name
 
   @@index([batchId])
   @@map("batch_timings")

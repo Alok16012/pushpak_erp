@@ -10,30 +10,99 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useLocalCollection, useLocalState } from "@/hooks/use-local-collection";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { feeReceiptPdf, feeStatementPdf } from "@/lib/documents";
 import { downloadCsv } from "@/lib/export";
-import {
-  INVOICE_SEED, PORTAL_KEYS, PROFILE_SEED, feeSummary, invoiceStatus, money,
-  type PortalInvoice, type StudentProfile,
-} from "@/data/student-portal";
+
+interface StudentProfile {
+  id: string;
+  enrollmentNo: string;
+  applicationNo: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  course?: string;
+  batch?: string;
+  branch?: string;
+  academicYear?: string;
+  admissionDate?: string;
+  photo?: string;
+  gender?: string;
+  dateOfBirth?: string;
+  bloodGroup?: string;
+  fatherName?: string;
+  motherName?: string;
+  address?: string;
+  admissionStatus?: string;
+}
+
+interface PortalInvoice {
+  id: string;
+  invoiceNo?: string;
+  description?: string;
+  amount: number;
+  status?: string;
+  dueDate?: string;
+  createdAt?: string;
+  payments?: { id?: string; amount: number; reversedAt?: string; method?: string; referenceNo?: string; paidAt?: string }[];
+  student?: { firstName?: string; lastName?: string; enrollmentNo?: string };
+}
 
 const TONE: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-  paid: "secondary", partial: "outline", pending: "default", overdue: "destructive",
+  PAID: "secondary", PARTIAL: "outline", DUE: "default", OVERDUE: "destructive",
 };
-const METHODS = ["UPI", "Card", "Net Banking", "Wallet"];
+const METHODS = ["CASH", "UPI", "CARD", "BANK_TRANSFER", "CHEQUE"];
+
+const money = (value: number) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(value);
 
 export default function MyFees() {
   const { toast } = useToast();
-  const [profile] = useLocalState<StudentProfile>(PORTAL_KEYS.profile, PROFILE_SEED);
-  const { items: invoices, update } = useLocalCollection<PortalInvoice>(PORTAL_KEYS.fees, INVOICE_SEED);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [invoices, setInvoices] = useState<PortalInvoice[]>([]);
+  const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<PortalInvoice | null>(null);
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState(METHODS[0]);
+  const [processing, setProcessing] = useState(false);
 
-  const summary = feeSummary(invoices);
-  const balance = (invoice: PortalInvoice) => invoice.amount - invoice.paid;
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [profileRes, invoicesRes] = await Promise.all([
+          api<{ success: boolean; data: StudentProfile }>("/core/student/profile"),
+          api<{ success: boolean; data: PortalInvoice[] }>("/core/portal/invoices"),
+        ]);
+        if (!cancelled) {
+          if (profileRes.success) setProfile(profileRes.data);
+          if (invoicesRes.success) setInvoices(invoicesRes.data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast({ title: "Failed to load fees", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  const balance = (invoice: PortalInvoice) => {
+    const paid = invoice.payments?.filter((p) => !p.reversedAt).reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;
+    return Math.max(0, Number(invoice.amount || 0) - paid);
+  };
+
+  const invoiceStatus = (invoice: PortalInvoice): string => {
+    const bal = balance(invoice);
+    if (bal <= 0) return "PAID";
+    const today = new Date().toISOString().slice(0, 10);
+    if (invoice.dueDate && invoice.dueDate < today) return "OVERDUE";
+    return "PARTIAL";
+  };
 
   const openPayment = (invoice: PortalInvoice) => {
     setPaying(invoice);
@@ -41,40 +110,65 @@ export default function MyFees() {
     setMethod(METHODS[0]);
   };
 
-  /** A portal payment is a real state change: it books against the invoice and
-   *  issues the receipt number the student then downloads. */
-  const pay = () => {
+  const pay = async () => {
     if (!paying) return;
     const value = Number(amount);
-    if (!Number.isFinite(value) || value <= 0) return toast({ title: "Enter an amount", variant: "destructive" });
-    if (value > balance(paying)) return toast({ title: "Amount is more than the balance", description: `The balance on ${paying.invoiceNo} is ${money(balance(paying))}.`, variant: "destructive" });
-    const receiptNo = `RCT-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
-    update(paying.id, { paid: paying.paid + value, method, paidAt: new Date().toISOString().slice(0, 10), receiptNo });
-    toast({ title: "Payment recorded", description: `${money(value)} against ${paying.invoiceNo} · receipt ${receiptNo}` });
-    setPaying(null);
+    if (!Number.isFinite(value) || value <= 0) return toast({ title: "Enter a valid amount", variant: "destructive" });
+    const bal = balance(paying);
+    if (value > bal) return toast({ title: "Amount exceeds balance", description: `The balance on ${paying.invoiceNo} is ${money(bal)}.`, variant: "destructive" });
+    setProcessing(true);
+    try {
+      await api<{ success: boolean; data: { id: string; amount: number; method: string; paidAt: string } }>(`/core/fees/invoices/${paying.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({ amount: value, method }),
+      });
+      toast({ title: "Payment recorded", description: `${money(value)} paid against ${paying.invoiceNo}.` });
+      setPaying(null);
+      // Refresh invoices
+      const res = await api<{ success: boolean; data: PortalInvoice[] }>("/core/portal/invoices");
+      if (res.success) setInvoices(res.data);
+    } catch (err) {
+      toast({ title: "Payment failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setProcessing(false);
+    }
   };
 
-  const receipt = (invoice: PortalInvoice) =>
-    feeReceiptPdf({
-      studentName: profile.name,
-      rollNo: profile.rollNo,
-      feeType: invoice.description,
-      amount: invoice.paid,
-      method: invoice.method ?? "Cash",
-      receiptNo: invoice.receiptNo,
-      balanceAfter: balance(invoice),
-    });
+  const summary = invoices.reduce(
+    (acc, inv) => {
+      const bal = balance(inv);
+      const status = invoiceStatus(inv);
+      acc.billed += Number(inv.amount || 0);
+      acc.paid += Number(inv.amount || 0) - bal;
+      acc.due += bal;
+      if (status === "OVERDUE") acc.overdue += bal;
+      return acc;
+    },
+    { billed: 0, paid: 0, due: 0, overdue: 0 },
+  );
 
-  const statement = (invoice: PortalInvoice) =>
-    feeStatementPdf({
-      studentName: profile.name,
-      rollNo: profile.rollNo,
-      feeType: invoice.description,
-      totalAmount: invoice.amount,
-      paidAmount: invoice.paid,
-      dueAmount: balance(invoice),
-      dueDate: invoice.dueDate,
-    });
+  const exportCsv = () => {
+    const rows = invoices.map((invoice) => ({
+      invoiceNo: invoice.invoiceNo || invoice.id,
+      description: invoice.description || "",
+      dueDate: invoice.dueDate || "",
+      amount: Number(invoice.amount || 0),
+      balance: balance(invoice),
+      status: invoiceStatus(invoice),
+    }));
+    downloadCsv("my-fees.csv", rows, ["invoiceNo", "description", "dueDate", "amount", "balance", "status"]);
+    toast({ title: "Exported", description: `${rows.length} invoice(s) downloaded.` });
+  };
+
+  if (loading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center py-20">
+          <p className="text-sm text-muted-foreground">Loading fees...</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -82,7 +176,7 @@ export default function MyFees() {
         title="Fees & receipts"
         description="What you have been billed, what is still open, and every receipt you can download."
         breadcrumbs={[{ label: "Fees & receipts" }]}
-        actions={<Button variant="outline" onClick={() => downloadCsv("my-fees.csv", invoices.map((invoice) => ({ ...invoice, balance: balance(invoice), status: invoiceStatus(invoice) })))}><Download />Export CSV</Button>}
+        actions={<Button variant="outline" onClick={exportCsv}><Download />Export CSV</Button>}
       />
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -102,26 +196,30 @@ export default function MyFees() {
             <TableHeader><TableRow><TableHead>Invoice</TableHead><TableHead>Description</TableHead><TableHead>Due</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Paid</TableHead><TableHead className="text-right">Balance</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {invoices.map((invoice) => {
+                const bal = balance(invoice);
                 const status = invoiceStatus(invoice);
                 return (
                   <TableRow key={invoice.id}>
-                    <TableCell className="whitespace-nowrap font-medium">{invoice.invoiceNo}</TableCell>
+                    <TableCell className="whitespace-nowrap font-medium">{invoice.invoiceNo || invoice.id}</TableCell>
                     <TableCell>{invoice.description}</TableCell>
-                    <TableCell className="whitespace-nowrap">{new Date(invoice.dueDate).toLocaleDateString("en-IN")}</TableCell>
-                    <TableCell className="tabular text-right">{money(invoice.amount)}</TableCell>
-                    <TableCell className="tabular text-right">{money(invoice.paid)}</TableCell>
-                    <TableCell className="tabular text-right font-medium">{money(balance(invoice))}</TableCell>
-                    <TableCell><Badge variant={TONE[status]} className="capitalize">{status}</Badge></TableCell>
+                    <TableCell className="whitespace-nowrap">{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-IN") : "—"}</TableCell>
+                    <TableCell className="tabular text-right">{money(Number(invoice.amount || 0))}</TableCell>
+                    <TableCell className="tabular text-right">{money(Number(invoice.amount || 0) - bal)}</TableCell>
+                    <TableCell className="tabular text-right font-medium">{money(bal)}</TableCell>
+                    <TableCell><Badge variant={TONE[status]} className="capitalize">{status.toLowerCase()}</Badge></TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1.5">
-                        {balance(invoice) > 0 && <Button size="sm" onClick={() => openPayment(invoice)}><IndianRupee className="mr-1 h-3.5 w-3.5" />Pay</Button>}
-                        {invoice.receiptNo && <Button size="sm" variant="outline" onClick={() => receipt(invoice)}><Receipt className="mr-1 h-3.5 w-3.5" />Receipt</Button>}
-                        <Button size="sm" variant="ghost" onClick={() => statement(invoice)}>Statement</Button>
+                        {bal > 0 && <Button size="sm" onClick={() => openPayment(invoice)}><IndianRupee className="mr-1 h-3.5 w-3.5" />Pay</Button>}
+                        {invoice.payments?.length ? <Button size="sm" variant="outline" onClick={() => toast({ title: "Receipt", description: "Receipt download coming soon." })}><Receipt className="mr-1 h-3.5 w-3.5" />Receipt</Button> : null}
+                        <Button size="sm" variant="ghost" onClick={() => toast({ title: "Statement", description: "Statement download coming soon." })}>Statement</Button>
                       </div>
                     </TableCell>
                   </TableRow>
                 );
               })}
+              {!invoices.length && (
+                <TableRow><TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">No invoices yet.</TableCell></TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -132,7 +230,7 @@ export default function MyFees() {
           <DialogHeader><DialogTitle>Pay {paying?.invoiceNo}</DialogTitle></DialogHeader>
           {paying && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">{paying.description} · balance {money(balance(paying))} · due {new Date(paying.dueDate).toLocaleDateString("en-IN")}</p>
+              <p className="text-sm text-muted-foreground">{paying.description} · balance {money(balance(paying))} · due {paying.dueDate ? new Date(paying.dueDate).toLocaleDateString("en-IN") : "—"}</p>
               <div className="space-y-2"><Label htmlFor="amount">Amount (₹)</Label><Input id="amount" type="number" min={1} max={balance(paying)} value={amount} onChange={(event) => setAmount(event.target.value)} /></div>
               <div className="space-y-2">
                 <Label>Method</Label>
@@ -145,8 +243,8 @@ export default function MyFees() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPaying(null)}>Cancel</Button>
-            <Button onClick={pay}>Pay {amount ? money(Number(amount) || 0) : ""}</Button>
+            <Button variant="outline" onClick={() => setPaying(null)} disabled={processing}>Cancel</Button>
+            <Button onClick={pay} disabled={processing}>{processing ? "Processing..." : `Pay ${amount ? money(Number(amount) || 0) : ""}`}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -9,11 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { QrCode, Download, Printer, School, Users } from "lucide-react";
-import { useState } from "react";
-import { useLocalState } from "@/hooks/use-local-collection";
+import { useMemo, useState, useEffect } from "react";
+import { QrCode, Download, Printer, School, Users } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import { qrDataUrl, upiUri } from "@/lib/upi";
 import { dataUrlToBytes, downloadZip, printHtml } from "@/lib/export";
-import { useToast } from "@/hooks/use-toast";
 
 type Batch = {
   id: number;
@@ -24,13 +24,8 @@ type Batch = {
   qrGenerated: boolean;
 };
 
-const SEED: Batch[] = [
-  { id: 1, name: "Class 10 - A", students: 45, course: "CBSE", courseKey: "cbse", qrGenerated: true },
-  { id: 2, name: "Class 10 - B", students: 42, course: "CBSE", courseKey: "cbse", qrGenerated: true },
-  { id: 3, name: "Class 11 - Science", students: 38, course: "Science", courseKey: "science", qrGenerated: false },
-  { id: 4, name: "Class 11 - Commerce", students: 35, course: "Commerce", courseKey: "commerce", qrGenerated: false },
-  { id: 5, name: "Class 12 - Science", students: 40, course: "Science", courseKey: "science", qrGenerated: true },
-];
+const ALL_KEY = "erp-batch-qr";
+const CFG_KEY = "erp-batch-qr-config";
 
 const FEE_TYPES: Record<string, string> = {
   tuition: "Tuition Fee",
@@ -44,18 +39,24 @@ const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 const BatchPaymentQR = () => {
   const { toast } = useToast();
-  const [all, setAll] = useLocalState<Batch[]>("erp-batch-qr", SEED);
-  const [config, setConfig] = useLocalState("erp-batch-qr-config", {
-    course: "all",
-    feeType: "tuition",
-    upiTemplate: "school_{batch_id}@upi",
-    includeBatchName: true,
-    autoGenerate: false,
-  });
+  const [all, setAll] = useState<Batch[]>([]);
+  const [config, setConfig] = useState({ course: "all", feeType: "tuition", upiTemplate: "school_{batch_id}@upi", includeBatchName: true, autoGenerate: false });
   const [selected, setSelected] = useState<number[]>([]);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ALL_KEY);
+      if (raw) setAll(JSON.parse(raw));
+      const cfg = localStorage.getItem(CFG_KEY);
+      if (cfg) setConfig(JSON.parse(cfg));
+    } catch { /* use empty defaults */ }
+  }, []);
+
+  const persistAll = (list: Batch[]) => { setAll(list); try { localStorage.setItem(ALL_KEY, JSON.stringify(list)); } catch { } };
+  const persistConfig = (next: typeof config) => { setConfig(next); try { localStorage.setItem(CFG_KEY, JSON.stringify(next)); } catch { } };
+
   const setCfg = <K extends keyof typeof config>(key: K, value: (typeof config)[K]) =>
-    setConfig((c) => ({ ...c, [key]: value }));
+    persistConfig({ ...config, [key]: value });
 
   const batches = config.course === "all" ? all : all.filter((b) => b.courseKey === config.course);
   const allSelected = batches.length > 0 && batches.every((b) => selected.includes(b.id));

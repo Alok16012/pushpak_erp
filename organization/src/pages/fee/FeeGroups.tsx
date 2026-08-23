@@ -21,18 +21,49 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Layers, IndianRupee, Users, BookOpen } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLocalCollection } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
-import {
-  FEE_GROUPS_KEY,
-  FEE_GROUP_SEED,
-  FEE_TYPES_KEY,
-  FEE_TYPE_SEED,
-  type FeeGroup,
-  type FeeType,
-} from "@/data/fee-catalog";
+import { api } from "@/lib/api";
+import { FEE_GROUPS_KEY, FEE_TYPES_KEY } from "@/data/fee-catalog";
+
+interface FeeGroup {
+  id: string;
+  name: string;
+  description: string;
+  feeTypes: string[];
+  totalAmount: number;
+  courses: string[];
+  studentsCount: number;
+  status: "active" | "inactive";
+}
+
+interface FeeType {
+  id: string;
+  name: string;
+  code: string;
+  category: string;
+  defaultAmount: number;
+  frequency: string;
+  applicableTo: string[];
+  description: string;
+  status: "active" | "inactive";
+}
+
+const FEE_CATEGORIES = ["Academic", "Facility", "One-time", "Optional"] as const;
+const FEE_FREQUENCIES = ["One-time", "Monthly", "Quarterly", "Per Semester", "Yearly", "Per Exam"] as const;
+const COURSE_OPTIONS = ["All Courses", "Computer Science", "Engineering", "Commerce", "Science"] as const;
+
+function suggestCode(name: string, existing: FeeType[]): string {
+  const initials = name.split(/\s+/).filter(Boolean).map((word) => word[0]?.toUpperCase() ?? "").join("").slice(0, 3) || "FEE";
+  let counter = 1;
+  let code = `${initials}${String(counter).padStart(3, "0")}`;
+  while (existing.some((f) => f.code.toUpperCase() === code)) {
+    counter += 1;
+    code = `${initials}${String(counter).padStart(3, "0")}`;
+  }
+  return code;
+}
 
 const columns: Column<FeeGroup>[] = [
   {
@@ -105,12 +136,8 @@ const BLANK = { name: "", courses: "All Courses", description: "", feeTypeIds: [
 export default function FeeGroups() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { items: groups, add, update, remove } = useLocalCollection<FeeGroup>(FEE_GROUPS_KEY, FEE_GROUP_SEED);
-  const { items: allFeeTypes } = useLocalCollection<FeeType>(FEE_TYPES_KEY, FEE_TYPE_SEED);
-
-  /** Only live fee types can go into a new package. */
-  const availableFeeTypes = allFeeTypes.filter((f) => f.status === "active");
-
+  const [groups, setGroups] = useState<FeeGroup[]>([]);
+  const [allFeeTypes, setAllFeeTypes] = useState<FeeType[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...BLANK });
@@ -118,6 +145,29 @@ export default function FeeGroups() {
   const [assigning, setAssigning] = useState<FeeGroup | null>(null);
   const [assignCount, setAssignCount] = useState("");
   const [pendingDelete, setPendingDelete] = useState<FeeGroup | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const g = localStorage.getItem(FEE_GROUPS_KEY);
+      if (g) setGroups(JSON.parse(g));
+      const f = localStorage.getItem(FEE_TYPES_KEY);
+      if (f) setAllFeeTypes(JSON.parse(f));
+    } catch { /* use empty */ }
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistGroups = (next: FeeGroup[]) => {
+    setGroups(next);
+    try { localStorage.setItem(FEE_GROUPS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+  const persistFeeTypes = (next: FeeType[]) => {
+    setAllFeeTypes(next);
+    try { localStorage.setItem(FEE_TYPES_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  };
+
+  /** Only live fee types can go into a new package. */
+  const availableFeeTypes = allFeeTypes.filter((f) => f.status === "active");
 
   const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -172,20 +222,22 @@ export default function FeeGroups() {
       .split(",")
       .map((c) => c.trim())
       .filter(Boolean);
-    const payload = {
+    const payload: FeeGroup = {
+      id: editingId ?? `${Date.now().toString(36)}`,
       name,
       description: form.description.trim() || `${chosen.length} fee types`,
       feeTypes: chosen.map((f) => f.name),
       totalAmount: chosen.reduce((sum, f) => sum + f.defaultAmount, 0),
       courses: courses.length ? courses : ["All Courses"],
       status: "active" as const,
+      studentsCount: editingId ? groups.find((g) => g.id === editingId)?.studentsCount ?? 0 : 0,
     };
 
     if (editingId) {
-      update(editingId, payload);
+      persistGroups((prev) => prev.map((g) => (g.id === editingId ? payload : g)));
       toast({ title: "Fee group updated", description: `${name} was saved.` });
     } else {
-      add({ ...payload, studentsCount: 0 });
+      persistGroups((prev) => [payload, ...prev]);
       toast({ title: "Fee group created", description: `${name} · ₹${payload.totalAmount.toLocaleString()}` });
     }
     setIsDialogOpen(false);
@@ -194,9 +246,9 @@ export default function FeeGroups() {
   };
 
   const duplicate = (group: FeeGroup) => {
-    const { id: _id, ...rest } = group;
     const name = `${group.name} (Copy)`;
-    add({ ...rest, name, studentsCount: 0, status: "inactive" });
+    const copy: FeeGroup = { ...group, id: `${Date.now().toString(36)}`, name, studentsCount: 0, status: "inactive" };
+    persistGroups((prev) => [copy, ...prev]);
     toast({ title: "Fee group duplicated", description: `${name} was created as inactive.` });
   };
 
@@ -207,7 +259,7 @@ export default function FeeGroups() {
       toast({ title: "Enter how many students to assign", variant: "destructive" });
       return;
     }
-    update(assigning.id, { studentsCount: assigning.studentsCount + count });
+    persistGroups((prev) => prev.map((g) => (g.id === assigning.id ? { ...g, studentsCount: g.studentsCount + count } : g)));
     toast({
       title: "Fee group assigned",
       description: `${count} student(s) added to ${assigning.name} · ₹${(count * assigning.totalAmount).toLocaleString()} billed.`,
@@ -218,7 +270,7 @@ export default function FeeGroups() {
 
   const confirmDelete = () => {
     if (!pendingDelete) return;
-    remove(pendingDelete.id);
+    persistGroups((prev) => prev.filter((g) => g.id !== pendingDelete.id));
     toast({ title: "Fee group deleted", description: `${pendingDelete.name} was removed.` });
     setPendingDelete(null);
   };

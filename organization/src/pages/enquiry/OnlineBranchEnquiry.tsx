@@ -2,7 +2,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatsCard } from "@/components/ui/StatsCard";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -11,19 +10,36 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Globe, Building2, Clock, CheckCircle, Download } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
-import {
-  COURSE_OPTIONS,
-  ONLINE_ENQUIRY_KEY,
-  ONLINE_ENQUIRY_SEED,
-  OnlineEnquiry,
-  STAFF_OPTIONS,
-  dayOffset,
-  pushLead,
-} from "@/data/enquiries";
+import { api } from "@/lib/api";
+
+interface OnlineEnquiry {
+  id: string;
+  date: string;
+  branch: string;
+  name: string;
+  phone: string;
+  email: string;
+  enquiryType: string;
+  message: string;
+  ipAddress: string;
+  status: "pending" | "reviewed" | "responded" | "closed";
+  response?: string;
+  convertedTo?: string;
+}
+
+const COURSE_OPTIONS = [
+  "Computer Science",
+  "Commerce",
+  "Engineering",
+  "Medical",
+  "Arts",
+  "Science",
+];
+
+const STAFF_OPTIONS = ["John Doe", "Jane Smith", "Mike Johnson"];
 
 const columns: Column<OnlineEnquiry>[] = [
   {
@@ -73,11 +89,8 @@ const columns: Column<OnlineEnquiry>[] = [
 
 export default function OnlineBranchEnquiry() {
   const { toast } = useToast();
-  const { items: enquiries, update } = useLocalCollection<OnlineEnquiry>(
-    ONLINE_ENQUIRY_KEY,
-    ONLINE_ENQUIRY_SEED,
-  );
-
+  const [enquiries, setEnquiries] = useState<OnlineEnquiry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<OnlineEnquiry | null>(null);
   const [responding, setResponding] = useState<OnlineEnquiry | null>(null);
   const [response, setResponse] = useState("");
@@ -85,55 +98,110 @@ export default function OnlineBranchEnquiry() {
   const [lead, setLead] = useState({ course: COURSE_OPTIONS[0], assignedTo: STAFF_OPTIONS[0] });
   const [closing, setClosing] = useState<OnlineEnquiry | null>(null);
 
-  const markReviewed = (enquiry: OnlineEnquiry) => {
+  useEffect(() => {
+    let cancelled = false;
+    async function loadEnquiries() {
+      try {
+        const data = await api<OnlineEnquiry[]>("/core/enquiries");
+        if (!cancelled) {
+          setEnquiries(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast({ title: "Failed to load enquiries", variant: "destructive" });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    loadEnquiries();
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  const refreshEnquiries = async () => {
+    try {
+      const data = await api<OnlineEnquiry[]>("/core/enquiries");
+      setEnquiries(data);
+    } catch {
+      // silent
+    }
+  };
+
+  const markReviewed = async (enquiry: OnlineEnquiry) => {
     if (enquiry.status !== "pending") {
       toast({ title: "Already reviewed", description: `This enquiry is ${enquiry.status}.` });
       return;
     }
-    update(enquiry.id, { status: "reviewed" });
-    toast({ title: "Marked as reviewed", description: enquiry.name });
+    try {
+      await api(`/core/enquiries/${enquiry.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "reviewed" }),
+      });
+      await refreshEnquiries();
+      toast({ title: "Marked as reviewed", description: enquiry.name });
+    } catch {
+      toast({ title: "Failed to update enquiry", variant: "destructive" });
+    }
   };
 
-  const sendResponse = () => {
+  const sendResponse = async () => {
     if (!responding) return;
     if (!response.trim()) {
       toast({ title: "Write a response first", variant: "destructive" });
       return;
     }
-    update(responding.id, { status: "responded", response: response.trim() });
-    toast({ title: "Response sent", description: `Emailed to ${responding.email}.` });
-    setResponding(null);
+    try {
+      await api(`/core/enquiries/${responding.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "responded", response: response.trim() }),
+      });
+      await refreshEnquiries();
+      toast({ title: "Response sent", description: `Emailed to ${responding.email}.` });
+      setResponding(null);
+    } catch {
+      toast({ title: "Failed to send response", variant: "destructive" });
+    }
   };
 
-  const convertToLead = () => {
+  const convertToLead = async () => {
     if (!converting) return;
     if (converting.convertedTo) {
       toast({ title: "Already converted", description: "A branch enquiry exists for this form submission." });
       return;
     }
-    const row = pushLead({
-      date: dayOffset(0),
-      name: converting.name,
-      phone: converting.phone,
-      email: converting.email,
-      course: lead.course,
-      source: "Website",
-      assignedTo: lead.assignedTo,
-      followUpDate: dayOffset(2),
-      status: "new",
-      priority: converting.enquiryType === "Admission" ? "high" : "medium",
-      notes: `From ${converting.branch} website (${converting.enquiryType}): ${converting.message}`,
-    });
-    if (!row) {
-      toast({ title: "Could not create the lead", variant: "destructive" });
-      return;
+    try {
+      const leadData = {
+        date: new Date().toISOString().slice(0, 10),
+        name: converting.name,
+        phone: converting.phone,
+        email: converting.email,
+        course: lead.course,
+        source: "Website",
+        assignedTo: lead.assignedTo,
+        followUpDate: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10),
+        status: "new",
+        priority: converting.enquiryType === "Admission" ? "high" : "medium",
+        notes: `From ${converting.branch} website (${converting.enquiryType}): ${converting.message}`,
+      };
+      const newLead = await api<{ id: string }>("/core/enquiries", {
+        method: "POST",
+        body: JSON.stringify(leadData),
+      });
+      await api(`/core/enquiries/${converting.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "closed", convertedTo: newLead.id }),
+      });
+      await refreshEnquiries();
+      toast({
+        title: "Converted to lead",
+        description: `${converting.name} added to Branch Enquiries, assigned to ${lead.assignedTo}.`,
+      });
+      setConverting(null);
+    } catch {
+      toast({ title: "Failed to convert to lead", variant: "destructive" });
     }
-    update(converting.id, { status: "closed", convertedTo: row.id });
-    toast({
-      title: "Converted to lead",
-      description: `${converting.name} added to Branch Enquiries, assigned to ${lead.assignedTo}.`,
-    });
-    setConverting(null);
   };
 
   const exportAll = () => {
@@ -361,10 +429,18 @@ export default function OnlineBranchEnquiry() {
           <AlertDialogFooter>
             <AlertDialogCancel>Keep open</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
+              onClick={async () => {
                 if (!closing) return;
-                update(closing.id, { status: "closed" });
-                toast({ title: "Enquiry closed", description: closing.name });
+                try {
+                  await api(`/core/enquiries/${closing.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ status: "closed" }),
+                  });
+                  await refreshEnquiries();
+                  toast({ title: "Enquiry closed", description: closing.name });
+                } catch {
+                  toast({ title: "Failed to close enquiry", variant: "destructive" });
+                }
                 setClosing(null);
               }}
             >

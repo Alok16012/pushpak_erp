@@ -12,18 +12,30 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { GraduationCap, Clock, TrendingUp, Download, Users } from "lucide-react";
-import { useState } from "react";
-import { useLocalCollection } from "@/hooks/use-local-collection";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
-import {
-  STAFF_OPTIONS,
-  STUDENT_ENQUIRY_KEY,
-  STUDENT_ENQUIRY_SEED,
-  StudentEnquiry,
-  dayOffset,
-  pushLead,
-} from "@/data/enquiries";
+import { api } from "@/lib/api";
+
+interface StudentEnquiry {
+  id: string;
+  date: string;
+  name: string;
+  phone: string;
+  email: string;
+  currentClass: string;
+  applyingFor: string;
+  parentName: string;
+  parentPhone: string;
+  preferredBranch: string;
+  city: string;
+  status: "new" | "contacted" | "scheduled" | "visited" | "applied" | "closed";
+  visitDate?: string;
+  infoPackSentOn?: string;
+  closedReason?: string;
+}
+
+const STAFF_OPTIONS = ["John Doe", "Jane Smith", "Mike Johnson"];
 
 const columns: Column<StudentEnquiry>[] = [
   {
@@ -44,7 +56,6 @@ const columns: Column<StudentEnquiry>[] = [
   {
     key: "currentClass",
     header: "Current Class",
-    cell: (enquiry) => <Badge variant="outline">{enquiry.currentClass}</Badge>,
   },
   {
     key: "applyingFor",
@@ -78,66 +89,133 @@ const columns: Column<StudentEnquiry>[] = [
 
 export default function OnlineStudentEnquiry() {
   const { toast } = useToast();
-  const { items: enquiries, update, remove } = useLocalCollection<StudentEnquiry>(
-    STUDENT_ENQUIRY_KEY,
-    STUDENT_ENQUIRY_SEED,
-  );
-
+  const [enquiries, setEnquiries] = useState<StudentEnquiry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<StudentEnquiry | null>(null);
   const [scheduling, setScheduling] = useState<StudentEnquiry | null>(null);
-  const [visitDate, setVisitDate] = useState(dayOffset(3));
+  const [visitDate, setVisitDate] = useState(
+    new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
+  );
   const [converting, setConverting] = useState<StudentEnquiry | null>(null);
   const [assignedTo, setAssignedTo] = useState(STAFF_OPTIONS[0]);
   const [closing, setClosing] = useState<StudentEnquiry | null>(null);
 
-  const scheduleVisit = () => {
+  useEffect(() => {
+    let cancelled = false;
+    async function loadEnquiries() {
+      try {
+        const data = await api<StudentEnquiry[]>("/core/enquiries");
+        if (!cancelled) {
+          setEnquiries(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toast({ title: "Failed to load enquiries", variant: "destructive" });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    loadEnquiries();
+    return () => { cancelled = true; };
+  }, [toast]);
+
+  const refreshEnquiries = async () => {
+    try {
+      const data = await api<StudentEnquiry[]>("/core/enquiries");
+      setEnquiries(data);
+    } catch {
+      // silent
+    }
+  };
+
+  const scheduleVisit = async () => {
     if (!scheduling) return;
     if (!visitDate) {
       toast({ title: "Pick a visit date", variant: "destructive" });
       return;
     }
-    update(scheduling.id, { status: "scheduled", visitDate });
-    toast({ title: "Campus visit scheduled", description: `${scheduling.name} on ${visitDate}.` });
-    setScheduling(null);
-  };
-
-  const sendInfoPack = (enquiry: StudentEnquiry) => {
-    update(enquiry.id, {
-      infoPackSentOn: dayOffset(0),
-      // Sending the pack is the first contact for an untouched lead.
-      status: enquiry.status === "new" ? "contacted" : enquiry.status,
-    });
-    toast({
-      title: "Info pack sent",
-      description: `Prospectus for ${enquiry.applyingFor} emailed to ${enquiry.email}.`,
-    });
-  };
-
-  const convertToApplication = () => {
-    if (!converting) return;
-    const row = pushLead({
-      date: dayOffset(0),
-      name: converting.name,
-      phone: converting.phone,
-      email: converting.email,
-      course: converting.applyingFor,
-      source: "Website",
-      assignedTo,
-      followUpDate: dayOffset(2),
-      status: "interested",
-      priority: "high",
-      notes: `Online student enquiry · ${converting.currentClass} → ${converting.applyingFor} · parent ${converting.parentName} (${converting.parentPhone}) · ${converting.preferredBranch}`,
-    });
-    if (!row) {
-      toast({ title: "Could not create the application lead", variant: "destructive" });
-      return;
+    try {
+      await api(`/core/enquiries/${scheduling.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "scheduled", visitDate }),
+      });
+      await refreshEnquiries();
+      toast({ title: "Campus visit scheduled", description: `${scheduling.name} on ${visitDate}.` });
+      setScheduling(null);
+    } catch {
+      toast({ title: "Failed to schedule visit", variant: "destructive" });
     }
-    update(converting.id, { status: "applied" });
-    toast({
-      title: "Converted to application",
-      description: `${converting.name} added to Branch Enquiries for ${assignedTo}.`,
-    });
-    setConverting(null);
+  };
+
+  const sendInfoPack = async (enquiry: StudentEnquiry) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const newStatus = enquiry.status === "new" ? "contacted" : enquiry.status;
+    try {
+      await api(`/core/enquiries/${enquiry.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ infoPackSentOn: today, status: newStatus }),
+      });
+      await refreshEnquiries();
+      toast({
+        title: "Info pack sent",
+        description: `Prospectus for ${enquiry.applyingFor} emailed to ${enquiry.email}.`,
+      });
+    } catch {
+      toast({ title: "Failed to send info pack", variant: "destructive" });
+    }
+  };
+
+  const convertToApplication = async () => {
+    if (!converting) return;
+    try {
+      const leadData = {
+        date: new Date().toISOString().slice(0, 10),
+        name: converting.name,
+        phone: converting.phone,
+        email: converting.email,
+        course: converting.applyingFor,
+        source: "Website",
+        assignedTo,
+        followUpDate: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10),
+        status: "interested",
+        priority: "high",
+        notes: `Online student enquiry · ${converting.currentClass} → ${converting.applyingFor} · parent ${converting.parentName} (${converting.parentPhone}) · ${converting.preferredBranch}`,
+      };
+      const newLead = await api<{ id: string }>("/core/enquiries", {
+        method: "POST",
+        body: JSON.stringify(leadData),
+      });
+      await api(`/core/enquiries/${converting.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "applied" }),
+      });
+      await refreshEnquiries();
+      toast({
+        title: "Converted to application",
+        description: `${converting.name} added to Branch Enquiries for ${assignedTo}.`,
+      });
+      setConverting(null);
+    } catch {
+      toast({ title: "Failed to convert to application", variant: "destructive" });
+    }
+  };
+
+  const closeEnquiry = async () => {
+    if (!closing) return;
+    try {
+      await api(`/core/enquiries/${closing.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "closed" }),
+      });
+      await refreshEnquiries();
+      toast({ title: "Enquiry closed", description: closing.name });
+    } catch {
+      toast({ title: "Failed to close enquiry", variant: "destructive" });
+    }
+    setClosing(null);
   };
 
   const exportAll = () => {
@@ -166,7 +244,7 @@ export default function OnlineStudentEnquiry() {
     {
       label: "Schedule Visit",
       onClick: () => {
-        setVisitDate(enquiry.visitDate ?? dayOffset(3));
+        setVisitDate(enquiry.visitDate ?? new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10));
         setScheduling(enquiry);
       },
     },
@@ -296,7 +374,7 @@ export default function OnlineStudentEnquiry() {
               variant="outline"
               onClick={() => {
                 if (!details) return;
-                setVisitDate(details.visitDate ?? dayOffset(3));
+                setVisitDate(details.visitDate ?? new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10));
                 setScheduling(details);
                 setDetails(null);
               }}
@@ -365,11 +443,8 @@ export default function OnlineStudentEnquiry() {
             <AlertDialogCancel>Keep it</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (!closing) return;
-                remove(closing.id);
-                toast({ title: "Enquiry removed", description: closing.name });
-                setClosing(null);
+              onClick={async () => {
+                await closeEnquiry();
               }}
             >
               Remove
