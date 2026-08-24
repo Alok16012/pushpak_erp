@@ -64,7 +64,7 @@ export async function getDashboardStats(branchId: string | null) {
   const enquiriesQuery = supabase.from("visit_enquiries").select("*", { count: "exact", head: true }).gte("createdAt", today);
   if (branchId) enquiriesQuery.eq("branchId", branchId);
 
-  const dueQuery = supabase.from("fee_invoices").select("*, fee_payments(*)").in("status", ["DUE", "PARTIAL"]);
+  const dueQuery = supabase.from("fee_invoices").select("*").in("status", ["DUE", "PARTIAL"]);
   if (branchId) dueQuery.eq("branchId", branchId);
 
   const attendanceQuery = supabase.from("attendance_records").select("status").eq("date", today);
@@ -131,7 +131,7 @@ async function getOrgIdForBranch(branchId: string | null): Promise<string | null
 export async function getStudents(branchId: string | null, page = 1, limit = 20, search?: string) {
   let query = supabase
     .from("students")
-    .select("*, course:courseId(*), batch:batchId(*)", { count: "exact" })
+    .select("*", { count: "exact" })
     .is("deletedAt", null)
     .order("createdAt", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
@@ -149,7 +149,7 @@ export async function getStudents(branchId: string | null, page = 1, limit = 20,
 export async function getStudent(id: string, branchId: string | null) {
   let query = supabase
     .from("students")
-    .select("*, course:courseId(*), batch:batchId(*), fee_invoices(*, payments(*)), attendance(*)")
+    .select("*")
     .eq("id", id)
     .is("deletedAt", null)
     .single();
@@ -180,7 +180,7 @@ export async function deleteStudent(id: string, branchId: string) {
 export async function getStudentPortal(id: string, branchId: string) {
   let query = supabase
     .from("students")
-    .select("*, branch:branchId(*, organization:organizationId(*), address:branchAddress(*)), course:courseId(*), batch:batchId(*), fee_invoices(*, payments(*)), exam_results(*, exam:examId(*))")
+    .select("*")
     .eq("id", id)
     .is("deletedAt", null)
     .single();
@@ -196,7 +196,7 @@ export async function getStudentPortal(id: string, branchId: string) {
 export async function getCourses(organizationId: string | null) {
   let query = supabase
     .from("courses")
-    .select("*, batches(*), students(*), branchCourses(*)")
+    .select("*")
     .is("deletedAt", null)
     .order("name");
   if (organizationId) query = query.eq("organizationId", organizationId);
@@ -214,8 +214,7 @@ export async function createCourse(organizationId: string | null, input: Record<
 export async function getBatches(branchId: string | null) {
   let query = supabase
     .from("batches")
-    .select("*, course:courseId(*), timings(*), students(*), examAssignments(*)")
-    .eq("isActive", true)
+    .select("*")
     .order("startDate", { ascending: false });
   if (branchId) query = query.eq("branchId", branchId);
   const { data, error } = await query;
@@ -231,7 +230,7 @@ export async function createBatch(branchId: string, input: Record<string, unknow
 }
 
 export async function getBatchTimings(branchId: string, filters?: { batchId?: string; courseId?: string }) {
-  let query = supabase.from("batch_timings").select("*, batch:batchId(*, course:courseId(*))").order("batchId").order("day").order("startTime");
+  let query = supabase.from("batch_timings").select("*").order("batchId").order("day").order("startTime");
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   let result = data || [];
@@ -266,7 +265,7 @@ export async function getAttendance(branchId: string | null, date?: string) {
   const targetDate = date || new Date().toISOString().slice(0, 10);
   let query = supabase
     .from("students")
-    .select("*, course:courseId(*), batch:batchId(*), attendance:attendance_records(*))")
+    .select("*")
     .eq("isActive", true)
     .is("deletedAt", null)
     .order("firstName");
@@ -323,7 +322,7 @@ export async function getStudentAttendance(studentId: string, branchId: string, 
 export async function getInvoices(branchId: string | null) {
   let query = supabase
     .from("fee_invoices")
-    .select("*, student:studentId(*), payments(*)")
+    .select("*")
     .in("status", ["DUE", "PARTIAL"])
     .order("createdAt", { ascending: false });
   if (branchId) query = query.eq("branchId", branchId);
@@ -354,10 +353,11 @@ export async function deleteInvoice(id: string, branchId: string) {
 export async function getStudentInvoices(studentId: string, branchId: string | null) {
   let query = supabase
     .from("fee_invoices")
-    .select("*, payments(*)")
+    .select("*")
     .eq("studentId", studentId)
     .order("createdAt", { ascending: false });
   if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
@@ -376,7 +376,7 @@ export async function addPayment(invoiceId: string, input: Record<string, unknow
 export async function getExams(branchId: string | null) {
   let query = supabase
     .from("exams")
-    .select("*, course:courseId(*), batch:batchId(*), results(*, student:studentId(*))")
+    .select("*")
     .order("examDate", { ascending: false });
   if (branchId) query = query.eq("branchId", branchId);
   const { data, error } = await query;
@@ -428,13 +428,13 @@ async function getExamById(id: string, branchId: string) {
 export async function getStudentResults(studentId: string, branchId: string, examId?: string) {
   let query = supabase
     .from("exam_results")
-    .select("*, exam:examId(*)")
+    .select("*")
     .eq("studentId", studentId);
   if (examId) query = query.eq("examId", examId);
   const { data, error } = await query.order("examId", { ascending: false });
   if (error) throw new Error(error.message);
-  const filtered = (data || []).filter((r: any) => r.exam?.branchId === branchId);
-  const result = filtered.map((r: any) => ({ ...r, exam: r.exam ? { examDate: r.exam.examDate, ...r.exam } : null }));
+  const filtered = (data || []).filter((r: any) => r.examId);
+  const result = filtered.map((r: any) => ({ ...r }));
   try {
     const dates: Record<string, string> = {};
     for (const r of filtered) { if (r.examId && !dates[r.examId]) { const e = await getExamById(r.examId, branchId); dates[r.examId] = e?.examDate || ""; } }
@@ -534,7 +534,7 @@ export async function deleteNotice(id: string) {
 export async function getBranches(organizationId: string | null) {
   let query = supabase
     .from("branches")
-    .select("*, director:branchDirector(*), address:branchAddress(*), settings:branch_settings(*), wallet:branchWallet(*)")
+    .select("*")
     .is("deletedAt", null)
     .order("name");
 
@@ -572,7 +572,7 @@ export async function deleteBranch(id: string) {
 export async function getStudentProfile(userId: string, branchId: string) {
   const { data, error } = await supabase
     .from("students")
-    .select("*, course:courseId(*), batch:batchId(*), branch:branchId(*)")
+    .select("*")
     .eq("userId", userId)
     .eq("branchId", branchId)
     .is("deletedAt", null)
@@ -587,7 +587,7 @@ export async function getStudentPortalClasses(userId: string, branchId: string) 
 
   const { data, error } = await supabase
     .from("batch_timings")
-    .select("*, batch:batchId(*, course:courseId(*))")
+    .select("*")
     .eq("batchId", student.batchId)
     .order("day")
     .order("startTime");
