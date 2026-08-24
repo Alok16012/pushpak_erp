@@ -57,7 +57,7 @@ export default function BranchWebsiteSettings() {
     let cancelled = false;
     async function loadSettings() {
       try {
-        const result = await getBranchSettings(user!.branchId);
+        const result = await getBranchSettings(user?.branchId || "");
         if (!cancelled && result.data) {
           setForm({ ...DEFAULTS, ...result.data });
         }
@@ -96,7 +96,7 @@ export default function BranchWebsiteSettings() {
       return;
     }
     try {
-      await updateBranchSettings(user!.branchId, form as unknown as Record<string, unknown>);
+      await updateBranchSettings(user?.branchId || "", form as unknown as Record<string, unknown>);
       toast({ title: "Website settings saved", description: `${form.siteName} updated.` });
     } catch {
       toast({ title: "Failed to save settings", variant: "destructive" });

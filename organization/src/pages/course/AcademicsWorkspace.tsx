@@ -36,6 +36,8 @@ type Batch = {
 };
 export default function AcademicsWorkspace() {
   const { user } = useAuth();
+  const orgId = user?.organizationId || null;
+  const branchId = user?.branchId || null;
   const { toast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -43,8 +45,8 @@ export default function AcademicsWorkspace() {
   const [d, setD] = useState<Record<string, string>>({});
   const load = () =>
     Promise.all([
-      getCourses(user.organizationId!),
-      getBatches(user.branchId!),
+      getCourses(orgId),
+      getBatches(branchId),
     ]).then(([c, b]) => {
       setCourses(c.data);
       setBatches(b.data);
@@ -55,7 +57,7 @@ export default function AcademicsWorkspace() {
   const submit = async () => {
     try {
       if (form === "course")
-        await createCourse(user.organizationId!, {
+        await createCourse(orgId, {
             name: d.name,
             code: d.code,
             category: d.category || "COMPUTER",
@@ -66,7 +68,7 @@ export default function AcademicsWorkspace() {
             examFee: 0,
           });
       else
-        await createBatch(user.branchId!, {
+        await createBatch(branchId, {
             courseId: d.courseId,
             name: d.name,
             code: d.code,

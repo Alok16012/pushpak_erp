@@ -104,9 +104,10 @@ const generateMeetingLink = (platform: string) => {
   return `https://zoom.us/j/${id}`;
 };
 
-export default function LiveClassSetup() {
-  const navigate = useNavigate();
   const { user } = useAuth();
+  const orgId = user?.organizationId || null;
+  const branchId = user?.branchId || null;
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [form, setForm] = useState<FormData>(BLANK);
   const [subjects, setSubjects] = useState<string[]>([]);
@@ -119,8 +120,8 @@ export default function LiveClassSetup() {
     const fetchLookups = async () => {
       try {
         const [coursesRes, batchesRes] = await Promise.all([
-          getCourses(user.organizationId!),
-          getBatches(user.branchId!),
+          getCourses(orgId),
+          getBatches(branchId),
         ]);
         setCourses(coursesRes.data.items.map((c) => c.name));
         setBatches(batchesRes.data.items.map((b) => ({
@@ -140,7 +141,7 @@ export default function LiveClassSetup() {
   useEffect(() => {
     const fetchMeta = async () => {
       try {
-        const body = await getStudentPortalClasses(user.id, user.branchId!);
+        const body = await getStudentPortalClasses(user.id, branchId);
         const subjSet = new Set<string>();
         const instrSet = new Set<string>();
         body.data.forEach((c: any) => { subjSet.add(c.subject); instrSet.add(c.instructor); });

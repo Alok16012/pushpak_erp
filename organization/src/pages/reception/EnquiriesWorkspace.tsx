@@ -105,6 +105,7 @@ const emptyDraft: Draft = {
 export default function EnquiriesWorkspace() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const branchId = user?.branchId || "";
   const [mode, setMode] = useState<"list" | "form">("list");
   const [stage, setStage] = useState(0);
   const [query, setQuery] = useState("");
@@ -190,7 +191,7 @@ export default function EnquiriesWorkspace() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const result = await getEnquiries(user!.branchId);
+        const result = await getEnquiries(user?.branchId || "");
         if (!cancelled) {
           setLiveRecords(
             (result.data ?? []).map((item: Record<string, unknown>) => ({
@@ -237,7 +238,7 @@ export default function EnquiriesWorkspace() {
             Delivery: "DELIVERY",
           } as Record<string, string>
         )[draft.purpose] || "OTHER";
-      const created = await createEnquiry(user!.branchId, {
+      const created = await createEnquiry(user?.branchId, {
             visitorName: draft.name,
             phone: draft.phone,
             email: draft.email || undefined,

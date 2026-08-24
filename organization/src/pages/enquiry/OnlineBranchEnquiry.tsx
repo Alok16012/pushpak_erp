@@ -91,6 +91,7 @@ const columns: Column<OnlineEnquiry>[] = [
 export default function OnlineBranchEnquiry() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const __branchId = user?.branchId || "";
   const [enquiries, setEnquiries] = useState<OnlineEnquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<OnlineEnquiry | null>(null);
@@ -104,7 +105,7 @@ export default function OnlineBranchEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const result = await getEnquiries(user?.branchId || "");
+        const result = await getEnquiries(__branchId);
         if (!cancelled) {
           setEnquiries(result.data as unknown as OnlineEnquiry[]);
         }
@@ -124,7 +125,7 @@ export default function OnlineBranchEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const result = await getEnquiries(user?.branchId || "");
+      const result = await getEnquiries(__branchId);
       setEnquiries(result.data as unknown as OnlineEnquiry[]);
     } catch {
       // silent
@@ -137,7 +138,7 @@ export default function OnlineBranchEnquiry() {
       return;
     }
     try {
-      await updateEnquiry(enquiry.id, user!.branchId, { status: "reviewed" });
+      await updateEnquiry(enquiry.id, _branchId, { status: "reviewed" });
       await refreshEnquiries();
       toast({ title: "Marked as reviewed", description: enquiry.name });
     } catch {
@@ -152,7 +153,7 @@ export default function OnlineBranchEnquiry() {
       return;
     }
     try {
-      await updateEnquiry(responding.id, user!.branchId, { status: "responded", response: response.trim() });
+      await updateEnquiry(responding.id, _branchId, { status: "responded", response: response.trim() });
       await refreshEnquiries();
       toast({ title: "Response sent", description: `Emailed to ${responding.email}.` });
       setResponding(null);
@@ -181,8 +182,8 @@ export default function OnlineBranchEnquiry() {
         priority: converting.enquiryType === "Admission" ? "high" : "medium",
         notes: `From ${converting.branch} website (${converting.enquiryType}): ${converting.message}`,
       };
-      const newLead = await createEnquiry(user!.branchId, leadData);
-      await updateEnquiry(converting.id, user!.branchId, { status: "closed", convertedTo: newLead.data.id as string });
+      const newLead = await createEnquiry(_branchId, leadData);
+      await updateEnquiry(converting.id, _branchId, { status: "closed", convertedTo: newLead.data.id as string });
       await refreshEnquiries();
       toast({
         title: "Converted to lead",
@@ -422,7 +423,7 @@ export default function OnlineBranchEnquiry() {
               onClick={async () => {
                 if (!closing) return;
                 try {
-                  await updateEnquiry(closing.id, user!.branchId, { status: "closed" });
+                  await updateEnquiry(closing.id, _branchId, { status: "closed" });
                   await refreshEnquiries();
                   toast({ title: "Enquiry closed", description: closing.name });
                 } catch {

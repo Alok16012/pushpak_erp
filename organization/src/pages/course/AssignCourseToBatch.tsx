@@ -121,6 +121,8 @@ const columns: Column<CourseAssignment>[] = [
 
 export default function AssignCourseToBatch() {
   const { user } = useAuth();
+  const orgId = user?.organizationId || null;
+  const branchId = user?.branchId || null;
   const { toast } = useToast();
   const [assignments, setAssignments] = useState<CourseAssignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -141,8 +143,8 @@ export default function AssignCourseToBatch() {
     async function loadReferenceData() {
       try {
         const [coursesRes, batchesRes] = await Promise.all([
-          getCourses(user.organizationId!),
-          getBatches(user.branchId!),
+          getCourses(orgId),
+          getBatches(branchId),
         ]);
         if (!cancelled) {
           setCourses(coursesRes.data);

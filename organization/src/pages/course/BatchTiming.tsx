@@ -76,7 +76,7 @@ export default function BatchTiming() {
 
   const loadBatches = useCallback(async () => {
     try {
-      const res = await getBatches(user.branchId!);
+      const res = await getBatches(user?.branchId || "");
       const activeBatches = res.data.filter((b) => b.isActive !== false);
       setBatches(activeBatches);
       if (!selectedBatchId && activeBatches.length > 0) {
@@ -92,7 +92,7 @@ export default function BatchTiming() {
     if (!batchId) return;
     setLoading(true);
     try {
-      const res = await getBatchTimings(user.branchId!, { batchId });
+      const res = await getBatchTimings(user?.branchId || "", { batchId });
       setSlots(res.data);
     } catch {
       toast({ title: "Failed to load timetable", variant: "destructive" });

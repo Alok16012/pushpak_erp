@@ -192,7 +192,7 @@ export default function DueFeeCollection() {
   const fetchFees = () => {
     setLoading(true);
     setError(null);
-    getInvoices(user!.branchId!)
+    getInvoices(user?.branchId || "")
       .then((res) => {
         const data: BackendInvoice[] = res.data;
         const mapped: DueFee[] = data.map((invoice) => {

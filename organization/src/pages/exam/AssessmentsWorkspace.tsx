@@ -61,6 +61,8 @@ const blankExam = {
 };
 export default function AssessmentsWorkspace() {
   const { user } = useAuth();
+  const branchId = user?.branchId || null;
+  const orgId = user?.organizationId || null;
   const { toast } = useToast();
   const [exams, setExams] = useState<Exam[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -75,10 +77,10 @@ export default function AssessmentsWorkspace() {
   const load = useCallback(
     () =>
       Promise.all([
-        getExams(user.branchId!),
-        getStudents(user.branchId!, 1, 100),
-        getCourses(user.organizationId!),
-        getBatches(user.branchId!),
+        getExams(branchId),
+        getStudents(branchId, 1, 100),
+        getCourses(orgId),
+        getBatches(branchId),
       ])
         .then(([e, s, c, b]) => {
           setExams(e.data);
@@ -118,7 +120,7 @@ export default function AssessmentsWorkspace() {
   const createExam = async () => {
     setCreating(true);
     try {
-      await createExam(user.branchId!, {
+      await createExam(branchId, {
           courseId: draft.courseId,
           ...(draft.batchId ? { batchId: draft.batchId } : {}),
           name: draft.name,
@@ -159,7 +161,7 @@ export default function AssessmentsWorkspace() {
     }
     setSaving(true);
     try {
-      await submitExamResults(selectedExam.id, user.branchId!, results, publish);
+      await submitExamResults(selectedExam.id, branchId, results, publish);
       toast({
         title: publish ? "Results published" : "Marks saved",
         description: `${results.length} student result(s) recorded.`,

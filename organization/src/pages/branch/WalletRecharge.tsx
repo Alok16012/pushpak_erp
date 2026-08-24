@@ -92,7 +92,7 @@ export default function WalletRecharge() {
     let cancelled = false;
     async function loadWallet() {
       try {
-        const result = await getWallet(user!.branchId);
+        const result = await getWallet(user?.branchId || "");
         if (!cancelled) {
           setWalletData(result.data);
         }

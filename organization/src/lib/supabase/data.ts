@@ -327,6 +327,7 @@ export async function getInvoices(branchId: string | null) {
     .in("status", ["DUE", "PARTIAL"])
     .order("createdAt", { ascending: false });
   if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
@@ -378,11 +379,13 @@ export async function getExams(branchId: string | null) {
     .select("*, course:courseId(*), batch:batchId(*), results(*, student:studentId(*))")
     .order("examDate", { ascending: false });
   if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
 
-export async function createExam(branchId: string, input: Record<string, unknown>) {
+export async function createExam(branchId: string | null, input: Record<string, unknown>) {
+  if (!branchId) throw new Error("Branch ID required to create exam");
   const { data, error } = await supabase.from("exams").insert({ ...input, branchId }).select("*").single();
   if (error) throw new Error(error.message);
   return { success: true, data };
@@ -490,13 +493,18 @@ export async function getPendingEnquiries(branchId: string | null) {
    NOTICES
    ============================ */
 
-export async function getNotices(branchId: string) {
-  const { data, error } = await supabase
+export async function getNotices(branchId: string | null) {
+  let query = supabase
     .from("branch_notices")
     .select("*")
-    .or(`branchId.eq.${branchId},branchId.is.null`)
     .order("createdAt", { ascending: false })
     .limit(20);
+  if (branchId) {
+    query = query.or(`branchId.eq.${branchId},branchId.is.null`);
+  } else {
+    query = query.is("branchId", null);
+  }
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
@@ -617,25 +625,29 @@ export async function submitPortalRequest(userId: string, branchId: string, orga
    MISC / SETTINGS
    ============================ */
 
-export async function getBranchSettings(branchId: string) {
+export async function getBranchSettings(branchId: string | null) {
+  if (!branchId) return { success: true, data: null };
   const { data, error } = await supabase.from("branch_settings").select("*").eq("branchId", branchId).single();
   if (error && error.code !== "PGRST116") throw new Error(error.message);
   return { success: true, data: data || null };
 }
 
-export async function updateBranchSettings(branchId: string, input: Record<string, unknown>) {
+export async function updateBranchSettings(branchId: string | null, input: Record<string, unknown>) {
+  if (!branchId) return { success: true, data: null };
   const { data, error } = await supabase.from("branch_settings").upsert({ ...input, branchId }).select("*").single();
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
 
-export async function getWallet(branchId: string) {
+export async function getWallet(branchId: string | null) {
+  if (!branchId) return { success: true, data: null };
   const { data, error } = await supabase.from("branch_wallets").select("*").eq("branchId", branchId).single();
   if (error && error.code !== "PGRST116") throw new Error(error.message);
   return { success: true, data: data || null };
 }
 
-export async function getTransactions(branchId: string) {
+export async function getTransactions(branchId: string | null) {
+  if (!branchId) return { success: true, data: [] };
   const { data, error } = await supabase.from("branch_transactions").select("*").eq("branchId", branchId).order("createdAt", { ascending: false });
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };

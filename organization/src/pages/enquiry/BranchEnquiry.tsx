@@ -50,6 +50,7 @@ const BLANK = {
 export default function BranchEnquiry() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const branchId = user?.branchId || "";
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -87,7 +88,7 @@ export default function BranchEnquiry() {
       return;
     }
     try {
-      const data = await createEnquiry(user!.branchId, {
+      const data = await createEnquiry(user?.branchId, {
         visitorName: form.visitorName.trim(),
         phone: form.phone.trim(),
         email: form.email.trim() || undefined,
@@ -110,7 +111,7 @@ export default function BranchEnquiry() {
     if (!followingUp || !followUpNote.trim()) return;
     try {
       const nextDate = followUpNext || new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-      await updateEnquiry(followingUp.id, user!.branchId, {
+      await updateEnquiry(followingUp.id, user?.branchId, {
         followUpDate: nextDate,
         followUpNote: followUpNote.trim(),
       });
@@ -136,7 +137,7 @@ export default function BranchEnquiry() {
       return;
     }
     try {
-      await updateEnquiry(enquiry.id, user!.branchId, { status: "CONVERTED" });
+      await updateEnquiry(enquiry.id, user?.branchId, { status: "CONVERTED" });
       setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? { ...e, status: "CONVERTED" } : e)));
       toast({ title: "Converted to admission", description: `${enquiry.visitorName} — continue at Student Management.` });
     } catch (err) {
@@ -146,7 +147,7 @@ export default function BranchEnquiry() {
 
   const closeEnquiry = async (enquiry: Enquiry) => {
     try {
-      await updateEnquiry(enquiry.id, user!.branchId, { status: "CLOSED", closeNote: "Closed by staff" });
+      await updateEnquiry(enquiry.id, user?.branchId, { status: "CLOSED", closeNote: "Closed by staff" });
       setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? { ...e, status: "CLOSED" } : e)));
       toast({ title: "Enquiry closed", description: enquiry.visitorName });
       setClosing(null);

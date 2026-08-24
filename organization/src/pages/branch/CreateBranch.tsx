@@ -95,7 +95,7 @@ export default function CreateBranch() {
       return;
     }
     setSaving(true);
-    createBranch(user.organizationId, {
+    createBranch(user?.organizationId || "", {
       name: value("branchName"),
       code,
       type: value("branchType") || "Sub Branch",

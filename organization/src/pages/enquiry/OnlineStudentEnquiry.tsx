@@ -91,6 +91,7 @@ const columns: Column<StudentEnquiry>[] = [
 export default function OnlineStudentEnquiry() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const branchId = user?.branchId || "";
   const [enquiries, setEnquiries] = useState<StudentEnquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<StudentEnquiry | null>(null);
@@ -140,7 +141,7 @@ export default function OnlineStudentEnquiry() {
       return;
     }
     try {
-      await updateEnquiry(scheduling.id, user!.branchId, { status: "scheduled", visitDate });
+      await updateEnquiry(scheduling.id, user?.branchId, { status: "scheduled", visitDate });
       await refreshEnquiries();
       toast({ title: "Campus visit scheduled", description: `${scheduling.name} on ${visitDate}.` });
       setScheduling(null);
@@ -153,7 +154,7 @@ export default function OnlineStudentEnquiry() {
     const today = new Date().toISOString().slice(0, 10);
     const newStatus = enquiry.status === "new" ? "contacted" : enquiry.status;
     try {
-      await updateEnquiry(enquiry.id, user!.branchId, { infoPackSentOn: today, status: newStatus });
+      await updateEnquiry(enquiry.id, user?.branchId, { infoPackSentOn: today, status: newStatus });
       await refreshEnquiries();
       toast({
         title: "Info pack sent",
@@ -180,8 +181,8 @@ export default function OnlineStudentEnquiry() {
         priority: "high",
         notes: `Online student enquiry · ${converting.currentClass} → ${converting.applyingFor} · parent ${converting.parentName} (${converting.parentPhone}) · ${converting.preferredBranch}`,
       };
-      const newLead = await createEnquiry(user!.branchId, leadData);
-      await updateEnquiry(converting.id, user!.branchId, { status: "applied" });
+      const newLead = await createEnquiry(user?.branchId, leadData);
+      await updateEnquiry(converting.id, user?.branchId, { status: "applied" });
       await refreshEnquiries();
       toast({
         title: "Converted to application",
@@ -196,7 +197,7 @@ export default function OnlineStudentEnquiry() {
   const closeEnquiry = async () => {
     if (!closing) return;
     try {
-      await updateEnquiry(closing.id, user!.branchId, { status: "closed" });
+      await updateEnquiry(closing.id, user?.branchId, { status: "closed" });
       await refreshEnquiries();
       toast({ title: "Enquiry closed", description: closing.name });
     } catch {

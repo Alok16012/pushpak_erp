@@ -72,7 +72,7 @@ export default function BranchNoticeBoard() {
   useEffect(() => {
     const fetchNotices = async () => {
       try {
-        const result = await getNotices(user!.branchId);
+        const result = await getNotices(user?.branchId || "");
         setItems(result.data);
       } catch {
         toast({ title: "Failed to load notices", variant: "destructive" });

@@ -56,6 +56,8 @@ const BLANK = {
 
 export default function CreateOnlineExam() {
   const { user } = useAuth();
+  const orgId = user?.organizationId || null;
+  const branchId = user?.branchId || null;
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -70,9 +72,9 @@ export default function CreateOnlineExam() {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      getCourses(user.organizationId!),
-      getBatches(user.branchId!),
-      getExams(user.branchId!),
+      getCourses(user?.organizationId),
+      getBatches(user?.branchId),
+      getExams(user?.branchId),
     ])
       .then(([coursesData, batchesData, examsRes]) => {
         if (cancelled) return;
@@ -125,7 +127,7 @@ export default function CreateOnlineExam() {
       const maxMarks = Number(form.totalMarks);
       const passMarks = Number(form.passingMarks);
       const examDate = new Date(form.startDate);
-      await createExam(user.branchId!, {
+      await createExam(user?.branchId, {
           courseId: form.course,
           batchId: form.batch || undefined,
           name: form.title,
@@ -134,7 +136,7 @@ export default function CreateOnlineExam() {
           maxMarks,
           passMarks,
         });
-      const updated = await getExams(user.branchId!);
+      const updated = await getExams(user?.branchId);
       setExams(updated.data);
       setForm(BLANK);
       toast({ title: "Exam created", description: `${form.title} is scheduled and ready.` });
@@ -147,7 +149,7 @@ export default function CreateOnlineExam() {
     const paper = exams.find((e) => e.id === id);
     if (!paper) return;
     try {
-      await updateExam(id, user.branchId!, {
+      await updateExam(id, user?.branchId, {
           status: "archived",
         });
       setExams((prev) => prev.filter((e) => e.id !== id));
