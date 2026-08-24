@@ -133,6 +133,7 @@ const columns: Column<StudentAllocation>[] = [
 export default function FeeAllocation() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const branchId = user?.branchId || null;
   const [allocations, setAllocations] = useState<StudentAllocation[]>([]);
   const [feeGroups, setFeeGroups] = useState<FeeGroup[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -159,8 +160,8 @@ export default function FeeAllocation() {
     async function loadData() {
       try {
         const [studentsData, invoicesData, groupsData] = await Promise.all([
-          getStudents(user!.branchId!, 1, 100),
-          getInvoices(user!.branchId!),
+          getStudents(branchId, 1, 100),
+          getInvoices(branchId),
           (async () => {
             try {
               const raw = localStorage.getItem(FEE_GROUPS_KEY);
@@ -252,13 +253,13 @@ export default function FeeAllocation() {
     for (const id of targetIds) {
       const existing = invoices.find((inv) => inv.studentId === id);
       if (existing) {
-        await updateInvoice(existing.id, user!.branchId!, {
+        await updateInvoice(existing.id, branchId, {
           feeGroupId: group.id,
           totalAmount: group.totalAmount,
           dueDate,
         });
       } else {
-        await createInvoice(user!.branchId!, {
+        await createInvoice(branchId, {
           studentId: id,
           feeGroupId: group.id,
           totalAmount: group.totalAmount,
@@ -268,7 +269,7 @@ export default function FeeAllocation() {
     }
 
     try {
-      const refreshed = await getInvoices(user!.branchId!);
+      const refreshed = await getInvoices(branchId);
       setInvoices(refreshed);
     } catch {
       // Refresh failed; state will reconcile on next manual action.
@@ -291,12 +292,12 @@ export default function FeeAllocation() {
     const existing = invoices.find((inv) => inv.studentId === changing.id);
     if (existing) {
       try {
-        await updateInvoice(existing.id, user!.branchId!, {
+        await updateInvoice(existing.id, branchId, {
           feeGroupId: group.id,
           totalAmount: group.totalAmount,
           dueDate: changeDue,
         });
-        const refreshed = await getInvoices(user!.branchId!);
+        const refreshed = await getInvoices(branchId);
         setInvoices(refreshed);
         toast({ title: "Fee group updated", description: `${changing.name} → ${group.name}.` });
       } catch {
@@ -324,7 +325,7 @@ export default function FeeAllocation() {
     if (existing) {
       try {
         await addPayment(existing.id, { amount, note: discount.note.trim() || (discount.mode === "percent" ? `${value}% concession` : "Flat concession") });
-        const refreshed = await getInvoices(user!.branchId!);
+        const refreshed = await getInvoices(branchId);
         setInvoices(refreshed);
         toast({
           title: "Discount applied",
@@ -640,8 +641,8 @@ export default function FeeAllocation() {
                 const existing = invoices.find((inv) => inv.studentId === removing.id);
                 if (existing) {
                   try {
-                    await deleteInvoice(existing.id, user!.branchId!);
-                    const refreshed = await getInvoices(user!.branchId!);
+                    await deleteInvoice(existing.id, branchId);
+                    const refreshed = await getInvoices(branchId);
                     setInvoices(refreshed);
                     toast({ title: "Allocation removed", description: `${removing.name} is pending allocation.` });
                   } catch {

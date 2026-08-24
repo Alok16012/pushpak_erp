@@ -128,14 +128,14 @@ async function getOrgIdForBranch(branchId: string | null): Promise<string | null
    STUDENTS
    ============================ */
 
-export async function getStudents(branchId: string, page = 1, limit = 20, search?: string) {
+export async function getStudents(branchId: string | null, page = 1, limit = 20, search?: string) {
   let query = supabase
     .from("students")
     .select("*, course:courseId(*), batch:batchId(*)", { count: "exact" })
-    .eq("branchId", branchId)
     .is("deletedAt", null)
     .order("createdAt", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
+  if (branchId) query = query.eq("branchId", branchId);
 
   if (search) {
     query = query.or(`firstName.ilike.%${search}%,lastName.ilike.%${search}%,phone.ilike.%${search}%,enrollmentNo.ilike.%${search}%`);
@@ -146,14 +146,15 @@ export async function getStudents(branchId: string, page = 1, limit = 20, search
   return { success: true, data: data || [], meta: { page, limit, total: count || 0 } };
 }
 
-export async function getStudent(id: string, branchId: string) {
-  const { data, error } = await supabase
+export async function getStudent(id: string, branchId: string | null) {
+  let query = supabase
     .from("students")
     .select("*, course:courseId(*), batch:batchId(*), fee_invoices(*, payments(*)), attendance(*)")
     .eq("id", id)
-    .eq("branchId", branchId)
     .is("deletedAt", null)
     .single();
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -177,13 +178,13 @@ export async function deleteStudent(id: string, branchId: string) {
 }
 
 export async function getStudentPortal(id: string, branchId: string) {
-  const { data, error } = await supabase
+  let query = supabase
     .from("students")
     .select("*, branch:branchId(*, organization:organizationId(*), address:branchAddress(*)), course:courseId(*), batch:batchId(*), fee_invoices(*, payments(*)), exam_results(*, exam:examId(*))")
     .eq("id", id)
-    .eq("branchId", branchId)
     .is("deletedAt", null)
     .single();
+  if (branchId) query = query.eq("branchId", branchId);
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -192,30 +193,32 @@ export async function getStudentPortal(id: string, branchId: string) {
    COURSES & BATCHES
    ============================ */
 
-export async function getCourses(organizationId: string) {
-  const { data, error } = await supabase
+export async function getCourses(organizationId: string | null) {
+  let query = supabase
     .from("courses")
     .select("*, batches(*), students(*), branchCourses(*)")
-    .eq("organizationId", organizationId)
     .is("deletedAt", null)
     .order("name");
+  if (organizationId) query = query.eq("organizationId", organizationId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
 
-export async function createCourse(organizationId: string, input: Record<string, unknown>) {
+export async function createCourse(organizationId: string | null, input: Record<string, unknown>) {
   const { data, error } = await supabase.from("courses").insert({ ...input, organizationId }).select("*").single();
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
 
-export async function getBatches(branchId: string) {
-  const { data, error } = await supabase
+export async function getBatches(branchId: string | null) {
+  let query = supabase
     .from("batches")
     .select("*, course:courseId(*), timings(*), students(*), examAssignments(*)")
-    .eq("branchId", branchId)
     .eq("isActive", true)
     .order("startDate", { ascending: false });
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
@@ -259,15 +262,16 @@ export async function deleteBatchTiming(id: string) {
    ATTENDANCE
    ============================ */
 
-export async function getAttendance(branchId: string, date?: string) {
+export async function getAttendance(branchId: string | null, date?: string) {
   const targetDate = date || new Date().toISOString().slice(0, 10);
-  const { data, error } = await supabase
+  let query = supabase
     .from("students")
     .select("*, course:courseId(*), batch:batchId(*), attendance:attendance_records(*))")
-    .eq("branchId", branchId)
     .eq("isActive", true)
     .is("deletedAt", null)
     .order("firstName");
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   const withAttendance = (data || []).map((s: any) => ({
     ...s,
@@ -316,12 +320,13 @@ export async function getStudentAttendance(studentId: string, branchId: string, 
    FEES
    ============================ */
 
-export async function getInvoices(branchId: string) {
-  const { data, error } = await supabase
+export async function getInvoices(branchId: string | null) {
+  let query = supabase
     .from("fee_invoices")
     .select("*, student:studentId(*), payments(*)")
-    .eq("branchId", branchId)
+    .in("status", ["DUE", "PARTIAL"])
     .order("createdAt", { ascending: false });
+  if (branchId) query = query.eq("branchId", branchId);
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
@@ -345,13 +350,13 @@ export async function deleteInvoice(id: string, branchId: string) {
   return { success: true };
 }
 
-export async function getStudentInvoices(studentId: string, branchId: string) {
-  const { data, error } = await supabase
+export async function getStudentInvoices(studentId: string, branchId: string | null) {
+  let query = supabase
     .from("fee_invoices")
     .select("*, payments(*)")
     .eq("studentId", studentId)
-    .eq("branchId", branchId)
     .order("createdAt", { ascending: false });
+  if (branchId) query = query.eq("branchId", branchId);
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
@@ -367,12 +372,12 @@ export async function addPayment(invoiceId: string, input: Record<string, unknow
    EXAMS
    ============================ */
 
-export async function getExams(branchId: string) {
-  const { data, error } = await supabase
+export async function getExams(branchId: string | null) {
+  let query = supabase
     .from("exams")
     .select("*, course:courseId(*), batch:batchId(*), results(*, student:studentId(*))")
-    .eq("branchId", branchId)
     .order("examDate", { ascending: false });
+  if (branchId) query = query.eq("branchId", branchId);
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
@@ -440,13 +445,13 @@ export async function getStudentResults(studentId: string, branchId: string, exa
    ENQUIRIES
    ============================ */
 
-export async function getEnquiries(branchId: string, page = 1, limit = 20, search?: string) {
+export async function getEnquiries(branchId: string | null, page = 1, limit = 20, search?: string) {
   let query = supabase
     .from("visit_enquiries")
     .select("*", { count: "exact" })
-    .eq("branchId", branchId)
     .order("createdAt", { ascending: false })
     .range((page - 1) * limit, page * limit - 1);
+  if (branchId) query = query.eq("branchId", branchId);
 
   if (search) {
     query = query.or(`visitorName.ilike.%${search}%,phone.ilike.%${search}%,personToMeet.ilike.%${search}%`);
@@ -469,14 +474,14 @@ export async function updateEnquiry(id: string, branchId: string, input: Record<
   return { success: true, data };
 }
 
-export async function getPendingEnquiries(branchId: string) {
-  const { data, error } = await supabase
+export async function getPendingEnquiries(branchId: string | null) {
+  let query = supabase
     .from("visit_enquiries")
     .select("*")
-    .eq("branchId", branchId)
     .in("status", ["NEW", "CONTACTED"])
     .order("createdAt", { ascending: false })
     .limit(10);
+  if (branchId) query = query.eq("branchId", branchId);
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }

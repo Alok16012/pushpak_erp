@@ -89,8 +89,13 @@ export default function CreateBranch() {
       return;
     }
 
+    if (!user?.organizationId) {
+      toast({ title: "No organization assigned", variant: "destructive" });
+      setSaving(false);
+      return;
+    }
     setSaving(true);
-    createBranch(user!.organizationId!, {
+    createBranch(user.organizationId, {
       name: value("branchName"),
       code,
       type: value("branchType") || "Sub Branch",

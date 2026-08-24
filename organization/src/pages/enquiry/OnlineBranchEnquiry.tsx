@@ -104,7 +104,7 @@ export default function OnlineBranchEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const result = await getEnquiries(user!.branchId);
+        const result = await getEnquiries(user?.branchId || "");
         if (!cancelled) {
           setEnquiries(result.data as unknown as OnlineEnquiry[]);
         }
@@ -124,7 +124,7 @@ export default function OnlineBranchEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const result = await getEnquiries(user!.branchId);
+      const result = await getEnquiries(user?.branchId || "");
       setEnquiries(result.data as unknown as OnlineEnquiry[]);
     } catch {
       // silent

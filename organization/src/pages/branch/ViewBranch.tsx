@@ -122,7 +122,7 @@ export default function ViewBranch() {
   useEffect(() => {
     const fetchBranches = async () => {
       try {
-        const body = await getBranches(user!.organizationId!);
+        const body = await getBranches(user?.organizationId || null);
         setBranchesData(body.data);
       } catch {
         toast({ title: "Failed to load branches", variant: "destructive" });
@@ -168,7 +168,7 @@ export default function ViewBranch() {
       return;
     }
     try {
-      await updateBranch(editing.id, user!.organizationId!, editing);
+      await updateBranch(editing.id, user?.organizationId || "", editing);
       setBranchesData((prev) => prev.map((b) => (b.id === editing.id ? editing : b)));
       toast({ title: "Branch updated", description: `${editing.name} was saved.` });
       setEditing(null);

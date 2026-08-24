@@ -63,7 +63,7 @@ export default function BranchEnquiry() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await getEnquiries(user!.branchId);
+      const result = await getEnquiries(user?.branchId || "");
       setEnquiries(result.data as unknown as Enquiry[]);
     } catch {
       toast({ title: "Failed to load enquiries", variant: "destructive" });

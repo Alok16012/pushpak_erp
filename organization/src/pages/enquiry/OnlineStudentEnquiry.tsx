@@ -106,7 +106,7 @@ export default function OnlineStudentEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const result = await getEnquiries(user!.branchId);
+        const result = await getEnquiries(user?.branchId || "");
         if (!cancelled) {
           setEnquiries(result.data as unknown as StudentEnquiry[]);
         }
@@ -126,7 +126,7 @@ export default function OnlineStudentEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const result = await getEnquiries(user!.branchId);
+      const result = await getEnquiries(user?.branchId || "");
       setEnquiries(result.data as unknown as StudentEnquiry[]);
     } catch {
       // silent
