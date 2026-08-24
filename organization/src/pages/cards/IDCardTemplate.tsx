@@ -11,6 +11,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Copy, Eye, GripVertical, Image as ImageIcon, Plus, QrCode, Save, Trash2, Type } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { printHtml } from "@/lib/export";
 import { idCardsPdf } from "@/lib/id-card-pdf";
 import {
@@ -66,6 +67,7 @@ const SAMPLE_STUDENT: Record<string, any> = {
 };
 
 export default function IDCardTemplate() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [items, setItems] = useState<IdCardTemplateRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);

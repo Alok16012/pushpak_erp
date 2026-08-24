@@ -20,6 +20,8 @@ import { Search, Eye, Download, Calendar, Clock, CheckCircle, XCircle } from "lu
 import { format, subDays } from "date-fns";
 import { downloadCsv } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getAttendance } from "@/lib/supabase/data";
 
 interface AttendanceRecord {
   id: string;
@@ -53,6 +55,7 @@ const sampleAttendanceRecords: AttendanceRecord[] = [
 type PhotoView = { record: AttendanceRecord; mode: "in" | "out" | "full" };
 
 const AttendanceReport = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [tab, setTab] = useState("today");

@@ -24,7 +24,8 @@ import { Plus, Layers, IndianRupee, Users, BookOpen } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { addPayment } from "@/lib/supabase/data";
 import { FEE_GROUPS_KEY, FEE_TYPES_KEY } from "@/data/fee-catalog";
 
 interface FeeGroup {
@@ -134,6 +135,7 @@ const columns: Column<FeeGroup>[] = [
 const BLANK = { name: "", courses: "All Courses", description: "", feeTypeIds: [] as string[] };
 
 export default function FeeGroups() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [groups, setGroups] = useState<FeeGroup[]>([]);

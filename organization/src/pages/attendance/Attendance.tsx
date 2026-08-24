@@ -20,7 +20,8 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { getAttendance, markAttendance } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 type Status = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
 type Student = {
@@ -39,6 +40,7 @@ const statusStyle: Record<Status, string> = {
   EXCUSED: "bg-violet-500 text-white",
 };
 export default function Attendance() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [students, setStudents] = useState<Student[]>([]);
@@ -46,8 +48,9 @@ export default function Attendance() {
   const [query, setQuery] = useState("");
   const [batch, setBatch] = useState("all");
   const [saving, setSaving] = useState(false);
-  const load = () =>
-    api<Student[]>(`/core/attendance?date=${date}`)
+  const load = () => {
+    const branchId = user?.branchId || "";
+    return getAttendance<Student>(branchId, date)
       .then((data) => {
         setStudents(data);
         setMarks(
@@ -63,6 +66,7 @@ export default function Attendance() {
           variant: "destructive",
         }),
       );
+  };
   useEffect(() => {
     void load();
   }, [date]);
@@ -88,16 +92,11 @@ export default function Attendance() {
   const save = async () => {
     setSaving(true);
     try {
-      await api("/core/attendance", {
-        method: "POST",
-        body: JSON.stringify({
-          date,
-          records: visible.map((s) => ({
-            studentId: s.id,
-            status: marks[s.id],
-          })),
-        }),
-      });
+      const branchId = user?.branchId || "";
+      await markAttendance(branchId, date, visible.map((s) => ({
+        studentId: s.id,
+        status: marks[s.id],
+      })));
       toast({
         title: "Attendance saved",
         description: `${visible.length} student records updated for ${new Date(date).toLocaleDateString()}.`,

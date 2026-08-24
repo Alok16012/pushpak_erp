@@ -1,10 +1,47 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase/client";
 import { VIEWS, type View } from "@/lib/roles";
 import { Button } from "@/components/ui/button";import { Input } from "@/components/ui/input";import { Label } from "@/components/ui/label";import { AlertCircle, ArrowRight, LockKeyhole, Loader2 } from "lucide-react";
 
-export default function Login(){const {user,view,login}=useAuth();const [identifier,setIdentifier]=useState("");const [password,setPassword]=useState("");const [error,setError]=useState("");const [busy,setBusy]=useState(false);if(user)return <Navigate to={VIEWS[view].home} replace/>;const submit=async(e:React.FormEvent)=>{e.preventDefault();setBusy(true);setError("");try{await login(identifier,password)}catch(err){setError(err instanceof Error?err.message:"Unable to sign in")}finally{setBusy(false)}};
+type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
+
+export default function Login(){
+  const [user,setUser]=useState<User|null>(null);
+  const [view,setView]=useState<View>("admin");
+  const [identifier,setIdentifier]=useState("");
+  const [password,setPassword]=useState("");
+  const [error,setError]=useState("");
+  const [busy,setBusy]=useState(false);
+
+  useEffect(()=>{
+    const saved=localStorage.getItem("erp-user");
+    if(saved) setUser(JSON.parse(saved));
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{
+      if(session?.user){
+        const meta=session.user.user_metadata||{};
+        const u:User={id:session.user.id,name:meta.name||session.user.email||"",email:session.user.email||"",role:meta.role||"STAFF",organizationId:meta.organizationId||null,branchId:meta.branchId||null};
+        setUser(u);
+        localStorage.setItem("erp-user",JSON.stringify(u));
+      }else{
+        setUser(null);
+        localStorage.removeItem("erp-user");
+      }
+    });
+    return()=>{subscription.unsubscribe()};
+  },[]);
+
+  if(user){
+    const role=user.role;
+    const home=role==="SUPER_ADMIN"||role==="ORGANIZATION_ADMIN"?"/dashboard":role==="BRANCH_ADMIN"||role==="RECEPTIONIST"||role==="ACCOUNTANT"||role==="TEACHER"?"/branch":"/portal";
+    return <Navigate to={home} replace/>;
+  }
+
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setBusy(true);setError("");try{
+    const email=identifier.includes("@")?identifier:`${identifier}@pushpak.local`;
+    const{error:err}=await supabase.auth.signInWithPassword({email,password});
+    if(err) throw new Error(err.message);
+  }catch(err){setError(err instanceof Error?err.message:"Unable to sign in")}finally{setBusy(false)}};
 return <main className="relative grid min-h-screen place-items-center overflow-hidden bg-[#0d0b08] p-5 text-white">
   <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_-8%,hsl(38_84%_52%/.20),transparent_38rem),radial-gradient(circle_at_10%_100%,hsl(158_52%_40%/.12),transparent_32rem)]"/>
   <div aria-hidden className="pointer-events-none absolute inset-0 opacity-[.35] [background-image:linear-gradient(hsl(38_40%_70%/.05)_1px,transparent_1px),linear-gradient(90deg,hsl(38_40%_70%/.05)_1px,transparent_1px)] [background-size:64px_64px]"/>

@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { viewForRole } from "@/lib/roles";
 import Login from "./pages/Login";
 
 // Pages
@@ -113,7 +114,8 @@ const queryClient = new QueryClient();
 /** The root path belongs to whichever workspace the signed-in authorisation
  *  owns: the organisation roll-up, one branch, or the student's own portal. */
 function Dashboard() {
-  const { view } = useAuth();
+  const { user } = useAuth();
+  const view = viewForRole(user?.role);
   if (view === "student") return <Navigate to="/me" replace />;
   return view === "franchise" ? <FranchiseDashboard /> : <Index />;
 }

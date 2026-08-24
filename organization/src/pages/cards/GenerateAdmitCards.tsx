@@ -33,7 +33,8 @@ import {
   admitCardSheetHtml,
   findExam,
 } from "@/data/admit-card-templates";
-import { api } from "@/lib/api";
+import { getStudents, createInvoice } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface AdmitCardStudent {
   id: string;
@@ -54,6 +55,7 @@ const FEE_BADGES: Record<string, string> = {
 };
 
 export default function GenerateAdmitCards() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [templates, setTemplates] = useState<AdmitCardTemplate[]>([]);
   const [admitStudents, setAdmitStudents] = useState<AdmitCardStudent[]>([]);
@@ -92,11 +94,12 @@ export default function GenerateAdmitCards() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api<{ data: any[]; meta?: { total: number } }>("/core/students?limit=100")
-      .then((res) => {
+    const branchId = user?.branchId || "";
+    getStudents(branchId, 1, 100)
+      .then((data) => {
         if (cancelled) return;
         const feeStatuses: Array<"paid" | "pending" | "overdue"> = ["paid", "pending", "overdue"];
-        const mapped: AdmitCardStudent[] = (res.data ?? []).map((s: any, idx: number) => ({
+        const mapped: AdmitCardStudent[] = (data ?? []).map((s: any, idx: number) => ({
           id: s.id,
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
           class: s.batch?.name?.split(/\s+/)[0] ?? "8th",

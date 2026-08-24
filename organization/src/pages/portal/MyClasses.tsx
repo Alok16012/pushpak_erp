@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { getStudentPortalClasses, getStudentProfile } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   classState,
   type StudentProfile,
@@ -39,6 +40,9 @@ function downloadIcs(item: PortalClass) {
 
 export default function MyClasses() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const branchId = user?.branchId;
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [classes, setClasses] = useState<PortalClass[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,13 +54,13 @@ export default function MyClasses() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api<StudentProfile>("/core/student/profile"),
-      api<PortalClass[]>("/core/portal/classes"),
+      getStudentProfile(userId, branchId),
+      getStudentPortalClasses(userId, branchId),
     ])
-      .then(([profileData, classesData]) => {
+      .then(([profileResult, classesResult]) => {
         if (cancelled) return;
-        setProfile(profileData);
-        setClasses(classesData);
+        setProfile(profileResult.data);
+        setClasses(classesResult.data);
       })
       .catch((err) => {
         if (cancelled) return;

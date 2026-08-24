@@ -12,8 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { Save, RotateCcw, Monitor, Clock, Shield, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { getExams, createExam, updateExam } from "@/lib/supabase/data";
 
 type Course = { id: string; name: string; code?: string };
 type Batch = { id: string; name: string; code?: string; course?: { id: string; name: string } };
@@ -54,6 +55,7 @@ const BLANK = {
 };
 
 export default function CreateOnlineExam() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -68,9 +70,9 @@ export default function CreateOnlineExam() {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      api<Course[]>("/core/courses"),
-      api<Batch[]>("/core/batches"),
-      api<{ data: Exam[] }>("/core/exams"),
+      getCourses(user.organizationId!),
+      getBatches(user.branchId!),
+      getExams(user.branchId!),
     ])
       .then(([coursesData, batchesData, examsRes]) => {
         if (cancelled) return;
@@ -123,9 +125,7 @@ export default function CreateOnlineExam() {
       const maxMarks = Number(form.totalMarks);
       const passMarks = Number(form.passingMarks);
       const examDate = new Date(form.startDate);
-      await api("/core/exams", {
-        method: "POST",
-        body: JSON.stringify({
+      await createExam(user.branchId!, {
           courseId: form.course,
           batchId: form.batch || undefined,
           name: form.title,
@@ -133,10 +133,9 @@ export default function CreateOnlineExam() {
           examDate: examDate.toISOString(),
           maxMarks,
           passMarks,
-        }),
-      });
-      const updated = await api<{ data: Exam[] }>("/core/exams");
-      setExams(updated.data.data);
+        });
+      const updated = await getExams(user.branchId!);
+      setExams(updated.data);
       setForm(BLANK);
       toast({ title: "Exam created", description: `${form.title} is scheduled and ready.` });
     } catch {
@@ -148,11 +147,9 @@ export default function CreateOnlineExam() {
     const paper = exams.find((e) => e.id === id);
     if (!paper) return;
     try {
-      await api(`/core/exams/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "archived" }),
-      });
+      await updateExam(id, user.branchId!, {
+          status: "archived",
+        });
       setExams((prev) => prev.filter((e) => e.id !== id));
       toast({ title: "Exam archived", description: `${paper.name} has been archived.` });
     } catch {

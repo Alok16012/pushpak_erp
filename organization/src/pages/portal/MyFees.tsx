@@ -10,9 +10,10 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { api } from "@/lib/api";
+import { getStudentPortalInvoices, addPayment, submitPortalRequest } from "@/lib/supabase/data";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface StudentProfile {
   id: string;
@@ -58,6 +59,9 @@ const money = (value: number) =>
 
 export default function MyFees() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const branchId = user?.branchId;
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [invoices, setInvoices] = useState<PortalInvoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,13 +74,13 @@ export default function MyFees() {
     let cancelled = false;
     const load = async () => {
       try {
-        const [profileRes, invoicesRes] = await Promise.all([
-          api<{ success: boolean; data: StudentProfile }>("/core/student/profile"),
-          api<{ success: boolean; data: PortalInvoice[] }>("/core/portal/invoices"),
+        const [profileResult, invoicesResult] = await Promise.all([
+          getStudentProfile(userId, branchId),
+          getStudentPortalInvoices(userId, branchId),
         ]);
         if (!cancelled) {
-          if (profileRes.success) setProfile(profileRes.data);
-          if (invoicesRes.success) setInvoices(invoicesRes.data);
+          if (profileResult.success) setProfile(profileResult.data);
+          if (invoicesResult.success) setInvoices(invoicesResult.data);
         }
       } catch (err) {
         if (!cancelled) {
@@ -117,15 +121,12 @@ export default function MyFees() {
     if (value > bal) return toast({ title: "Amount exceeds balance", description: `The balance on ${paying.invoiceNo} is ${money(bal)}.`, variant: "destructive" });
     setProcessing(true);
     try {
-      await api<{ success: boolean; data: { id: string; amount: number; method: string; paidAt: string } }>(`/core/fees/invoices/${paying.id}/payments`, {
-        method: "POST",
-        body: JSON.stringify({ amount: value, method }),
-      });
+      await addPayment(paying.id, { amount: value, method });
       toast({ title: "Payment recorded", description: `${money(value)} paid against ${paying.invoiceNo}.` });
       setPaying(null);
       // Refresh invoices
-      const res = await api<{ success: boolean; data: PortalInvoice[] }>("/core/portal/invoices");
-      if (res.success) setInvoices(res.data);
+      const invoicesResult = await getStudentPortalInvoices(userId, branchId);
+      if (invoicesResult.success) setInvoices(invoicesResult.data);
     } catch (err) {
       toast({ title: "Payment failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
     } finally {

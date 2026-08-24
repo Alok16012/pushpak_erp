@@ -21,8 +21,9 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BookOpen, Users, Link2, CheckCircle } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { getCourses, getBatches } from "@/lib/supabase/data";
 import { newId } from "@/hooks/use-local-collection";
 
 interface CourseAssignment {
@@ -119,6 +120,7 @@ const columns: Column<CourseAssignment>[] = [
 ];
 
 export default function AssignCourseToBatch() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [assignments, setAssignments] = useState<CourseAssignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -138,13 +140,13 @@ export default function AssignCourseToBatch() {
     let cancelled = false;
     async function loadReferenceData() {
       try {
-        const [coursesData, batchesData] = await Promise.all([
-          api<Course[]>("/core/courses"),
-          api<Batch[]>("/core/batches"),
+        const [coursesRes, batchesRes] = await Promise.all([
+          getCourses(user.organizationId!),
+          getBatches(user.branchId!),
         ]);
         if (!cancelled) {
-          setCourses(coursesData);
-          setBatches(batchesData);
+          setCourses(coursesRes.data);
+          setBatches(batchesRes.data);
         }
       } catch (err) {
         if (!cancelled) {

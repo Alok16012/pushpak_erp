@@ -13,9 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Plus, Video, Users, Calendar, Clock, Play } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
-import { api } from "@/lib/api";
+import { getBatchTimings, updateBatchTiming } from "@/lib/supabase/data";
 
 interface LiveClass {
   id: string;
@@ -111,6 +112,7 @@ const columns: Column<LiveClass>[] = [
 
 export default function ViewLiveClasses() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [classesData, setClassesData] = useState<LiveClass[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,10 +144,7 @@ export default function ViewLiveClasses() {
 
   const cancelClass = async (liveClass: LiveClass) => {
     try {
-      await api(`/core/timetable/${liveClass.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "cancelled" }),
-      });
+      await updateBatchTiming(liveClass.id, { status: "cancelled" });
       setClassesData((prev) => prev.map((c) => (c.id === liveClass.id ? { ...c, status: "cancelled" } : c)));
       toast({ title: "Class cancelled", description: `${liveClass.title} was marked cancelled.` });
     } catch {
@@ -189,10 +188,7 @@ export default function ViewLiveClasses() {
       return;
     }
     try {
-      await api(`/core/timetable/${editing.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(editing),
-      });
+      await updateBatchTiming(editing.id, editing);
       setClassesData((prev) => prev.map((c) => (c.id === editing.id ? editing : c)));
       toast({ title: "Class updated", description: `${editing.title} was saved.` });
       setEditing(null);

@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   ADMIT_CARD_ELEMENTS,
   ADMIT_CARD_TEMPLATE_SEED,
@@ -75,6 +76,7 @@ interface AdmitCardTemplateRow {
 }
 
 export default function AdmitCardTemplate() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [items, setItems] = useState<AdmitCardTemplateRow[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);

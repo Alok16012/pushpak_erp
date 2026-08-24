@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { WithId } from "@/hooks/use-local-collection";
 
@@ -15,9 +15,9 @@ type ApiCollectionState<T extends WithId> = {
 };
 
 export function useApiCollection<T extends WithId>(
-  endpoint: string,
+  table: string,
   fallbackItems: T[],
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; select?: string },
 ): ApiCollectionState<T> {
   const { toast } = useToast();
   const [items, setItems] = useState<T[]>(fallbackItems);
@@ -28,34 +28,41 @@ export function useApiCollection<T extends WithId>(
     setLoading(true);
     setError(null);
     try {
-      const data = await api<T[]>(endpoint);
-      setItems(data);
+      const { select } = options ?? {};
+      const query = supabase.from(table).select(select ?? "*");
+      const { data, error: err } = await query;
+
+      if (err) throw new Error(err.message);
+      setItems((data as T[]) ?? []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load data";
       setError(msg);
     } finally {
       setLoading(false);
     }
-  }, [endpoint]);
+  }, [table, options?.select]);
 
   useEffect(() => {
     if (options?.enabled === false) {
       setLoading(false);
       return;
     }
-    refresh();
+    void refresh();
   }, [refresh, options?.enabled]);
 
   const add = useCallback(
     async (item: Omit<T, "id"> & { id?: string }): Promise<T | undefined> => {
       try {
-        const data = await api<T>(endpoint, {
-          method: "POST",
-          body: JSON.stringify(item),
-        });
-        setItems((list) => [data, ...list]);
+        const { data, error: err } = await supabase
+          .from(table)
+          .insert(item)
+          .select(undefined, { count: "exact", head: false })
+          .single();
+
+        if (err) throw new Error(err.message);
+        setItems((list) => [data as T, ...list]);
         toast({ title: "Saved", description: "Record created successfully." });
-        return data;
+        return data as T;
       } catch (err) {
         toast({
           title: "Failed to save",
@@ -65,16 +72,18 @@ export function useApiCollection<T extends WithId>(
         return undefined;
       }
     },
-    [endpoint, toast],
+    [table, toast],
   );
 
   const update = useCallback(
     async (id: string, patch: Partial<T>) => {
       try {
-        await api<T>(`${endpoint}/${id}`, {
-          method: "PATCH",
-          body: JSON.stringify(patch),
-        });
+        const { error: err } = await supabase
+          .from(table)
+          .update(patch)
+          .eq("id", id);
+
+        if (err) throw new Error(err.message);
         setItems((list) => list.map((i) => (i.id === id ? { ...i, ...patch } : i)));
         toast({ title: "Updated", description: "Record updated successfully." });
       } catch (err) {
@@ -85,13 +94,18 @@ export function useApiCollection<T extends WithId>(
         });
       }
     },
-    [endpoint, toast],
+    [table, toast],
   );
 
   const removeCb = useCallback(
     async (id: string) => {
       try {
-        await api<void>(`${endpoint}/${id}`, { method: "DELETE" });
+        const { error: err } = await supabase
+          .from(table)
+          .delete()
+          .eq("id", id);
+
+        if (err) throw new Error(err.message);
         setItems((list) => list.filter((i) => i.id !== id));
         toast({ title: "Deleted", description: "Record removed." });
       } catch (err) {
@@ -102,7 +116,7 @@ export function useApiCollection<T extends WithId>(
         });
       }
     },
-    [endpoint, toast],
+    [table, toast],
   );
 
   return { items, loading, error, refresh, add, update, remove: removeCb, setItems };

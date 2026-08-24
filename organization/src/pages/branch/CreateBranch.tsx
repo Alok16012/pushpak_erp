@@ -11,7 +11,8 @@ import { BranchSpaceSection } from "@/components/branch/BranchSpaceSection";
 import { BranchDocumentsSection } from "@/components/branch/BranchDocumentsSection";
 import { BranchAdminSection } from "@/components/branch/BranchAdminSection";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { createBranch } from "@/lib/supabase/data";
 
 interface Branch {
   id: string;
@@ -39,6 +40,7 @@ const REQUIRED: Array<[string, string]> = [
 ];
 
 export default function CreateBranch() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -88,21 +90,18 @@ export default function CreateBranch() {
     }
 
     setSaving(true);
-    api("/core/branches", {
-      method: "POST",
-      body: JSON.stringify({
-        name: value("branchName"),
-        code,
-        type: value("branchType") || "Sub Branch",
-        instituteType: value("instituteType") || "Other",
-        city: value("city"),
-        state: value("state").replace(/\b\w/g, (c) => c.toUpperCase()),
-        students: 0,
-        staff: Number(value("numFaculty")) || 0,
-        revenue: 0,
-        status: data.get("activeStatus") ? "active" : "inactive",
-        expiryDate: value("expiryDate") || value("validDate") || "—",
-      }),
+    createBranch(user!.organizationId!, {
+      name: value("branchName"),
+      code,
+      type: value("branchType") || "Sub Branch",
+      instituteType: value("instituteType") || "Other",
+      city: value("city"),
+      state: value("state").replace(/\b\w/g, (c) => c.toUpperCase()),
+      students: 0,
+      staff: Number(value("numFaculty")) || 0,
+      revenue: 0,
+      status: data.get("activeStatus") ? "active" : "inactive",
+      expiryDate: value("expiryDate") || value("validDate") || "—",
     }).then(() => {
       toast({
         title: "Branch created",

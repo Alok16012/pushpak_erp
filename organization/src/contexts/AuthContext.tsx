@@ -1,51 +1,61 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import { viewForRole, type View } from "@/lib/roles";
+import { supabase } from "@/lib/supabase/client";
+
 type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
+
 type Auth = {
   user: User | null;
-  view: View;
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  loading: boolean;
 };
+
 const Context = createContext<Auth | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("erp-user") || "null");
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    const expire = () => setUser(null);
-    window.addEventListener("erp-session-expired", expire);
-    return () => window.removeEventListener("erp-session-expired", expire);
-  }, []);
-  const login = async (identifier: string, password: string) => {
-    const body = await api<{ success: boolean; data: { accessToken: string; refreshToken: string; user: User } }>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ identifier, password }),
+    const saved = localStorage.getItem("erp-user");
+    if (saved) setUser(JSON.parse(saved));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const meta = session.user.user_metadata || {};
+        const u: User = {
+          id: session.user.id,
+          name: meta.name || session.user.email || "",
+          email: session.user.email || "",
+          role: meta.role || "STAFF",
+          organizationId: meta.organizationId || null,
+          branchId: meta.branchId || null,
+        };
+        setUser(u);
+        localStorage.setItem("erp-user", JSON.stringify(u));
+      } else {
+        setUser(null);
+        localStorage.removeItem("erp-user");
+      }
+      setLoading(false);
     });
-    if (!body.success) throw new Error(body.data?.user ? "Login failed" : "Invalid credentials");
-    const data = body.data;
-    localStorage.setItem("erp-access-token", data.accessToken);
-    localStorage.setItem("erp-refresh-token", data.refreshToken);
-    localStorage.setItem("erp-user", JSON.stringify(data.user));
-    setUser(data.user);
+
+    return () => { subscription.unsubscribe(); };
+  }, []);
+
+  const login = async (identifier: string, password: string) => {
+    const email = identifier.includes("@") ? identifier : `${identifier}@pushpak.local`;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message);
   };
+
   const logout = async () => {
-    const refreshToken = localStorage.getItem("erp-refresh-token");
-    try {
-      await api("/auth/logout", { method: "POST", body: JSON.stringify({ refreshToken }) });
-    } catch {}
-    localStorage.removeItem("erp-access-token");
-    localStorage.removeItem("erp-refresh-token");
-    localStorage.removeItem("erp-user");
-    setUser(null);
+    const { error } = await supabase.auth.signOut();
+    if (error) throw new Error(error.message);
   };
-  return <Context.Provider value={{ user, view: viewForRole(user?.role), login, logout }}>{children}</Context.Provider>;
+
+  return <Context.Provider value={{ user, login, logout, loading }}>{children}</Context.Provider>;
 }
+
 export const useAuth = () => {
   const value = useContext(Context);
   if (!value) throw new Error("AuthProvider missing");

@@ -12,8 +12,9 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { GraduationCap, Clock, CheckCircle, XCircle, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { getStudents, updateStudent } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
 import { downloadCsv } from "@/lib/export";
 
 interface OnlineAdmission {
@@ -110,6 +111,8 @@ const columns: Column<OnlineAdmission>[] = [
 export default function OnlineAdmissionList() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const branchId = user?.branchId;
   const [admissions, setAdmissions] = useState<OnlineAdmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<OnlineAdmission | null>(null);
@@ -121,9 +124,21 @@ export default function OnlineAdmissionList() {
   useEffect(() => {
     const fetchStudents = async () => {
       try {
-        const body = await api<{ items: OnlineAdmission[] }>("/core/students");
-        if (body.data.items && body.data.items.length > 0) {
-          setAdmissions(body.data.items);
+        const result = await getStudents(branchId, 1, 100);
+        if (result.data.length > 0) {
+          setAdmissions(result.data.map(s => ({
+            id: s.id,
+            applicationNo: s.enrollmentNo || s.applicationNo || "APP-" + s.id.slice(0, 8),
+            date: s.admissionDate || new Date().toISOString().split('T')[0],
+            name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
+            email: s.email || "",
+            phone: s.phone,
+            course: s.course?.name || "Not assigned",
+            batch: s.batch?.name || "Not assigned",
+            documents: [],
+            paymentStatus: "pending" as const,
+            status: s.admissionStatus === "APPROVED" ? "approved" : s.admissionStatus === "REJECTED" ? "rejected" : s.admissionStatus === "UNDER_REVIEW" ? "under_review" : "pending",
+          })));
         } else {
           setAdmissions(SEED);
         }
@@ -139,10 +154,7 @@ export default function OnlineAdmissionList() {
   const updateAdmission = async (id: string, changes: Partial<OnlineAdmission>) => {
     setAdmissions((prev) => prev.map((a) => (a.id === id ? { ...a, ...changes } : a)));
     try {
-      await api(`/core/students/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(changes),
-      });
+      await updateStudent(id, branchId, changes as Record<string, unknown>);
     } catch {
       toast({ title: "Update failed", description: "Could not save changes to the server.", variant: "destructive" });
     }

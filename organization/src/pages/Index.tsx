@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ArrowUpRight, BookOpen, CalendarDays, IndianRupee, Clock3, GraduationCap, MoreHorizontal, Plus, Receipt, UserPlus, Users } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api } from "@/lib/api";
+import { getDashboardStats } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 const weekly = [
@@ -29,8 +30,8 @@ const quickActions = [
 ];
 
 type DashboardData={students:number;courses:number;feesCollected:number;outstanding:number;attendancePercentage:number;enquiriesToday:number};
-const Index = () => { const {toast}=useToast();const navigate=useNavigate();const [metrics,setMetrics]=useState<DashboardData|null>(null);
-  const load=useCallback(()=>api<DashboardData>("/core/dashboard").then(setMetrics).catch(error=>toast({title:"Live dashboard unavailable",description:error.message,variant:"destructive"})),[toast]);
+const Index = () => { const {toast}=useToast();const navigate=useNavigate();const { user } = useAuth();const branchId = user?.branchId;const [metrics,setMetrics]=useState<DashboardData|null>(null);
+  const load=useCallback(()=>getDashboardStats(branchId).then(r=>{if(r.success)setMetrics(r.data)}).catch(error=>toast({title:"Live dashboard unavailable",description:error.message,variant:"destructive"})),[toast,branchId]);
   useEffect(()=>{load()},[load]); const money=(value:number)=>value>=100000?`₹${(value/100000).toFixed(1)}L`:`₹${Math.round(value/1000)}K`;
   const now=new Date();
   const greeting=now.getHours()<12?"Good morning":now.getHours()<17?"Good afternoon":"Good evening";

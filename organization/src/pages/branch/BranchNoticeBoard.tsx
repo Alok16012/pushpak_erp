@@ -12,7 +12,8 @@ import { Plus, Bell, Calendar, Pin, PinOff, Trash2, Edit, Eye, Users } from "luc
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { getNotices, createNotice, updateNotice, deleteNotice } from "@/lib/supabase/data";
 
 interface Notice {
   id: string;
@@ -62,6 +63,7 @@ const expiringSoon = (notices: Notice[]) => {
 
 export default function BranchNoticeBoard() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [items, setItems] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -70,8 +72,8 @@ export default function BranchNoticeBoard() {
   useEffect(() => {
     const fetchNotices = async () => {
       try {
-        const body = await api<{ items: Notice[] }>("/core/notices");
-        setItems(body.data.items);
+        const result = await getNotices(user!.branchId);
+        setItems(result.data);
       } catch {
         toast({ title: "Failed to load notices", variant: "destructive" });
       } finally {
@@ -104,18 +106,12 @@ export default function BranchNoticeBoard() {
     }
     try {
       if (draft.id) {
-        await api(`/core/notices/${draft.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(draft),
-        });
+        await updateNotice(draft.id, draft as unknown as Record<string, unknown>);
         setItems((list) => list.map((n) => (n.id === draft.id ? draft : n)));
         toast({ title: "Notice updated", description: draft.title });
       } else {
-        const created = await api<{ item: Notice }>("/core/notices", {
-          method: "POST",
-          body: JSON.stringify(draft),
-        });
-        setItems((list) => [created.data.item, ...list]);
+        const created = await createNotice(draft as unknown as Record<string, unknown>);
+        setItems((list) => [created.data as unknown as Notice, ...list]);
         toast({ title: "Notice published", description: draft.title });
       }
       setIsDialogOpen(false);
@@ -126,19 +122,16 @@ export default function BranchNoticeBoard() {
 
   const togglePin = async (notice: Notice) => {
     try {
-      await api(`/core/notices/${notice.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ isPinned: !notice.isPinned }),
-      });
+      await updateNotice(notice.id, { isPinned: !notice.isPinned } as Record<string, unknown>);
       setItems((list) => list.map((n) => (n.id === notice.id ? { ...n, isPinned: !n.isPinned } : n)));
     } catch {
       toast({ title: "Failed to update notice", variant: "destructive" });
     }
   };
 
-  const deleteNotice = async (notice: Notice) => {
+  const deleteNoticeHandler = async (notice: Notice) => {
     try {
-      await api(`/core/notices/${notice.id}`, { method: "DELETE" });
+      await deleteNotice(notice.id);
       setItems((list) => list.filter((n) => n.id !== notice.id));
       toast({ title: "Notice deleted", description: notice.title });
     } catch {
@@ -193,7 +186,7 @@ export default function BranchNoticeBoard() {
               variant="ghost"
               size="icon"
               title="Delete notice"
-              onClick={() => deleteNotice(notice)}
+              onClick={() => deleteNoticeHandler(notice)}
             >
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>

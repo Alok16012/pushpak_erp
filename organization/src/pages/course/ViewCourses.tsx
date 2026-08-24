@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Calendar, BookOpen } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { getCourses } from "@/lib/supabase/data";
 import { useToast } from "@/hooks/use-toast";
 
 interface Course {
@@ -73,8 +74,12 @@ const columns: Column<Course>[] = [
 
 export default function ViewCourses() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {toast}=useToast();const [courses,setCourses]=useState<Course[]>([]);
-  useEffect(()=>{api<Array<{id:string;name:string;code:string;durationValue:number;durationUnit:string;baseFee:number;isActive:boolean;_count:{batches:number;students:number}}>>("/core/courses").then(body=>setCourses(body.data.map(c=>({id:c.id,name:c.name,code:c.code,duration:`${c.durationValue} ${c.durationUnit.toLowerCase()}`,fee:Number(c.baseFee),batches:c._count.batches,students:c._count.students,status:c.isActive?"active":"inactive"})))).catch(error=>toast({title:"Could not load courses",description:error.message,variant:"destructive"}))},[]);
+  useEffect(()=>{
+    if (!user?.organizationId) return;
+    getCourses(user.organizationId).then(body=>setCourses(body.data.map(c=>({id:c.id,name:c.name,code:c.code,duration:`${c.durationValue} ${c.durationUnit.toLowerCase()}`,fee:Number(c.baseFee),batches:c._count.batches,students:c._count.students,status:c.isActive?"active":"inactive"})))).catch(error=>toast({title:"Could not load courses",description:error.message,variant:"destructive"}))
+  },[user]);
   const handleActions = (course: Course) => [
     { label: "View Details", onClick: () => console.log("View", course.id) },
     { label: "Edit Course", onClick: () => console.log("Edit", course.id) },

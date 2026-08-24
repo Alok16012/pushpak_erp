@@ -1,0 +1,26 @@
+[build]
+  # Vite build output directory
+  publish = "dist"
+  # Build command
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Supabase credentials (set these in Netlify UI → Site settings → Environment variables)
+  # VITE_SUPABASE_URL = "https://mbqkkwpiogyopfvlolgf.supabase.co"
+  # VITE_SUPABASE_ANON_KEY = "your-anon-key"
+
+# SPA routing - all routes serve index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = true
+
+# Headers for security
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

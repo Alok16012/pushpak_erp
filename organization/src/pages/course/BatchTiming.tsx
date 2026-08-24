@@ -9,9 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Clock, Plus, Edit, Trash2, Calendar } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
-import { api } from "@/lib/api";
-import { downloadCsv } from "@/lib/export";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { getBatches, getBatchTimings, createBatchTiming, updateBatchTiming, deleteBatchTiming } from "@/lib/supabase/data";
 
 interface Batch {
   id: string;
@@ -64,6 +64,7 @@ const blankSlot = (batchId: string, courseId: string): Omit<TimingSlot, "id"> =>
 });
 
 export default function BatchTiming() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [slots, setSlots] = useState<TimingSlot[]>([]);
@@ -75,8 +76,8 @@ export default function BatchTiming() {
 
   const loadBatches = useCallback(async () => {
     try {
-      const res = await api<{ data: Batch[] }>("/core/batches");
-      const activeBatches = res.data.data.filter((b) => b.isActive !== false);
+      const res = await getBatches(user.branchId!);
+      const activeBatches = res.data.filter((b) => b.isActive !== false);
       setBatches(activeBatches);
       if (!selectedBatchId && activeBatches.length > 0) {
         setSelectedBatchId(activeBatches[0].id);
@@ -91,8 +92,8 @@ export default function BatchTiming() {
     if (!batchId) return;
     setLoading(true);
     try {
-      const res = await api<{ data: TimingSlot[] }>(`/core/timetable?batchId=${batchId}`);
-      setSlots(res.data.data);
+      const res = await getBatchTimings(user.branchId!, { batchId });
+      setSlots(res.data);
     } catch {
       toast({ title: "Failed to load timetable", variant: "destructive" });
     } finally {
@@ -149,23 +150,18 @@ export default function BatchTiming() {
     }
     try {
       if (editingSlot) {
-        const res = await api<{ data: TimingSlot }>(`/core/timetable/${editingSlot.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
+        const res = await updateBatchTiming(editingSlot.id, {
             day: draft.day,
             startTime: draft.startTime,
             endTime: draft.endTime,
             roomNo: draft.roomNo || null,
             subject: draft.subject || null,
             instructor: draft.instructor || null,
-          }),
-        });
+          });
         setSlots((list) => list.map((s) => (s.id === editingSlot.id ? res.data : s)));
         toast({ title: "Slot updated", description: `${draft.subject} on ${DAY_LABELS[draft.day]}.` });
       } else {
-        const res = await api<{ data: TimingSlot }>("/core/timetable", {
-          method: "POST",
-          body: JSON.stringify({
+        const res = await createBatchTiming({
             batchId: draft.batchId,
             courseId: draft.courseId,
             day: draft.day,
@@ -174,9 +170,8 @@ export default function BatchTiming() {
             roomNo: draft.roomNo || undefined,
             subject: draft.subject || undefined,
             instructor: draft.instructor || undefined,
-          }),
-        });
-        setSlots((list) => [...list, res]);
+          });
+        setSlots((list) => [...list, res.data]);
         toast({ title: "Slot added", description: `${draft.subject} on ${DAY_LABELS[draft.day]} at ${draft.startTime}.` });
       }
       setIsDialogOpen(false);
@@ -187,7 +182,7 @@ export default function BatchTiming() {
 
   const removeSlot = async (id: string) => {
     try {
-      await api<void>(`/core/timetable/${id}`, { method: "DELETE" });
+      await deleteBatchTiming(id);
       setSlots((list) => list.filter((s) => s.id !== id));
       toast({ title: "Slot removed", description: "Time slot deleted." });
     } catch (err) {

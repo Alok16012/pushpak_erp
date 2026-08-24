@@ -9,7 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { getStudentPortalInvoices, getStudentProfile, getStudentPortalResults, submitPortalRequest } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import { certificatePdf, marksheetPdf } from "@/lib/documents";
 import { downloadCsv, printHtml } from "@/lib/export";
 import {
@@ -65,6 +66,9 @@ const grade = (percentage: number) =>
 
 export default function MyResults() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const branchId = user?.branchId;
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [results, setResults] = useState<PortalResult[]>([]);
   const [invoices, setInvoices] = useState<PortalInvoice[]>([]);
@@ -78,13 +82,16 @@ export default function MyResults() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api<StudentProfile>("/core/student/profile"),
-      api<PortalResult[]>("/core/portal/results"),
-      api<PortalInvoice[]>("/core/portal/invoices"),
+      getStudentProfile(userId, branchId),
+      getStudentPortalResults(userId, branchId),
+      getStudentPortalInvoices(userId, branchId),
     ])
-      .then(([profileData, resultsData, invoicesData]) => {
+      .then(([profileResult, resultsResult, invoicesResult]) => {
         if (cancelled) return;
-        setProfile(profileData);
+        const profileData = profileResult.data;
+        const resultsData = resultsResult.data;
+        const invoicesData = invoicesResult.data;
+        setProfile(profileData as StudentProfile);
         setResults(resultsData);
         setInvoices(invoicesData);
         const exams = [...new Set(resultsData.map((r) => r.exam))];

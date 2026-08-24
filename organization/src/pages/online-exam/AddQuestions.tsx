@@ -13,7 +13,6 @@ import { Plus, Save, Trash2, Image, Upload, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile, pickImage } from "@/lib/export";
-import { api } from "@/lib/api";
 
 export type QuestionType = "mcq" | "true-false" | "short" | "long";
 

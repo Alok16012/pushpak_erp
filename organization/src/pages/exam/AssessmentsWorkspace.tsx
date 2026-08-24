@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   admissionPdf,
   certificatePdf,
@@ -23,6 +23,7 @@ import {
 } from "@/lib/documents";
 import { Award, Download, FileCheck2, GraduationCap, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { getExams, createExam, submitExamResults, getStudents } from "@/lib/supabase/data";
 type Exam = {
   id: string;
   name: string;
@@ -59,6 +60,7 @@ const blankExam = {
   passMarks: "40",
 };
 export default function AssessmentsWorkspace() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [exams, setExams] = useState<Exam[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -73,17 +75,17 @@ export default function AssessmentsWorkspace() {
   const load = useCallback(
     () =>
       Promise.all([
-        api<Exam[]>("/core/exams"),
-        api<Student[]>("/core/students?limit=100"),
-        api<Course[]>("/core/courses"),
-        api<Batch[]>("/core/batches"),
+        getExams(user.branchId!),
+        getStudents(user.branchId!, 1, 100),
+        getCourses(user.organizationId!),
+        getBatches(user.branchId!),
       ])
         .then(([e, s, c, b]) => {
-          setExams(e);
-          setStudents(s);
-          setCourses(c);
-          setBatches(b);
-          if (s[0]) setStudentId((current) => current || s[0].id);
+          setExams(e.data);
+          setStudents(s.data);
+          setCourses(c.data);
+          setBatches(b.data);
+          if (s.data[0]) setStudentId((current) => current || s.data[0].id);
         })
         .catch((e) =>
           toast({
@@ -116,9 +118,7 @@ export default function AssessmentsWorkspace() {
   const createExam = async () => {
     setCreating(true);
     try {
-      await api("/core/exams", {
-        method: "POST",
-        body: JSON.stringify({
+      await createExam(user.branchId!, {
           courseId: draft.courseId,
           ...(draft.batchId ? { batchId: draft.batchId } : {}),
           name: draft.name,
@@ -126,8 +126,7 @@ export default function AssessmentsWorkspace() {
           examDate: draft.examDate,
           maxMarks: Number(draft.maxMarks),
           passMarks: Number(draft.passMarks),
-        }),
-      });
+        });
       toast({
         title: "Exam scheduled",
         description: `${draft.name} was created successfully.`,
@@ -160,10 +159,7 @@ export default function AssessmentsWorkspace() {
     }
     setSaving(true);
     try {
-      await api(`/core/exams/${selectedExam.id}/results`, {
-        method: "POST",
-        body: JSON.stringify({ results, publish }),
-      });
+      await submitExamResults(selectedExam.id, user.branchId!, results, publish);
       toast({
         title: publish ? "Results published" : "Marks saved",
         description: `${results.length} student result(s) recorded.`,

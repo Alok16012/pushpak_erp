@@ -12,8 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Globe, Building2, Clock, CheckCircle, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { downloadCsv } from "@/lib/export";
-import { api } from "@/lib/api";
+import { getEnquiries, createEnquiry, updateEnquiry } from "@/lib/supabase/data";
 
 interface OnlineEnquiry {
   id: string;
@@ -89,6 +90,7 @@ const columns: Column<OnlineEnquiry>[] = [
 
 export default function OnlineBranchEnquiry() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [enquiries, setEnquiries] = useState<OnlineEnquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<OnlineEnquiry | null>(null);
@@ -102,9 +104,9 @@ export default function OnlineBranchEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const body = await api<{ data: OnlineEnquiry[] }>("/core/enquiries");
+        const result = await getEnquiries(user!.branchId);
         if (!cancelled) {
-          setEnquiries(body.data.data);
+          setEnquiries(result.data as unknown as OnlineEnquiry[]);
         }
       } catch (err) {
         if (!cancelled) {
@@ -122,8 +124,8 @@ export default function OnlineBranchEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const body = await api<{ data: OnlineEnquiry[] }>("/core/enquiries");
-      setEnquiries(body.data.data);
+      const result = await getEnquiries(user!.branchId);
+      setEnquiries(result.data as unknown as OnlineEnquiry[]);
     } catch {
       // silent
     }
@@ -135,10 +137,7 @@ export default function OnlineBranchEnquiry() {
       return;
     }
     try {
-      await api(`/core/enquiries/${enquiry.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "reviewed" }),
-      });
+      await updateEnquiry(enquiry.id, user!.branchId, { status: "reviewed" });
       await refreshEnquiries();
       toast({ title: "Marked as reviewed", description: enquiry.name });
     } catch {
@@ -153,10 +152,7 @@ export default function OnlineBranchEnquiry() {
       return;
     }
     try {
-      await api(`/core/enquiries/${responding.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "responded", response: response.trim() }),
-      });
+      await updateEnquiry(responding.id, user!.branchId, { status: "responded", response: response.trim() });
       await refreshEnquiries();
       toast({ title: "Response sent", description: `Emailed to ${responding.email}.` });
       setResponding(null);
@@ -185,14 +181,8 @@ export default function OnlineBranchEnquiry() {
         priority: converting.enquiryType === "Admission" ? "high" : "medium",
         notes: `From ${converting.branch} website (${converting.enquiryType}): ${converting.message}`,
       };
-      const newLead = await api<{ id: string }>("/core/enquiries", {
-        method: "POST",
-        body: JSON.stringify(leadData),
-      });
-      await api(`/core/enquiries/${converting.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "closed", convertedTo: newLead.id }),
-      });
+      const newLead = await createEnquiry(user!.branchId, leadData);
+      await updateEnquiry(converting.id, user!.branchId, { status: "closed", convertedTo: newLead.data.id as string });
       await refreshEnquiries();
       toast({
         title: "Converted to lead",
@@ -432,10 +422,7 @@ export default function OnlineBranchEnquiry() {
               onClick={async () => {
                 if (!closing) return;
                 try {
-                  await api(`/core/enquiries/${closing.id}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ status: "closed" }),
-                  });
+                  await updateEnquiry(closing.id, user!.branchId, { status: "closed" });
                   await refreshEnquiries();
                   toast({ title: "Enquiry closed", description: closing.name });
                 } catch {

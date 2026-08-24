@@ -25,7 +25,8 @@ import {
   fieldValue,
   idCardSheetHtml,
 } from "@/data/id-card-templates";
-import { api } from "@/lib/api";
+import { getStudents } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface IdCardStudent {
   id: string;
@@ -43,6 +44,7 @@ interface IdCardStudent {
 const STORAGE_KEY = ID_CARD_TEMPLATES_KEY;
 
 export default function GenerateIDCards() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [templates, setTemplates] = useState<IdCardTemplate[]>([]);
   const [students, setStudents] = useState<IdCardStudent[]>([]);
@@ -72,10 +74,11 @@ export default function GenerateIDCards() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api<{ data: any[]; meta?: { total: number } }>("/core/students?limit=100")
-      .then((res) => {
+    const branchId = user?.branchId || "";
+    getStudents(branchId, 1, 100)
+      .then((data) => {
         if (cancelled) return;
-        const mapped: IdCardStudent[] = (res.data ?? []).map((s: any) => ({
+        const mapped: IdCardStudent[] = (data ?? []).map((s: any) => ({
           id: s.id,
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
           class: s.batch?.name?.split(/\s+/)[0] ?? s.course?.name ?? "—",

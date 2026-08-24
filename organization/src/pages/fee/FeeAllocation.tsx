@@ -12,7 +12,8 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { Users, IndianRupee, CheckCircle, Link2, AlertCircle } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { getStudents, getInvoices, createInvoice, updateInvoice, deleteInvoice, addPayment } from "@/lib/supabase/data";
 import { FEE_GROUPS_KEY, FeeGroup } from "@/data/fee-catalog";
 
 interface StudentAllocation {
@@ -130,6 +131,7 @@ const columns: Column<StudentAllocation>[] = [
 ];
 
 export default function FeeAllocation() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [allocations, setAllocations] = useState<StudentAllocation[]>([]);
   const [feeGroups, setFeeGroups] = useState<FeeGroup[]>([]);
@@ -157,8 +159,8 @@ export default function FeeAllocation() {
     async function loadData() {
       try {
         const [studentsData, invoicesData, groupsData] = await Promise.all([
-          api<Student[]>("/core/students"),
-          api<FeeInvoice[]>("/core/fees/invoices"),
+          getStudents(user!.branchId!, 1, 100),
+          getInvoices(user!.branchId!),
           (async () => {
             try {
               const raw = localStorage.getItem(FEE_GROUPS_KEY);
@@ -167,8 +169,8 @@ export default function FeeAllocation() {
           })(),
         ]);
         if (!cancelled) {
-          setStudents(studentsData);
-          setInvoices(invoicesData);
+          setStudents(studentsData.data);
+          setInvoices(invoicesData.data);
           setFeeGroups(groupsData);
         }
       } catch (err) {
@@ -250,30 +252,24 @@ export default function FeeAllocation() {
     for (const id of targetIds) {
       const existing = invoices.find((inv) => inv.studentId === id);
       if (existing) {
-        await api(`/core/fees/invoices/${existing.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            feeGroupId: group.id,
-            totalAmount: group.totalAmount,
-            dueDate,
-          }),
+        await updateInvoice(existing.id, user!.branchId!, {
+          feeGroupId: group.id,
+          totalAmount: group.totalAmount,
+          dueDate,
         });
       } else {
-        await api<FeeInvoice>("/core/fees/invoices", {
-          method: "POST",
-          body: JSON.stringify({
-            studentId: id,
-            feeGroupId: group.id,
-            totalAmount: group.totalAmount,
-            dueDate,
-          }),
+        await createInvoice(user!.branchId!, {
+          studentId: id,
+          feeGroupId: group.id,
+          totalAmount: group.totalAmount,
+          dueDate,
         });
       }
     }
 
     try {
-      const refreshed = await api<{ data: FeeInvoice[] }>("/core/fees/invoices");
-      setInvoices(refreshed.data.data);
+      const refreshed = await getInvoices(user!.branchId!);
+      setInvoices(refreshed);
     } catch {
       // Refresh failed; state will reconcile on next manual action.
     }
@@ -295,16 +291,13 @@ export default function FeeAllocation() {
     const existing = invoices.find((inv) => inv.studentId === changing.id);
     if (existing) {
       try {
-        await api(`/core/fees/invoices/${existing.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            feeGroupId: group.id,
-            totalAmount: group.totalAmount,
-            dueDate: changeDue,
-          }),
+        await updateInvoice(existing.id, user!.branchId!, {
+          feeGroupId: group.id,
+          totalAmount: group.totalAmount,
+          dueDate: changeDue,
         });
-        const refreshed = await api<{ data: FeeInvoice[] }>("/core/fees/invoices");
-        setInvoices(refreshed.data.data);
+        const refreshed = await getInvoices(user!.branchId!);
+        setInvoices(refreshed);
         toast({ title: "Fee group updated", description: `${changing.name} → ${group.name}.` });
       } catch {
         toast({ title: "Failed to update fee group", variant: "destructive" });
@@ -330,12 +323,9 @@ export default function FeeAllocation() {
     const existing = invoices.find((inv) => inv.studentId === discounting.id);
     if (existing) {
       try {
-        await api(`/core/fees/invoices/${existing.id}/payments`, {
-          method: "POST",
-          body: JSON.stringify({ amount, note: discount.note.trim() || (discount.mode === "percent" ? `${value}% concession` : "Flat concession") }),
-        });
-        const refreshed = await api<{ data: FeeInvoice[] }>("/core/fees/invoices");
-        setInvoices(refreshed.data.data);
+        await addPayment(existing.id, { amount, note: discount.note.trim() || (discount.mode === "percent" ? `${value}% concession` : "Flat concession") });
+        const refreshed = await getInvoices(user!.branchId!);
+        setInvoices(refreshed);
         toast({
           title: "Discount applied",
           description: `₹${amount.toLocaleString()} off — ${discounting.name} now owes ₹${(discounting.totalFee - amount).toLocaleString()}.`,
@@ -650,8 +640,8 @@ export default function FeeAllocation() {
                 const existing = invoices.find((inv) => inv.studentId === removing.id);
                 if (existing) {
                   try {
-                    await api(`/core/fees/invoices/${existing.id}`, { method: "DELETE" });
-                    const refreshed = await api<FeeInvoice[]>("/core/fees/invoices");
+                    await deleteInvoice(existing.id, user!.branchId!);
+                    const refreshed = await getInvoices(user!.branchId!);
                     setInvoices(refreshed);
                     toast({ title: "Allocation removed", description: `${removing.name} is pending allocation.` });
                   } catch {

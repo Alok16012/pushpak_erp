@@ -24,6 +24,8 @@ import { Plus, FileText, HelpCircle, CheckSquare, ListOrdered } from "lucide-rea
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getExams } from "@/lib/supabase/data";
 import { printHtml } from "@/lib/export";
 import { QUESTION_BANK_KEY, QUESTION_SEED, type Question } from "./AddQuestions";
 
@@ -123,6 +125,7 @@ const BLANK = { title: "", course: COURSES[0], duration: DURATIONS[3], totalMark
 
 export default function QuestionPaperBuilder() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const [papers, setPapers] = useState<QuestionPaper[]>([]);

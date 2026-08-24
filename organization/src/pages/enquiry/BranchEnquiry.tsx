@@ -13,8 +13,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, MessageSquare, UserPlus, Clock, CheckCircle, Phone } from "lucide-react";
 import { useState, useEffect } from "react";
-import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getEnquiries, createEnquiry, updateEnquiry } from "@/lib/supabase/data";
 
 interface Enquiry {
   id: string;
@@ -48,6 +49,7 @@ const BLANK = {
 
 export default function BranchEnquiry() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -61,8 +63,8 @@ export default function BranchEnquiry() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api<{ data: Enquiry[] }>("/core/enquiries");
-      setEnquiries(res.data.data);
+      const result = await getEnquiries(user!.branchId);
+      setEnquiries(result.data as unknown as Enquiry[]);
     } catch {
       toast({ title: "Failed to load enquiries", variant: "destructive" });
     } finally {
@@ -85,20 +87,17 @@ export default function BranchEnquiry() {
       return;
     }
     try {
-      const data = await api<{ data: Enquiry }>("/core/enquiries", {
-        method: "POST",
-        body: JSON.stringify({
-          visitorName: form.visitorName.trim(),
-          phone: form.phone.trim(),
-          email: form.email.trim() || undefined,
-          purpose: form.purpose,
-          personToMeet: form.personToMeet.trim(),
-          department: form.department,
-          enquiryReason: form.enquiryReason.trim() || undefined,
-          remarks: form.remarks.trim() || undefined,
-        }),
+      const data = await createEnquiry(user!.branchId, {
+        visitorName: form.visitorName.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim() || undefined,
+        purpose: form.purpose,
+        personToMeet: form.personToMeet.trim(),
+        department: form.department,
+        enquiryReason: form.enquiryReason.trim() || undefined,
+        remarks: form.remarks.trim() || undefined,
       });
-      setEnquiries((list) => [data.data, ...list]);
+      setEnquiries((list) => [data.data as unknown as Enquiry, ...list]);
       toast({ title: "Enquiry logged", description: `${form.visitorName.trim()} recorded.` });
       setForm(BLANK);
       setIsDialogOpen(false);
@@ -111,12 +110,9 @@ export default function BranchEnquiry() {
     if (!followingUp || !followUpNote.trim()) return;
     try {
       const nextDate = followUpNext || new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
-      await api<{ data: Enquiry }>(`/core/enquiries/${followingUp.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          followUpDate: nextDate,
-          followUpNote: followUpNote.trim(),
-        }),
+      await updateEnquiry(followingUp.id, user!.branchId, {
+        followUpDate: nextDate,
+        followUpNote: followUpNote.trim(),
       });
       setEnquiries((list) =>
         list.map((e) =>
@@ -140,11 +136,8 @@ export default function BranchEnquiry() {
       return;
     }
     try {
-      const res = await api<{ data: Enquiry }>(`/core/enquiries/${enquiry.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "CONVERTED" }),
-      });
-      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? res.data.data : e)));
+      await updateEnquiry(enquiry.id, user!.branchId, { status: "CONVERTED" });
+      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? { ...e, status: "CONVERTED" } : e)));
       toast({ title: "Converted to admission", description: `${enquiry.visitorName} — continue at Student Management.` });
     } catch (err) {
       toast({ title: "Failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
@@ -153,11 +146,8 @@ export default function BranchEnquiry() {
 
   const closeEnquiry = async (enquiry: Enquiry) => {
     try {
-      const res = await api<{ data: Enquiry }>(`/core/enquiries/${enquiry.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "CLOSED", closeNote: "Closed by staff" }),
-      });
-      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? res.data.data : e)));
+      await updateEnquiry(enquiry.id, user!.branchId, { status: "CLOSED", closeNote: "Closed by staff" });
+      setEnquiries((list) => list.map((e) => (e.id === enquiry.id ? { ...e, status: "CLOSED" } : e)));
       toast({ title: "Enquiry closed", description: enquiry.visitorName });
       setClosing(null);
     } catch (err) {

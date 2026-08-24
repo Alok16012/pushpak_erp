@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useMemo } from "react";
-import { api } from "@/lib/api";
+import { getStudentProfile, getStudentAttendance, getStudentPortalInvoices, getStudentPortalResults, getStudentPortalClasses, getNotices } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 interface StudentProfile {
@@ -92,6 +93,9 @@ const toDate = (value: string | Date | undefined) => {
 
 export default function StudentDashboard() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const branchId = user?.branchId;
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [invoices, setInvoices] = useState<PortalInvoice[]>([]);
@@ -105,12 +109,12 @@ export default function StudentDashboard() {
     const load = async () => {
       try {
         const [profileRes, attendanceRes, invoicesRes, resultsRes, classesRes, noticesRes] = await Promise.all([
-          api<{ success: boolean; data: StudentProfile }>("/core/student/profile"),
-          api<{ success: boolean; data: AttendanceRecord[] }>("/core/portal/attendance"),
-          api<{ success: boolean; data: PortalInvoice[] }>("/core/portal/invoices"),
-          api<{ success: boolean; data: PortalResult[] }>("/core/portal/results"),
-          api<{ success: boolean; data: PortalClass[] }>("/core/portal/classes"),
-          api<{ success: boolean; data: Notice[] }>("/core/notices"),
+          getStudentProfile(userId!, branchId!),
+          getStudentAttendance(userId!, branchId!),
+          getStudentPortalInvoices(userId!, branchId!),
+          getStudentPortalResults(userId!, branchId!),
+          getStudentPortalClasses(userId!, branchId!),
+          getNotices(branchId!),
         ]);
 
         if (!cancelled) {

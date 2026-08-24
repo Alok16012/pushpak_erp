@@ -13,6 +13,8 @@ import { Download, Users, Award, Clock, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { downloadCsv, downloadHtml, printHtml } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getExams } from "@/lib/supabase/data";
 
 interface OnlineExamResult {
   id: string;
@@ -154,6 +156,7 @@ const reportHtml = (result: OnlineExamResult) => `
   </table>`;
 
 export default function OnlineExamMarks() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [details, setDetails] = useState<OnlineExamResult | null>(null);
   const [answers, setAnswers] = useState<OnlineExamResult | null>(null);

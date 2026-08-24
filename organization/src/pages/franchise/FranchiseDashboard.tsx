@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { api } from "@/lib/api";
+import { getDashboardStats } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -44,11 +44,12 @@ type DashboardData = { students: number; courses: number; feesCollected: number;
 export default function FranchiseDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const branchId = user?.branchId;
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<DashboardData | null>(null);
   const load = useCallback(
-    () => api<DashboardData>("/core/dashboard").then(setMetrics).catch((error) => toast({ title: "Live metrics unavailable", description: error.message, variant: "destructive" })),
-    [toast],
+    () => getDashboardStats(branchId).then((r) => r.success ? setMetrics(r.data) : Promise.reject(new Error(r.message ?? "Failed to load"))).catch((error) => toast({ title: "Live metrics unavailable", description: error.message, variant: "destructive" })),
+    [toast, branchId],
   );
   useEffect(() => { load(); }, [load]);
 

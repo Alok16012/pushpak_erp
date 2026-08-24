@@ -21,7 +21,8 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Plus, Download, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { getStudents, getStudent, deleteStudent } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
 interface Student {
@@ -222,8 +223,10 @@ interface StudentDetail {
 export default function ViewStudents() {
   const navigate = useNavigate();
   const {toast}=useToast();
+  const { user } = useAuth();
+  const branchId = user?.branchId;
   const [students,setStudents]=useState<Student[]>([]);
-  useEffect(()=>{api<Array<{id:string;firstName:string;middleName?:string;lastName:string;enrollmentNo?:string;applicationNo?:string;email?:string;phone:string;course?:{name:string};batch?:{name:string};isActive:boolean;admissionStatus:string;admissionDate:string}>>("/core/students?limit=100").then(data=>setStudents(data.map(s=>({id:s.id,name:[s.firstName,s.middleName,s.lastName].filter(Boolean).join(" "),rollNo:s.enrollmentNo||s.applicationNo||"Pending",email:s.email||"—",phone:s.phone,course:s.course?.name||"Not assigned",batch:s.batch?.name||"Not assigned",status:!s.isActive?"inactive":s.admissionStatus==="APPROVED"?"active":"pending",admissionDate:s.admissionDate})))).catch(error=>{
+  useEffect(()=>{getStudents(branchId,1,100).then(result=>setStudents(result.data.map(s=>({id:s.id,name:[s.firstName,s.middleName,s.lastName].filter(Boolean).join(" "),rollNo:s.enrollmentNo||s.applicationNo||"Pending",email:s.email||"—",phone:s.phone,course:s.course?.name||"Not assigned",batch:s.batch?.name||"Not assigned",status:!s.isActive?"inactive":s.admissionStatus==="APPROVED"?"active":"pending",admissionDate:s.admissionDate})))).catch(error=>{
     // Offline / API down: fall back to the sample roll so the screen is still usable.
     setStudents(studentsData);
     toast({title:"Showing sample students",description:error.message,variant:"destructive"});
@@ -243,8 +246,8 @@ export default function ViewStudents() {
     setDetailTab(tab);
     setDetail(null);
     setDetailError(null);
-    api<StudentDetail>(`/core/students/${student.id}`)
-      .then(setDetail)
+    getStudent(student.id, branchId)
+      .then((result) => setDetail(result.data))
       .catch((error) => setDetailError(error.message));
   };
 
@@ -262,13 +265,19 @@ export default function ViewStudents() {
     setEditing(null);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!pendingDelete) return;
-    setStudents((list) => list.filter((s) => s.id !== pendingDelete.id));
-    toast({
-      title: "Student removed from the list",
-      description: "Applied to this session — the students API has no delete endpoint yet.",
-    });
+    try {
+      await deleteStudent(pendingDelete.id, branchId);
+      setStudents((list) => list.filter((s) => s.id !== pendingDelete.id));
+      toast({ title: "Student removed", description: `${pendingDelete.name} has been deleted.` });
+    } catch (e) {
+      toast({
+        title: "Could not delete student",
+        description: e instanceof Error ? e.message : "Please try again",
+        variant: "destructive",
+      });
+    }
     setPendingDelete(null);
   };
 
@@ -479,8 +488,7 @@ export default function ViewStudents() {
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {pendingDelete?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This hides the student for the rest of this session. The students API has no delete
-              endpoint, so the record returns on reload.
+              This permanently removes the student record.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

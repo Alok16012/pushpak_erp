@@ -11,6 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getWallet } from "@/lib/supabase/data";
 
 interface Institute {
   id: string;
@@ -62,7 +64,10 @@ const newRechargeId = () => `rch-${Date.now()}-${Math.random().toString(36).slic
 
 export default function WalletRecharge() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const navigate = useNavigate();
+  const [walletData, setWalletData] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
   const [institutes, setInstitutes] = useState<Institute[]>(() => {
     try {
       const stored = localStorage.getItem(INSTITUTES_KEY);
@@ -82,6 +87,28 @@ export default function WalletRecharge() {
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("upi");
   const [remarks, setRemarks] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadWallet() {
+      try {
+        const result = await getWallet(user!.branchId);
+        if (!cancelled) {
+          setWalletData(result.data);
+        }
+      } catch {
+        if (!cancelled) {
+          toast({ title: "Failed to load wallet data", variant: "destructive" });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    loadWallet();
+    return () => { cancelled = true; };
+  }, [toast]);
 
   useEffect(() => { localStorage.setItem(INSTITUTES_KEY, JSON.stringify(institutes)); }, [institutes]);
   useEffect(() => { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); }, [history]);

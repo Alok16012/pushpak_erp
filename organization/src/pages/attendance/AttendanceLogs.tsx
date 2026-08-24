@@ -33,6 +33,8 @@ import { Search, Eye, Download, Filter, Calendar, Clock } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { downloadCsv } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getStudentAttendance } from "@/lib/supabase/data";
 
 interface AttendanceLog {
   id: string;
@@ -140,6 +142,7 @@ const defaultRange = () => ({
 type Detail = { log: AttendanceLog; mode: "in" | "out" | "full" };
 
 const AttendanceLogs = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("all");

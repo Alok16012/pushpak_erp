@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertTriangle, IndianRupee, Users, Clock, Download, Bell } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { getInvoices, addPayment } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 
 interface BackendInvoice {
@@ -175,6 +176,7 @@ const columns: Column<DueFee>[] = [
 const BLANK_PAYMENT = { amount: "", method: "", lateFee: "", reference: "" };
 
 export default function DueFeeCollection() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [fees, setFees] = useState<DueFee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,8 +192,9 @@ export default function DueFeeCollection() {
   const fetchFees = () => {
     setLoading(true);
     setError(null);
-    api<BackendInvoice[]>("/core/fees/invoices")
-      .then((data) => {
+    getInvoices(user!.branchId!)
+      .then((res) => {
+        const data: BackendInvoice[] = res.data;
         const mapped: DueFee[] = data.map((invoice) => {
           const paid = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);
           const totalDue = Math.max(0, Number(invoice.amount) - paid);
@@ -297,13 +300,10 @@ export default function DueFeeCollection() {
     }
     setSubmitting(true);
     try {
-      await api<BackendPaymentResponse>(`/core/fees/invoices/${collecting.id}/payments`, {
-        method: "POST",
-        body: JSON.stringify({
-          amount,
-          method: payment.method.toUpperCase().replace(/\s+/g, "_"),
-          referenceNo: payment.reference.trim() || undefined,
-        }),
+      await addPayment(collecting.id, {
+        amount,
+        method: payment.method.toUpperCase().replace(/\s+/g, "_"),
+        referenceNo: payment.reference.trim() || undefined,
       });
       toast({
         title: "Payment collected",

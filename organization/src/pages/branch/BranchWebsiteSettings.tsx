@@ -11,6 +11,8 @@ import { Globe, Image, Share2, Upload, Save, Calendar } from "lucide-react";
 import { useEffect, useState } from "react";
 import { pickImage } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getBranchSettings, updateBranchSettings } from "@/lib/supabase/data";
 
 const DEFAULTS = {
   siteName: "",
@@ -48,14 +50,26 @@ const STORAGE_KEY = "erp-website-settings";
 
 export default function BranchWebsiteSettings() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [form, setForm] = useState<Record<string, any>>(DEFAULTS);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setForm({ ...DEFAULTS, ...JSON.parse(raw) });
-    } catch { /* use defaults */ }
-  }, []);
+    let cancelled = false;
+    async function loadSettings() {
+      try {
+        const result = await getBranchSettings(user!.branchId);
+        if (!cancelled && result.data) {
+          setForm({ ...DEFAULTS, ...result.data });
+        }
+      } catch {
+        if (!cancelled) {
+          toast({ title: "Failed to load settings", variant: "destructive" });
+        }
+      }
+    }
+    loadSettings();
+    return () => { cancelled = true; };
+  }, [toast]);
 
   const persist = (next: Record<string, any>) => {
     setForm(next);
@@ -76,12 +90,17 @@ export default function BranchWebsiteSettings() {
     toast({ title: "Image uploaded", description: picked.name });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.siteName.trim()) {
       toast({ title: "Website name required", description: "Give the site a name before saving.", variant: "destructive" });
       return;
     }
-    toast({ title: "Website settings saved", description: `${form.siteName} updated.` });
+    try {
+      await updateBranchSettings(user!.branchId, form as unknown as Record<string, unknown>);
+      toast({ title: "Website settings saved", description: `${form.siteName} updated.` });
+    } catch {
+      toast({ title: "Failed to save settings", variant: "destructive" });
+    }
   };
 
   /** Uploaded preview, or the dashed drop zone when nothing is set yet. */

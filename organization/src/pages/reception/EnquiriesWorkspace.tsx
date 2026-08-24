@@ -36,7 +36,8 @@ import {
   X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { getEnquiries, createEnquiry, updateEnquiry } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 
 const records = [
@@ -103,6 +104,7 @@ const emptyDraft: Draft = {
 
 export default function EnquiriesWorkspace() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [mode, setMode] = useState<"list" | "form">("list");
   const [stage, setStage] = useState(0);
   const [query, setQuery] = useState("");
@@ -185,37 +187,39 @@ export default function EnquiriesWorkspace() {
     localStorage.setItem("reception-enquiry-draft", JSON.stringify(draft));
   }, [draft]);
   useEffect(() => {
-    api<
-      Array<{
-        id: string;
-        visitorName: string;
-        phone: string;
-        purpose: string;
-        personToMeet: string;
-        createdAt: string;
-      }>
-    >("/core/enquiries")
-      .then((body) =>
-        setLiveRecords(
-          (body.data ?? []).map((item) => ({
-            id: item.id,
-            name: item.visitorName,
-            phone: item.phone,
-            purpose: item.purpose.replaceAll("_", " "),
-            owner: item.personToMeet,
-            status: "Checked in",
-            date: new Date(item.createdAt).toLocaleString(),
-          })),
-        ),
-      )
-      .catch((error) =>
-        toast({
-          title: "Could not load enquiries",
-          description: error.message,
-          variant: "destructive",
-        }),
-      )
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    async function loadEnquiries() {
+      try {
+        const result = await getEnquiries(user!.branchId);
+        if (!cancelled) {
+          setLiveRecords(
+            (result.data ?? []).map((item: Record<string, unknown>) => ({
+              id: item.id as string,
+              name: item.visitorName as string,
+              phone: item.phone as string,
+              purpose: (item.purpose as string).replaceAll("_", " "),
+              owner: item.personToMeet as string,
+              status: "Checked in",
+              date: new Date(item.createdAt as string).toLocaleString(),
+            })),
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast({
+            title: "Could not load enquiries",
+            description: (error as Error).message,
+            variant: "destructive",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+    loadEnquiries();
+    return () => { cancelled = true; };
   }, [toast]);
   const save = () =>
     toast({
@@ -233,11 +237,7 @@ export default function EnquiriesWorkspace() {
             Delivery: "DELIVERY",
           } as Record<string, string>
         )[draft.purpose] || "OTHER";
-      const created = await api<{ id: string; createdAt: string }>(
-        "/core/enquiries",
-        {
-          method: "POST",
-          body: JSON.stringify({
+      const created = await createEnquiry(user!.branchId, {
             visitorName: draft.name,
             phone: draft.phone,
             email: draft.email || undefined,
@@ -245,12 +245,10 @@ export default function EnquiriesWorkspace() {
             personToMeet: draft.person || "Reception",
             department: "ADMINISTRATION",
             enquiryReason: draft.notes,
-          }),
-        },
-      );
+          });
       setLiveRecords((prev) => [
         {
-          id: created.data.id,
+          id: created.data.id as unknown as string,
           name: draft.name,
           phone: draft.phone,
           purpose: draft.purpose || "Other",

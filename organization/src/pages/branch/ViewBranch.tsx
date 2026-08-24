@@ -13,8 +13,9 @@ import { Plus, Building2, Users, GraduationCap, IndianRupee, CalendarClock } fro
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getBranches, updateBranch, deleteBranch } from "@/lib/supabase/data";
 import { printHtml } from "@/lib/export";
-import { api } from "@/lib/api";
 
 interface Branch {
   id: string;
@@ -109,6 +110,7 @@ const columns: Column<Branch>[] = [
 ];
 
 export default function ViewBranch() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [branchesData, setBranchesData] = useState<Branch[]>([]);
@@ -120,8 +122,8 @@ export default function ViewBranch() {
   useEffect(() => {
     const fetchBranches = async () => {
       try {
-        const body = await api<{ items: Branch[] }>("/core/branches");
-        setBranchesData(body.data.items);
+        const body = await getBranches(user!.organizationId!);
+        setBranchesData(body.data);
       } catch {
         toast({ title: "Failed to load branches", variant: "destructive" });
       } finally {
@@ -166,10 +168,7 @@ export default function ViewBranch() {
       return;
     }
     try {
-      await api(`/core/branches/${editing.id}`, {
-        method: "PATCH",
-        body: JSON.stringify(editing),
-      });
+      await updateBranch(editing.id, user!.organizationId!, editing);
       setBranchesData((prev) => prev.map((b) => (b.id === editing.id ? editing : b)));
       toast({ title: "Branch updated", description: `${editing.name} was saved.` });
       setEditing(null);
@@ -181,7 +180,7 @@ export default function ViewBranch() {
   const confirmDelete = async () => {
     if (!pendingDelete) return;
     try {
-      await api(`/core/branches/${pendingDelete.id}`, { method: "DELETE" });
+      await deleteBranch(pendingDelete.id);
       setBranchesData((prev) => prev.filter((b) => b.id !== pendingDelete.id));
       toast({ title: "Branch removed", description: `${pendingDelete.name} is no longer in the register.` });
     } catch {

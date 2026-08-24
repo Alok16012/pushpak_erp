@@ -12,7 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, ArrowRight, Check, Save } from "lucide-react";
-import { api } from "@/lib/api";
+import { getStudents, getCourses, getBatches, createStudent } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 type Draft = {
   firstName: string;
@@ -49,6 +50,9 @@ const blank: Draft = {
 const steps = ["Student", "Family & address", "Academic", "Review"];
 export default function AdmissionsWorkspace() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const organizationId = user?.organizationId;
+  const branchId = user?.branchId;
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<Draft>(() => {
     try {
@@ -72,10 +76,8 @@ export default function AdmissionsWorkspace() {
     localStorage.setItem("admission-draft", JSON.stringify(draft));
   }, [draft]);
   useEffect(() => {
-    api<Array<{ id: string; name: string }>>("/core/courses").then(setCourses);
-    api<Array<{ id: string; name: string; courseId: string }>>(
-      "/core/batches",
-    ).then(setBatches);
+    getCourses(organizationId).then(setCourses);
+    getBatches(branchId).then(setBatches);
   }, []);
   const progress = Math.round(
     (Object.values(draft).filter(Boolean).length / Object.keys(draft).length) *
@@ -83,15 +85,12 @@ export default function AdmissionsWorkspace() {
   );
   const submit = async () => {
     try {
-      await api("/core/students", {
-        method: "POST",
-        body: JSON.stringify({
-          ...draft,
-          email: draft.email || undefined,
-          courseId: draft.courseId || undefined,
-          batchId: draft.batchId || undefined,
-          admissionStatus: "APPROVED",
-        }),
+      await createStudent(branchId, {
+        ...draft,
+        email: draft.email || undefined,
+        courseId: draft.courseId || undefined,
+        batchId: draft.batchId || undefined,
+        admissionStatus: "APPROVED",
       });
       toast({
         title: "Admission completed",

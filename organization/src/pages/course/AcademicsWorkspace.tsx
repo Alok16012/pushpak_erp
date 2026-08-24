@@ -12,8 +12,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BookOpen, Calendar, Plus, Users, X } from "lucide-react";
-import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { getCourses, createCourse, getBatches, createBatch } from "@/lib/supabase/data";
 type Course = {
   id: string;
   name: string;
@@ -34,6 +35,7 @@ type Batch = {
   _count: { students: number };
 };
 export default function AcademicsWorkspace() {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -41,11 +43,11 @@ export default function AcademicsWorkspace() {
   const [d, setD] = useState<Record<string, string>>({});
   const load = () =>
     Promise.all([
-      api<Course[]>("/core/courses"),
-      api<Batch[]>("/core/batches"),
+      getCourses(user.organizationId!),
+      getBatches(user.branchId!),
     ]).then(([c, b]) => {
-      setCourses(c);
-      setBatches(b);
+      setCourses(c.data);
+      setBatches(b.data);
     });
   useEffect(() => {
     void load();
@@ -53,9 +55,7 @@ export default function AcademicsWorkspace() {
   const submit = async () => {
     try {
       if (form === "course")
-        await api("/core/courses", {
-          method: "POST",
-          body: JSON.stringify({
+        await createCourse(user.organizationId!, {
             name: d.name,
             code: d.code,
             category: d.category || "COMPUTER",
@@ -64,20 +64,16 @@ export default function AcademicsWorkspace() {
             baseFee: Number(d.baseFee),
             registrationFee: 0,
             examFee: 0,
-          }),
-        });
+          });
       else
-        await api("/core/batches", {
-          method: "POST",
-          body: JSON.stringify({
+        await createBatch(user.branchId!, {
             courseId: d.courseId,
             name: d.name,
             code: d.code,
             maxSeats: Number(d.maxSeats),
             startDate: d.startDate,
             endDate: d.endDate || undefined,
-          }),
-        });
+          });
       toast({
         title: `${form === "course" ? "Course" : "Batch"} created`,
         description: "The academic record is now active.",

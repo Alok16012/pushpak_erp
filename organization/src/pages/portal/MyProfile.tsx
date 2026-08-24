@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { pickImage } from "@/lib/export";
-import { api } from "@/lib/api";
+import { getStudentProfile } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import type { StudentProfile } from "@/data/student-portal";
 
 const READ_ONLY: { label: string; key: keyof StudentProfile }[] = [
@@ -48,6 +49,9 @@ interface ApiStudentProfile {
 
 export default function MyProfile() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const branchId = user?.branchId;
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [form, setForm] = useState<StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,9 +62,10 @@ export default function MyProfile() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    api<ApiStudentProfile>("/core/student/profile")
-      .then((data) => {
+    getStudentProfile(userId, branchId)
+      .then((result) => {
         if (cancelled) return;
+        const data = result.data;
         const profile: StudentProfile = {
           id: data.id,
           name: data.name,

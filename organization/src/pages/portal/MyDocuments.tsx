@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { getStudentProfile, getStudentPortalInvoices, getStudentPortalResults, submitPortalRequest } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 import { downloadHtml, printHtml } from "@/lib/export";
 import { admissionPdf } from "@/lib/documents";
 import { EXAMS, admitCardHtml } from "@/data/admit-card-templates";
@@ -39,6 +40,9 @@ interface PortalRequest {
 
 export default function MyDocuments() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const branchId = user?.branchId;
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [invoices, setInvoices] = useState<PortalInvoice[]>([]);
   const [results, setResults] = useState<PortalResult[]>([]);
@@ -76,16 +80,16 @@ export default function MyDocuments() {
     })();
 
     Promise.all([
-      api<StudentProfile>("/core/student/profile"),
-      api<PortalInvoice[]>("/core/portal/invoices"),
-      api<PortalResult[]>("/core/portal/results"),
+      getStudentProfile(userId, branchId),
+      getStudentPortalInvoices(userId, branchId),
+      getStudentPortalResults(userId, branchId),
       api<{ data: PortalRequest[] }>("/core/portal/requests"),
     ])
-      .then(([profileData, invoicesData, resultsData, requestsRes]) => {
+      .then(([profileResult, invoicesResult, resultsResult, requestsRes]) => {
         if (cancelled) return;
-        setProfile(profileData);
-        setInvoices(invoicesData);
-        setResults(resultsData);
+        setProfile(profileResult.data);
+        setInvoices(invoicesResult.data);
+        setResults(resultsResult.data);
         setRequests(requestsRes.data);
         setIdTemplates(localTemplates);
         setAdmitTemplates(localAdmitTemplates);
@@ -139,11 +143,15 @@ export default function MyDocuments() {
     if (!requestNote.trim()) return toast({ title: "Add a note", description: "Say what you need the document for.", variant: "destructive" });
     setSubmitting(true);
     try {
-      const body = await api<PortalRequest>("/core/portal/requests", {
-        method: "POST",
-        body: JSON.stringify({ kind: requestKind, detail: requestNote.trim() }),
-      });
-      setRequests((prev) => [body.data, ...prev]);
+      const result = await submitPortalRequest(userId, branchId, user?.organizationId, requestKind, requestNote.trim());
+      const newRequest: PortalRequest = {
+        id: result.data.id,
+        kind: result.data.action,
+        detail: result.data.after.detail,
+        raisedAt: result.data.createdAt,
+        status: "open",
+      };
+      setRequests((prev) => [newRequest, ...prev]);
       toast({ title: "Request sent", description: `${requestKind} · the branch office will respond on your registered email.` });
       setRequestOpen(false);
       setRequestNote("");

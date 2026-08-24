@@ -12,8 +12,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { getStudentAttendance, submitPortalRequest } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
+import { useAuth } from "@/contexts/AuthContext";
 import { attendanceSummary, type AttendanceDay } from "@/data/student-portal";
 
 interface AttendanceRecord {
@@ -62,6 +63,11 @@ const toFrontendStatus = (backend: string): AttendanceDay["status"] => {
 
 export default function MyAttendance() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const branchId = user?.branchId;
+  const organizationId = user?.organizationId;
+  const studentId = userId;
   const [days, setDays] = useState<AttendanceDay[]>([]);
   const [requests, setRequests] = useState<PortalRequest[]>([]);
   const [month, setMonth] = useState("all");
@@ -77,7 +83,7 @@ export default function MyAttendance() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api<AttendanceRecord[]>("/core/portal/attendance"),
+      getStudentAttendance(studentId, branchId),
       api<PortalRequestResponse[]>("/core/portal/requests"),
     ])
       .then(([daysData, requestsData]) => {
@@ -119,11 +125,8 @@ export default function MyAttendance() {
     if (!reason.trim()) return toast({ title: "Add a reason", description: "Tell the office what happened on that day.", variant: "destructive" });
     setSubmitting(true);
     try {
-      const body = await api<PortalRequestResponse>("/core/portal/requests", {
-        method: "POST",
-        body: JSON.stringify({ kind: "Attendance correction", detail: `${dispute.date} — ${reason.trim()}` }),
-      });
-      setRequests((prev) => [{ id: body.data.id, kind: body.data.action, detail: body.data.details.detail, raisedAt: body.data.createdAt, status: "open" }, ...prev]);
+      const result = await submitPortalRequest(userId, branchId, organizationId, "Attendance correction", `${dispute.date} — ${reason.trim()}`);
+      setRequests((prev) => [{ id: result.data.id, kind: result.data.action, detail: result.data.after.detail, raisedAt: result.data.createdAt, status: "open" }, ...prev]);
       toast({ title: "Correction requested", description: `The office will review ${new Date(dispute.date).toLocaleDateString("en-IN")}.` });
       setDispute(null);
       setReason("");

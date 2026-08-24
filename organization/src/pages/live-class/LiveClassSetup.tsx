@@ -11,8 +11,9 @@ import { Switch } from "@/components/ui/switch";
 import { Save, RotateCcw, Video, Settings, Users, Bell, Link2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { getCourses, getBatches, getStudentPortalClasses } from "@/lib/supabase/data";
 
 interface FormData {
   title: string;
@@ -105,6 +106,7 @@ const generateMeetingLink = (platform: string) => {
 
 export default function LiveClassSetup() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [form, setForm] = useState<FormData>(BLANK);
   const [subjects, setSubjects] = useState<string[]>([]);
@@ -117,8 +119,8 @@ export default function LiveClassSetup() {
     const fetchLookups = async () => {
       try {
         const [coursesRes, batchesRes] = await Promise.all([
-          api<{ items: Array<{ name: string }> }>("/core/courses"),
-          api<{ items: Array<{ name: string; _count?: { students: number } }> }>("/core/batches"),
+          getCourses(user.organizationId!),
+          getBatches(user.branchId!),
         ]);
         setCourses(coursesRes.data.items.map((c) => c.name));
         setBatches(batchesRes.data.items.map((b) => ({
@@ -138,10 +140,10 @@ export default function LiveClassSetup() {
   useEffect(() => {
     const fetchMeta = async () => {
       try {
-        const body = await api<{ items: { subject: string; instructor: string }[] }>("/core/portal/classes");
+        const body = await getStudentPortalClasses(user.id, user.branchId!);
         const subjSet = new Set<string>();
         const instrSet = new Set<string>();
-        body.data.items.forEach((c) => { subjSet.add(c.subject); instrSet.add(c.instructor); });
+        body.data.forEach((c: any) => { subjSet.add(c.subject); instrSet.add(c.instructor); });
         if (subjSet.size > 0) setSubjects(Array.from(subjSet).sort());
         if (instrSet.size > 0) setInstructors(Array.from(instrSet).sort());
       } catch {

@@ -1,0 +1,619 @@
+import { supabase } from "./client";
+
+/* ============================
+   AUTH
+   ============================ */
+
+export async function loginWithPassword(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function refreshSession() {
+  const { data, error } = await supabase.auth.refreshSession();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function logout() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw new Error(error.message);
+}
+
+export async function getCurrentUser() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.user_metadata?.name || user.email,
+    role: user.user_metadata?.role || "STAFF",
+    userType: user.user_metadata?.userType || "BRANCH",
+    organizationId: user.user_metadata?.organizationId || null,
+    branchId: user.user_metadata?.branchId || null,
+  };
+}
+
+export async function signUp(email: string, password: string, metadata: Record<string, unknown>) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: metadata },
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/* ============================
+   DASHBOARD
+   ============================ */
+
+export async function getDashboardStats(branchId: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+  const [
+    studentsRes,
+    enquiriesRes,
+    dueRes,
+    attendanceRes,
+    paymentsRes,
+    coursesRes,
+  ] = await Promise.all([
+    supabase.from("students").select("*", { count: "exact", head: true }).eq("branchId", branchId).eq("isActive", true).is("deletedAt", null),
+    supabase.from("visit_enquiries").select("*", { count: "exact", head: true }).eq("branchId", branchId).gte("createdAt", today),
+    supabase.from("fee_invoices").select("*, fee_payments(*)").eq("branchId", branchId).in("status", ["DUE", "PARTIAL"]),
+    supabase.from("attendance_records").select("status").eq("branchId", branchId).eq("date", today),
+    supabase.from("fee_payments").select("amount").eq("branchId", branchId).is("reversedAt", null).gte("paidAt", monthStart),
+    supabase.from("courses").select("*", { count: "exact", head: true }).eq("organizationId", (await getOrgIdForBranch(branchId)) || "").eq("isActive", true).is("deletedAt", null),
+  ]);
+
+  const outstanding = (dueRes.data || []).reduce((sum, inv) => {
+    const paid = (inv.fee_payments || []).filter((p: any) => !p.reversedAt).reduce((s: number, p: any) => s + Number(p.amount), 0);
+    return sum + Number(inv.amount) - paid;
+  }, 0);
+
+  const attendanceTotal = (attendanceRes.data || []).length;
+  const present = (attendanceRes.data || []).filter((r: any) => r.status === "PRESENT" || r.status === "LATE").length;
+  const feesCollected = (paymentsRes.data || []).reduce((s, p) => s + Number(p.amount), 0);
+
+  return {
+    success: true,
+    data: {
+      students: studentsRes.count || 0,
+      enquiriesToday: enquiriesRes.count || 0,
+      outstanding,
+      feesCollected,
+      courses: coursesRes.count || 0,
+      attendancePercentage: attendanceTotal ? Math.round((present / attendanceTotal) * 1000) / 10 : 0,
+      attendance: (attendanceRes.data || []).reduce((acc: any, r: any) => {
+        acc[r.status] = (acc[r.status] || 0) + 1;
+        return acc;
+      }, {}),
+    },
+  };
+}
+
+async function getOrgIdForBranch(branchId: string): Promise<string | null> {
+  const { data } = await supabase.from("branches").select("organizationId").eq("id", branchId).single();
+  return data?.organizationId || null;
+}
+
+/* ============================
+   STUDENTS
+   ============================ */
+
+export async function getStudents(branchId: string, page = 1, limit = 20, search?: string) {
+  let query = supabase
+    .from("students")
+    .select("*, course:courseId(*), batch:batchId(*)", { count: "exact" })
+    .eq("branchId", branchId)
+    .is("deletedAt", null)
+    .order("createdAt", { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+
+  if (search) {
+    query = query.or(`firstName.ilike.%${search}%,lastName.ilike.%${search}%,phone.ilike.%${search}%,enrollmentNo.ilike.%${search}%`);
+  }
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [], meta: { page, limit, total: count || 0 } };
+}
+
+export async function getStudent(id: string, branchId: string) {
+  const { data, error } = await supabase
+    .from("students")
+    .select("*, course:courseId(*), batch:batchId(*), fee_invoices(*, payments(*)), attendance(*)")
+    .eq("id", id)
+    .eq("branchId", branchId)
+    .is("deletedAt", null)
+    .single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function createStudent(branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("students").insert({ ...input, branchId }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function updateStudent(id: string, branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("students").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function deleteStudent(id: string, branchId: string) {
+  const { error } = await supabase.from("students").update({ deletedAt: new Date().toISOString() }).eq("id", id).eq("branchId", branchId);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+export async function getStudentPortal(id: string, branchId: string) {
+  const { data, error } = await supabase
+    .from("students")
+    .select("*, branch:branchId(*, organization:organizationId(*), address:branchAddress(*)), course:courseId(*), batch:batchId(*), fee_invoices(*, payments(*)), exam_results(*, exam:examId(*))")
+    .eq("id", id)
+    .eq("branchId", branchId)
+    .is("deletedAt", null)
+    .single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+/* ============================
+   COURSES & BATCHES
+   ============================ */
+
+export async function getCourses(organizationId: string) {
+  const { data, error } = await supabase
+    .from("courses")
+    .select("*, batches(*), students(*), branchCourses(*)")
+    .eq("organizationId", organizationId)
+    .is("deletedAt", null)
+    .order("name");
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function createCourse(organizationId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("courses").insert({ ...input, organizationId }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function getBatches(branchId: string) {
+  const { data, error } = await supabase
+    .from("batches")
+    .select("*, course:courseId(*), timings(*), students(*), examAssignments(*)")
+    .eq("branchId", branchId)
+    .eq("isActive", true)
+    .order("startDate", { ascending: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function createBatch(branchId: string, input: Record<string, unknown>) {
+  const status = input.startDate && new Date(input.startDate as string) > new Date() ? "UPCOMING" : "ACTIVE";
+  const { data, error } = await supabase.from("batches").insert({ ...input, branchId, status }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function getBatchTimings(branchId: string, filters?: { batchId?: string; courseId?: string }) {
+  let query = supabase.from("batch_timings").select("*, batch:batchId(*, course:courseId(*))").order("batchId").order("day").order("startTime");
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  let result = data || [];
+  if (filters?.batchId) result = result.filter((t: any) => t.batchId === filters.batchId);
+  if (filters?.courseId) result = result.filter((t: any) => t.batch?.courseId === filters.courseId);
+  return { success: true, data: result };
+}
+
+export async function createBatchTiming(input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("batch_timings").insert(input).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function updateBatchTiming(id: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("batch_timings").update(input).eq("id", id).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function deleteBatchTiming(id: string) {
+  const { error } = await supabase.from("batch_timings").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+/* ============================
+   ATTENDANCE
+   ============================ */
+
+export async function getAttendance(branchId: string, date?: string) {
+  const targetDate = date || new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("students")
+    .select("*, course:courseId(*), batch:batchId(*), attendance:attendance_records(*))")
+    .eq("branchId", branchId)
+    .eq("isActive", true)
+    .is("deletedAt", null)
+    .order("firstName");
+  if (error) throw new Error(error.message);
+  const withAttendance = (data || []).map((s: any) => ({
+    ...s,
+    attendance: (s.attendance || []).filter((a: any) => a.date === targetDate).slice(0, 1),
+  }));
+  return { success: true, data: withAttendance };
+}
+
+export async function markAttendance(branchId: string, date: string, records: Array<{ studentId: string; status: string; remarks?: string }>) {
+  const results = [];
+  for (const record of records) {
+    const { data, error } = await supabase
+      .from("attendance_records")
+      .upsert(
+        { studentId: record.studentId, branchId, date, status: record.status, remarks: record.remarks || null, markedBy: (await supabase.auth.getUser()).data.user?.id },
+        { onConflict: "studentId_date" }
+      )
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    results.push(data);
+  }
+  return { success: true, data: results };
+}
+
+export async function getStudentAttendance(studentId: string, branchId: string, month?: Date) {
+  let query = supabase
+    .from("attendance_records")
+    .select("*")
+    .eq("studentId", studentId)
+    .eq("branchId", branchId)
+    .order("date", { ascending: false });
+
+  if (month) {
+    const start = new Date(month.getFullYear(), month.getMonth(), 1).toISOString();
+    const end = new Date(month.getFullYear(), month.getMonth() + 1, 1).toISOString();
+    query = query.gte("date", start).lt("date", end);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+/* ============================
+   FEES
+   ============================ */
+
+export async function getInvoices(branchId: string) {
+  const { data, error } = await supabase
+    .from("fee_invoices")
+    .select("*, student:studentId(*), payments(*)")
+    .eq("branchId", branchId)
+    .order("createdAt", { ascending: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function createInvoice(branchId: string, input: Record<string, unknown>) {
+  const invoiceNo = `INV-${Date.now().toString(36).toUpperCase()}`;
+  const { data, error } = await supabase.from("fee_invoices").insert({ ...input, branchId, invoiceNo }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function updateInvoice(id: string, branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("fee_invoices").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function deleteInvoice(id: string, branchId: string) {
+  const { error } = await supabase.from("fee_invoices").delete().eq("id", id).eq("branchId", branchId);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+export async function getStudentInvoices(studentId: string, branchId: string) {
+  const { data, error } = await supabase
+    .from("fee_invoices")
+    .select("*, payments(*)")
+    .eq("studentId", studentId)
+    .eq("branchId", branchId)
+    .order("createdAt", { ascending: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function addPayment(invoiceId: string, input: Record<string, unknown>) {
+  const receiptNo = `RCT-${Date.now().toString(36).toUpperCase()}`;
+  const { data, error } = await supabase.from("fee_payments").insert({ ...input, invoiceId, receiptNo }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+/* ============================
+   EXAMS
+   ============================ */
+
+export async function getExams(branchId: string) {
+  const { data, error } = await supabase
+    .from("exams")
+    .select("*, course:courseId(*), batch:batchId(*), results(*, student:studentId(*))")
+    .eq("branchId", branchId)
+    .order("examDate", { ascending: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function createExam(branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("exams").insert({ ...input, branchId }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function updateExam(id: string, branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("exams").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function submitExamResults(examId: string, branchId: string, results: Array<{ studentId: string; marks: number; remarks?: string }>, publish = false) {
+  const exam = await getExamById(examId, branchId);
+  if (!exam) throw new Error("Exam not found");
+
+  const upserts = results.map(r => ({
+    examId,
+    studentId: r.studentId,
+    marks: r.marks,
+    remarks: r.remarks || null,
+  }));
+
+  const { data, error } = await supabase.from("exam_results").upsert(upserts, { onConflict: "examId_studentId" }).select("*");
+  if (error) throw new Error(error.message);
+
+  if (publish) {
+    await supabase.from("exams").update({ status: "PUBLISHED" }).eq("id", examId);
+  } else {
+    await supabase.from("exams").update({ status: "MARKS_ENTRY" }).eq("id", examId);
+  }
+
+  return { success: true, data: data || [] };
+}
+
+async function getExamById(id: string, branchId: string) {
+  const { data } = await supabase.from("exams").select("*").eq("id", id).eq("branchId", branchId).single();
+  return data;
+}
+
+export async function getStudentResults(studentId: string, branchId: string, examId?: string) {
+  let query = supabase
+    .from("exam_results")
+    .select("*, exam:examId(*)")
+    .eq("studentId", studentId);
+  if (examId) query = query.eq("examId", examId);
+  const { data, error } = await query.order("examId", { ascending: false });
+  if (error) throw new Error(error.message);
+  const filtered = (data || []).filter((r: any) => r.exam?.branchId === branchId);
+  const result = filtered.map((r: any) => ({ ...r, exam: r.exam ? { examDate: r.exam.examDate, ...r.exam } : null }));
+  try {
+    const dates: Record<string, string> = {};
+    for (const r of filtered) { if (r.examId && !dates[r.examId]) { const e = await getExamById(r.examId, branchId); dates[r.examId] = e?.examDate || ""; } }
+    return { success: true, data: result.sort((a: any, b: any) => (dates[b.examId] || "").localeCompare(dates[a.examId] || "")) };
+  } catch {
+    return { success: true, data: result };
+  }
+}
+
+/* ============================
+   ENQUIRIES
+   ============================ */
+
+export async function getEnquiries(branchId: string, page = 1, limit = 20, search?: string) {
+  let query = supabase
+    .from("visit_enquiries")
+    .select("*", { count: "exact" })
+    .eq("branchId", branchId)
+    .order("createdAt", { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
+
+  if (search) {
+    query = query.or(`visitorName.ilike.%${search}%,phone.ilike.%${search}%,personToMeet.ilike.%${search}%`);
+  }
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [], meta: { page, limit, total: count || 0 } };
+}
+
+export async function createEnquiry(branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("visit_enquiries").insert({ ...input, branchId, visitDate: new Date().toISOString(), visitTime: new Date().toTimeString().slice(0, 5) }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function updateEnquiry(id: string, branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("visit_enquiries").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function getPendingEnquiries(branchId: string) {
+  const { data, error } = await supabase
+    .from("visit_enquiries")
+    .select("*")
+    .eq("branchId", branchId)
+    .in("status", ["NEW", "CONTACTED"])
+    .order("createdAt", { ascending: false })
+    .limit(10);
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+/* ============================
+   NOTICES
+   ============================ */
+
+export async function getNotices(branchId: string) {
+  const { data, error } = await supabase
+    .from("branch_notices")
+    .select("*")
+    .or(`branchId.eq.${branchId},branchId.is.null`)
+    .order("createdAt", { ascending: false })
+    .limit(20);
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function createNotice(input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("branch_notices").insert(input).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function updateNotice(id: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("branch_notices").update(input).eq("id", id).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function deleteNotice(id: string) {
+  const { error } = await supabase.from("branch_notices").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+/* ============================
+   BRANCHES
+   ============================ */
+
+export async function getBranches(organizationId: string) {
+  const { data, error } = await supabase
+    .from("branches")
+    .select("*, director:branchDirector(*), address:branchAddress(*), settings:branch_settings(*), wallet:branchWallet(*)")
+    .eq("organizationId", organizationId)
+    .is("deletedAt", null)
+    .order("name");
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function createBranch(organizationId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("branches").insert({ ...input, organizationId }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function updateBranch(id: string, organizationId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("branches").update(input).eq("id", id).eq("organizationId", organizationId).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function deleteBranch(id: string) {
+  const { error } = await supabase.from("branches").update({ deletedAt: new Date().toISOString() }).eq("id", id);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+/* ============================
+   PORTAL (Student Self-Service)
+   ============================ */
+
+export async function getStudentProfile(userId: string, branchId: string) {
+  const { data, error } = await supabase
+    .from("students")
+    .select("*, course:courseId(*), batch:batchId(*), branch:branchId(*)")
+    .eq("userId", userId)
+    .eq("branchId", branchId)
+    .is("deletedAt", null)
+    .single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function getStudentPortalClasses(userId: string, branchId: string) {
+  const { data: student } = await supabase.from("students").select("batchId").eq("userId", userId).eq("branchId", branchId).single();
+  if (!student?.batchId) return { success: true, data: [] };
+
+  const { data, error } = await supabase
+    .from("batch_timings")
+    .select("*, batch:batchId(*, course:courseId(*))")
+    .eq("batchId", student.batchId)
+    .order("day")
+    .order("startTime");
+  if (error) throw new Error(error.message);
+  return { success: true, data: (data || []).map((t: any) => ({ ...t, course: t.batch?.course })) };
+}
+
+export async function getStudentPortalInvoices(userId: string, branchId: string) {
+  const { data: student } = await supabase.from("students").select("id").eq("userId", userId).eq("branchId", branchId).single();
+  if (!student) return { success: true, data: [] };
+  return getStudentInvoices(student.id, branchId);
+}
+
+export async function getStudentPortalResults(userId: string, branchId: string, examId?: string) {
+  const { data: student } = await supabase.from("students").select("id").eq("userId", userId).eq("branchId", branchId).single();
+  if (!student) return { success: true, data: [] };
+  return getStudentResults(student.id, branchId, examId);
+}
+
+export async function submitPortalRequest(userId: string, branchId: string, organizationId: string, kind: string, detail: string, studentId?: string) {
+  const { data, error } = await supabase.from("auditEvents").insert({
+    actorId: userId,
+    organizationId,
+    branchId,
+    action: kind,
+    entityType: "PortalRequest",
+    entityId: crypto.randomUUID(),
+    after: { detail, studentId },
+  }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+/* ============================
+   MISC / SETTINGS
+   ============================ */
+
+export async function getBranchSettings(branchId: string) {
+  const { data, error } = await supabase.from("branch_settings").select("*").eq("branchId", branchId).single();
+  if (error && error.code !== "PGRST116") throw new Error(error.message);
+  return { success: true, data: data || null };
+}
+
+export async function updateBranchSettings(branchId: string, input: Record<string, unknown>) {
+  const { data, error } = await supabase.from("branch_settings").upsert({ ...input, branchId }).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data };
+}
+
+export async function getWallet(branchId: string) {
+  const { data, error } = await supabase.from("branch_wallets").select("*").eq("branchId", branchId).single();
+  if (error && error.code !== "PGRST116") throw new Error(error.message);
+  return { success: true, data: data || null };
+}
+
+export async function getTransactions(branchId: string) {
+  const { data, error } = await supabase.from("branch_transactions").select("*").eq("branchId", branchId).order("createdAt", { ascending: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function getFeeTypes() {
+  return { success: true, data: [] };
+}
+
+export async function getFeeGroups() {
+  return { success: true, data: [] };
+}
