@@ -24,16 +24,29 @@ function ask(question: string): Promise<string> {
   return new Promise((resolve) => rl.question(question, resolve));
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 async function main() {
   console.log("=== Pushpak ERP — Seed Super Admin ===\n");
 
-  const email = await ask("Email: ");
-  const password = await ask("Password (min 6 chars): ");
-  const name = await ask("Full name: ");
+  let email = (await ask("Email: ")).trim();
+  while (!email || !isValidEmail(email)) {
+    console.log("  Please enter a valid email (e.g. admin@pushpak.com)");
+    email = (await ask("Email: ")).trim();
+  }
 
-  if (password.length < 6) {
-    console.error("Password must be at least 6 characters.");
-    process.exit(1);
+  let password = (await ask("Password (min 6 chars): ")).trim();
+  while (!password || password.length < 6) {
+    console.log("  Password must be at least 6 characters.");
+    password = (await ask("Password (min 6 chars): ")).trim();
+  }
+
+  let name = (await ask("Full name: ")).trim();
+  while (!name) {
+    console.log("  Name is required.");
+    name = (await ask("Full name: ")).trim();
   }
 
   let userId: string | null = null;
@@ -59,13 +72,13 @@ async function main() {
       authError.message.includes("already registered") ||
       authError.message.includes("User already registered")
     ) {
-      console.log("User already exists in auth. Verifying password...");
+      console.log("User already exists. Verifying with password...");
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       if (signInError) {
-        console.error("Sign in failed. Wrong password?", signInError.message);
+        console.error("Sign in failed:", signInError.message);
         process.exit(1);
       }
       userId = signInData.user.id;
@@ -81,24 +94,24 @@ async function main() {
 
   // 2. Upsert the users table entry
   console.log("\nUpserting users table entry...");
-  const { error: userError } = await supabase.from("users").upsert(
-    {
-      id: userId!,
-      email,
-      name,
-      role: "SUPER_ADMIN",
-      userType: "ORGANIZATION",
-      organizationId: null,
-      branchId: null,
-      isActive: true,
-    },
-    { onConflict: "id" }
-  );
+  const { error: userError } = await supabase
+    .from("users")
+    .upsert(
+      {
+        id: userId!,
+        email,
+        name,
+        role: "SUPER_ADMIN",
+        userType: "ORGANIZATION",
+        organizationId: null,
+        branchId: null,
+        isActive: true,
+      },
+      { onConflict: "id" }
+    );
 
   if (userError) {
     console.error("users table error:", userError.message);
-    console.log("\nAuth user was created, but users table upsert failed.");
-    console.log("Check that the users table exists in Supabase.");
   } else {
     console.log("users table entry created/updated.");
   }
@@ -108,7 +121,9 @@ async function main() {
   console.log("\nCurrent SUPER_ADMIN users:");
   console.table(admins);
 
-  console.log("\nDone! You can now log in at /login");
+  console.log("\nDone! Log in at /login with:");
+  console.log(`  Email:    ${email}`);
+  console.log(`  Password: ${password}`);
   rl.close();
 }
 
