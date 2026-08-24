@@ -136,10 +136,11 @@ export default function LiveClassSetup() {
       }
     };
     fetchLookups();
-  }, []);
+  }, [orgId, branchId]);
 
   // Load subjects and instructors from the class list endpoint as a convenience.
   useEffect(() => {
+    if (!user?.id || !branchId) return;
     const fetchMeta = async () => {
       try {
         const body = await getStudentPortalClasses(user.id, branchId);
@@ -153,7 +154,7 @@ export default function LiveClassSetup() {
       }
     };
     fetchMeta();
-  }, []);
+  }, [user?.id, branchId]);
 
   const set = <K extends keyof FormData>(key: K, value: FormData[K]) =>
     setForm((current) => ({ ...current, [key]: value }));

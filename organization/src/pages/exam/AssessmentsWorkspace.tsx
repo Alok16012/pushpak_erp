@@ -117,7 +117,7 @@ export default function AssessmentsWorkspace() {
     [students, selectedExam],
   );
 
-  const createExam = async () => {
+  const handleCreateExam = async () => {
     setCreating(true);
     try {
       await createExam(branchId, {
@@ -410,7 +410,7 @@ export default function AssessmentsWorkspace() {
                     draft.subject.trim().length < 2 ||
                     !draft.examDate
                   }
-                  onClick={createExam}
+                  onClick={handleCreateExam}
                 >
                   <Save className="h-4 w-4" />
                   {creating ? "Creating…" : "Create exam"}
