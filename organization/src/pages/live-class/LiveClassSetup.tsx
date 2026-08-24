@@ -104,6 +104,7 @@ const generateMeetingLink = (platform: string) => {
   return `https://zoom.us/j/${id}`;
 };
 
+export default function LiveClassSetup() {
   const { user } = useAuth();
   const orgId = user?.organizationId || null;
   const branchId = user?.branchId || null;
