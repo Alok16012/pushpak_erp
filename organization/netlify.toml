@@ -6,9 +6,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # Supabase credentials (set these in Netlify UI → Site settings → Environment variables)
-  # VITE_SUPABASE_URL = "https://mbqkkwpiogyopfvlolgf.supabase.co"
-  # VITE_SUPABASE_ANON_KEY = "your-anon-key"
+  VITE_SUPABASE_URL = "https://mbqkkwpiogyopfvlolgf.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1icWtrd3Bpb2d5b3BmdmxvbGdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5NjY0NTUsImV4cCI6MjEwMjU0MjQ1NX0.Xj84IyIQZTjhWwo1dL67fGuIaQ3YhWE4j5FAW-9MfUc"
 
 # SPA routing - all routes serve index.html
 [[redirects]]
