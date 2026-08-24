@@ -17,7 +17,6 @@ interface Course {
   code: string;
   duration: string;
   fee: number;
-  batches: number;
   students: number;
   status: "active" | "inactive";
 }
@@ -55,11 +54,6 @@ const columns: Column<Course>[] = [
     cell: (course) => <span className="font-medium">₹{course.fee.toLocaleString()}</span>,
   },
   {
-    key: "batches",
-    header: "Batches",
-    cell: (course) => <Badge variant="secondary">{course.batches} batches</Badge>,
-  },
-  {
     key: "students",
     header: "Students",
     sortable: true,
@@ -78,7 +72,7 @@ export default function ViewCourses() {
   const {toast}=useToast();const [courses,setCourses]=useState<Course[]>([]);
   useEffect(()=>{
     if (!user?.organizationId) return;
-    getCourses(user.organizationId).then(body=>setCourses(body.data.map(c=>({id:c.id,name:c.name,code:c.code,duration:`${c.durationValue} ${c.durationUnit.toLowerCase()}`,fee:Number(c.baseFee),batches:c._count.batches,students:c._count.students,status:c.isActive?"active":"inactive"})))).catch(error=>toast({title:"Could not load courses",description:error.message,variant:"destructive"}))
+    getCourses(user.organizationId).then(body=>setCourses(body.data.map((c:any)=>({id:c.id,name:c.name,code:c.code,duration:`${c.durationMonths||""} months`,fee:0,students:0,status:c.isActive?"active":"inactive"})))).catch(error=>toast({title:"Could not load courses",description:error.message,variant:"destructive"}))
   },[user]);
   const handleActions = (course: Course) => [
     { label: "View Details", onClick: () => console.log("View", course.id) },

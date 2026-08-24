@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Building2, Users, GraduationCap, IndianRupee, CalendarClock } from "lucide-react";
+import { Plus, Building2, Users, GraduationCap, IndianRupee } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
@@ -21,15 +21,13 @@ interface Branch {
   id: string;
   name: string;
   code: string;
-  type: string;
-  instituteType: string;
+  branchType: string;
   city: string;
   state: string;
   students: number;
   staff: number;
   revenue: number;
   status: "active" | "inactive";
-  expiryDate: string;
 }
 
 const columns: Column<Branch>[] = [
@@ -54,8 +52,7 @@ const columns: Column<Branch>[] = [
     header: "Type",
      cell: (branch) => (
        <div className="space-y-1">
-         <Badge variant="outline">{branch.type}</Badge>
-         <p className="text-xs text-muted-foreground">{branch.instituteType}</p>
+         <Badge variant="outline">{branch.branchType}</Badge>
        </div>
      ),
   },
@@ -101,8 +98,8 @@ const columns: Column<Branch>[] = [
          </div>
        );
      },
-   },
-   {
+  },
+  {
     key: "status",
     header: "Status",
     cell: (branch) => <StatusBadge status={branch.status} />,
@@ -141,11 +138,10 @@ export default function ViewBranch() {
          <h1 style="margin:16px 0 4px;font-size:30px">Center Certificate</h1>
          <p style="color:#6b7280;font-size:13px">This is to certify that the centre named below is authorised to operate</p>
          <h2 style="margin:28px 0 4px;font-size:24px">${branch.name}</h2>
-         <p style="font-size:14px">Centre code <strong>${branch.code}</strong> - ${branch.instituteType}</p>
+         <p style="font-size:14px">Centre code <strong>${branch.code}</strong></p>
          <p style="font-size:14px">${branch.city}, ${branch.state}</p>
          <table style="margin:28px auto 0;font-size:13px;border-collapse:collapse">
-           <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Category</td><td style="padding:4px 16px;text-align:left"><strong>${branch.type}</strong></td></tr>
-           <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Valid until</td><td style="padding:4px 16px;text-align:left"><strong>${branch.expiryDate}</strong></td></tr>
+           <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Type</td><td style="padding:4px 16px;text-align:left"><strong>${branch.branchType}</strong></td></tr>
            <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Status</td><td style="padding:4px 16px;text-align:left"><strong>${branch.status === "active" ? "Active" : "Inactive"}</strong></td></tr>
          </table>
          <p style="margin-top:48px;font-size:12px;color:#6b7280">Issued on ${new Date().toLocaleDateString()}</p>
@@ -262,17 +258,16 @@ export default function ViewBranch() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{details?.name}</DialogTitle>
-            <DialogDescription>{details?.code} - {details?.instituteType}</DialogDescription>
+            <DialogDescription>{details?.code}</DialogDescription>
           </DialogHeader>
           {details && (
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               {[
-                ["Branch type", details.type],
+                ["Branch type", details.branchType],
                 ["Location", `${details.city}, ${details.state}`],
                 ["Students", details.students.toLocaleString()],
                 ["Staff", String(details.staff)],
                 ["Revenue", `Rs.${(details.revenue / 100000).toFixed(1)}L`],
-                ["Expiry", details.expiryDate],
                 ["Status", details.status === "active" ? "Active" : "Inactive"],
               ].map(([label, value]) => (
                 <div key={label}>
@@ -318,8 +313,15 @@ export default function ViewBranch() {
                 <Input id="edit-staff" type="number" value={editing.staff} onChange={(e) => setEditing({ ...editing, staff: Number(e.target.value) || 0 })} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-expiry">Expiry date</Label>
-                <Input id="edit-expiry" type="date" value={editing.expiryDate} onChange={(e) => setEditing({ ...editing, expiryDate: e.target.value })} />
+                <Label htmlFor="edit-branchType">Branch Type</Label>
+                <Select value={editing.branchType} onValueChange={(value) => setEditing({ ...editing, branchType: value })}>
+                  <SelectTrigger id="edit-branchType"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="HEADQUARTERS">Headquarters</SelectItem>
+                    <SelectItem value="FRANCHISE">Franchise</SelectItem>
+                    <SelectItem value="CENTER">Center</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-status">Status</Label>

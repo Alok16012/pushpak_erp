@@ -19,14 +19,14 @@ interface Notice {
   id: string;
   title: string;
   content: string;
-  branch: string;
+  branchId: string;
   batch?: string;
-  priority: "high" | "medium" | "low";
-  date: string;
+  priority: NoticePriority;
+  publishDate: string;
   expiryDate: string;
   isPinned: boolean;
   views: number;
-  type: "branch" | "batch";
+  type: NoticeType;
 }
 
 const BATCHES = ["All Batches", "Batch A - Morning", "Batch B - Evening", "Batch C - Weekend", "Batch D - Online"];
@@ -39,14 +39,13 @@ const blankDraft = (): Notice => ({
   id: "",
   title: "",
   content: "",
-  branch: "All Branches",
+  branchId: user?.branchId || "",
   batch: BATCHES[0],
   priority: "medium",
-  date: today(),
-  expiryDate: inAMonth(),
+  publishDate: today(),
   isPinned: false,
   views: 0,
-  type: "branch",
+  noticeType: "branch",
 });
 
 const priorityVariant = (priority: string) =>
@@ -151,8 +150,8 @@ export default function BranchNoticeBoard() {
             <Badge variant={priorityVariant(notice.priority) as "destructive" | "default" | "secondary"}>
               {notice.priority}
             </Badge>
-            {notice.type === "batch" && <Badge variant="outline">{notice.batch}</Badge>}
-            <Badge variant={notice.type === "batch" ? "secondary" : "outline"}>{notice.branch}</Badge>
+            {notice.type === "BATCH" && <Badge variant="outline">{notice.batch}</Badge>}
+            <Badge variant={notice.type === "BATCH" ? "secondary" : "outline"}>{notice.branchId}</Badge>
           </div>
         </div>
       </CardHeader>
@@ -162,7 +161,7 @@ export default function BranchNoticeBoard() {
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              Published: {notice.date}
+              Published: {notice.publishDate}
             </span>
             <span>Expires: {notice.expiryDate}</span>
             <span className="flex items-center gap-1">
@@ -236,27 +235,25 @@ export default function BranchNoticeBoard() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Notice Type</Label>
-                <Select value={draft.type} onValueChange={(val) => set("type", val as Notice["type"])}>
+                <Select value={draft.noticeType} onValueChange={(val) => set("noticeType", val as Notice["noticeType"])}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select notice type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="branch">Branch Notice</SelectItem>
-                    <SelectItem value="batch">Batch Notice</SelectItem>
+                    <SelectItem value="BRANCH">Branch Notice</SelectItem>
+                    <SelectItem value="BATCH">Batch Notice</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Target {draft.type === "branch" ? "Branch" : "Batch"}</Label>
-                {draft.type === "branch" ? (
-                  <Select value={draft.branch} onValueChange={(v) => set("branch", v)}>
+                <Label>Target</Label>
+                {draft.noticeType === "BRANCH" ? (
+                  <Select value={draft.branchId} onValueChange={(v) => set("branchId", v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select branch" />
                     </SelectTrigger>
                     <SelectContent>
-                      {BRANCHES.map((branch) => (
-                        <SelectItem key={branch} value={branch}>{branch}</SelectItem>
-                      ))}
+                      <SelectItem value={user?.branchId || ""}>Current Branch</SelectItem>
                     </SelectContent>
                   </Select>
                 ) : (
@@ -293,7 +290,7 @@ export default function BranchNoticeBoard() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Publish Date</Label>
-                <Input type="date" value={draft.date} onChange={(e) => set("date", e.target.value)} />
+                <Input type="date" value={draft.publishDate} onChange={(e) => set("publishDate", e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Expiry Date</Label>

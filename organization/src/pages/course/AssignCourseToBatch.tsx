@@ -338,7 +338,7 @@ export default function AssignCourseToBatch() {
                   <SelectContent>
                     {batches.map((batch) => (
                       <SelectItem key={batch.id} value={batch.id}>
-                        {batch.name} - {batch.course}
+                        {batch.name} - {batch.courseId?.slice(0, 8)}
                       </SelectItem>
                     ))}
                   </SelectContent>

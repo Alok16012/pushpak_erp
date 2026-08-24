@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,15 +14,14 @@ import {
 import { BookOpen, Calendar, Plus, Users, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { getCourses, createCourse, getBatches, createBatch } from "@/lib/supabase/data";
+import { getCourses, createCourse, getBatches, createBatch, getBranches } from "@/lib/supabase/data";
 type Course = {
   id: string;
   name: string;
   code: string;
-  baseFee: number;
-  durationValue: number;
-  durationUnit: string;
-  _count: { students: number; batches: number };
+  description?: string;
+  durationMonths: number;
+  isActive: boolean;
 };
 type Batch = {
   id: string;
@@ -30,9 +29,9 @@ type Batch = {
   code: string;
   courseId: string;
   startDate: string;
-  maxSeats?: number;
-  course: { name: string };
-  _count: { students: number };
+  endDate?: string;
+  maxStudents?: number;
+  isActive: boolean;
 };
 export default function AcademicsWorkspace() {
   const { user } = useAuth();
@@ -60,21 +59,19 @@ export default function AcademicsWorkspace() {
         await createCourse(orgId, {
             name: d.name,
             code: d.code,
-            category: d.category || "COMPUTER",
-            durationValue: Number(d.durationValue),
-            durationUnit: "MONTHS",
-            baseFee: Number(d.baseFee),
-            registrationFee: 0,
-            examFee: 0,
+            description: d.description || "",
+            durationMonths: Number(d.durationMonths || d.durationValue || 6),
+            isActive: true,
           });
       else
         await createBatch(branchId, {
             courseId: d.courseId,
             name: d.name,
             code: d.code,
-            maxSeats: Number(d.maxSeats),
+            maxStudents: d.maxSeats ? Number(d.maxSeats) : undefined,
             startDate: d.startDate,
             endDate: d.endDate || undefined,
+            isActive: true,
           });
       toast({
         title: `${form === "course" ? "Course" : "Batch"} created`,
@@ -187,15 +184,14 @@ export default function AcademicsWorkspace() {
                     <Input
                       type="number"
                       onChange={(e) =>
-                        setD((p) => ({ ...p, durationValue: e.target.value }))
+                        setD((p) => ({ ...p, durationMonths: e.target.value }))
                       }
                     />
                   </Field>
-                  <Field l="Base fee">
+                  <Field l="Description">
                     <Input
-                      type="number"
                       onChange={(e) =>
-                        setD((p) => ({ ...p, baseFee: e.target.value }))
+                        setD((p) => ({ ...p, description: e.target.value }))
                       }
                     />
                   </Field>
@@ -206,7 +202,7 @@ export default function AcademicsWorkspace() {
                     <Input
                       type="number"
                       onChange={(e) =>
-                        setD((p) => ({ ...p, maxSeats: e.target.value }))
+                        setD((p) => ({ ...p, maxStudents: e.target.value }))
                       }
                     />
                   </Field>
@@ -250,13 +246,11 @@ export default function AcademicsWorkspace() {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{c.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {c.code} · {c.durationValue}{" "}
-                      {c.durationUnit.toLowerCase()} · ₹
-                      {Number(c.baseFee).toLocaleString()}
+                      {c.code} · {c.durationMonths} months
                     </p>
                   </div>
                   <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-                    {c._count.students} students
+                    Active
                   </p>
                 </div>
               ))}
@@ -277,12 +271,12 @@ export default function AcademicsWorkspace() {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold">{b.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {b.course.name} · starts{" "}
+                      {b.code} · starts{" "}
                       {new Date(b.startDate).toLocaleDateString()}
                     </p>
                   </div>
                   <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-                    {b._count.students}/{b.maxSeats || "∞"}
+                    {b.currentStudents}/{b.maxStudents || "∞"}
                   </p>
                 </div>
               ))}

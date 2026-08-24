@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
@@ -30,439 +30,305 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Search, Eye, Download, Filter, Calendar, Clock } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import { downloadCsv } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getStudentAttendance } from "@/lib/supabase/data";
+import { getAllAttendanceRecords } from "@/lib/supabase/data";
 
 interface AttendanceLog {
   id: string;
-  employeeId: string;
-  employeeName: string;
-  department: string;
+  studentId: string;
+  studentName: string;
+  enrollmentNo: string;
+  courseId: string;
+  batchId: string;
   date: string;
-  punchInTime: string;
-  punchOutTime: string;
-  punchInPhoto: string;
-  punchOutPhoto: string;
-  lateArrival: boolean;
-  earlyDeparture: boolean;
-  overtime: number;
-  remarks: string;
+  status: "PRESENT" | "ABSENT" | "LATE" | "HALF_DAY" | "LEAVE";
+  checkInTime?: string;
+  checkOutTime?: string;
+  remarks?: string;
 }
 
-/** Sample data — dated relative to today so the default 7-day filter shows rows. */
-const day = (ago: number) => format(subDays(new Date(), ago), "yyyy-MM-dd");
+type Detail = { log: AttendanceLog };
 
-const sampleAttendanceLogs: AttendanceLog[] = [
-  {
-    id: "1",
-    employeeId: "EMP001",
-    employeeName: "John Doe",
-    department: "IT",
-    date: day(0),
-    punchInTime: `${day(0)} 09:00:00`,
-    punchOutTime: `${day(0)} 18:00:00`,
-    punchInPhoto: "/photos/punch-in-1.jpg",
-    punchOutPhoto: "/photos/punch-out-1.jpg",
-    lateArrival: false,
-    earlyDeparture: false,
-    overtime: 0,
-    remarks: "On time",
-  },
-  {
-    id: "2",
-    employeeId: "EMP002",
-    employeeName: "Sarah Smith",
-    department: "HR",
-    date: day(0),
-    punchInTime: `${day(0)} 09:45:00`,
-    punchOutTime: `${day(0)} 18:30:00`,
-    punchInPhoto: "/photos/punch-in-2.jpg",
-    punchOutPhoto: "/photos/punch-out-2.jpg",
-    lateArrival: true,
-    earlyDeparture: false,
-    overtime: 0.5,
-    remarks: "Late arrival by 45 minutes",
-  },
-  {
-    id: "3",
-    employeeId: "EMP003",
-    employeeName: "Mike Johnson",
-    department: "Sales",
-    date: day(1),
-    punchInTime: `${day(1)} 08:30:00`,
-    punchOutTime: `${day(1)} 20:00:00`,
-    punchInPhoto: "/photos/punch-in-3.jpg",
-    punchOutPhoto: "/photos/punch-out-3.jpg",
-    lateArrival: false,
-    earlyDeparture: false,
-    overtime: 2,
-    remarks: "Overtime work approved",
-  },
-  {
-    id: "4",
-    employeeId: "EMP004",
-    employeeName: "Emily Davis",
-    department: "IT",
-    date: day(1),
-    punchInTime: `${day(1)} 09:00:00`,
-    punchOutTime: `${day(1)} 17:00:00`,
-    punchInPhoto: "/photos/punch-in-4.jpg",
-    punchOutPhoto: "/photos/punch-out-4.jpg",
-    lateArrival: false,
-    earlyDeparture: true,
-    overtime: 0,
-    remarks: "Early departure approved",
-  },
-  {
-    id: "5",
-    employeeId: "EMP005",
-    employeeName: "Priya Nair",
-    department: "Finance",
-    date: day(3),
-    punchInTime: `${day(3)} 10:10:00`,
-    punchOutTime: `${day(3)} 16:40:00`,
-    punchInPhoto: "/photos/punch-in-5.jpg",
-    punchOutPhoto: "/photos/punch-out-5.jpg",
-    lateArrival: true,
-    earlyDeparture: true,
-    overtime: 0,
-    remarks: "Half day - medical appointment",
-  },
-];
-
-/** The logs are historic, so the default window has to reach back to cover them. */
-const defaultRange = () => ({
-  from: format(subDays(new Date(), 7), "yyyy-MM-dd"),
-  to: format(new Date(), "yyyy-MM-dd"),
-});
-
-type Detail = { log: AttendanceLog; mode: "in" | "out" | "full" };
-
-const AttendanceLogs = () => {
+export default function AttendanceLogs() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedDepartment, setSelectedDepartment] = useState("all");
-  const [dateRange, setDateRange] = useState(defaultRange);
+  const [selectedStatus, setSelectedStatus] = useState("all");
   const [detail, setDetail] = useState<Detail | null>(null);
 
-  const filteredLogs = sampleAttendanceLogs.filter((log) => {
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const branchId = user?.branchId || "";
+        const res = await getAllAttendanceRecords(branchId || undefined);
+        if (cancelled) return;
+        const rawRecords = res.data || [];
+        // Build lookup of unique student IDs
+        const studentIds = Array.from(new Set(rawRecords.map((r: any) => r.studentId)));
+        // Fetch student details
+        const { default: supabase } = await import("@/lib/supabase");
+        const { data: students } = await supabase
+          .from("students")
+          .select("id, firstName, lastName, enrollmentNo, courseId, batchId")
+          .in("id", studentIds);
+        const byId = new Map((students || []).map((s: any) => [s.id, s]));
+        const mapped: AttendanceLog[] = rawRecords.map((r: any) => {
+          const s = byId.get(r.studentId);
+          return {
+            id: r.id,
+            studentId: r.studentId,
+            studentName: s ? [s.firstName, s.lastName].filter(Boolean).join(" ") : r.studentId,
+            enrollmentNo: s?.enrollmentNo || "",
+            courseId: s?.courseId || "",
+            batchId: s?.batchId || "",
+            date: r.date,
+            status: r.status,
+            checkInTime: r.checkInTime,
+            checkOutTime: r.checkOutTime,
+            remarks: r.remarks,
+          };
+        });
+        setLogs(mapped);
+      } catch {
+        if (!cancelled) toast({ title: "Failed to load attendance logs", variant: "destructive" });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [user?.branchId, toast]);
+
+  const statuses = useMemo(() => Array.from(new Set(logs.map(l => l.status).filter(Boolean))).sort(), [logs]);
+
+  const filtered = logs.filter((log) => {
     const matchesSearch =
-      log.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.employeeId.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesDepartment =
-      selectedDepartment === "all" || log.department === selectedDepartment;
-    
-    const logDate = new Date(log.date);
-    const fromDate = new Date(dateRange.from);
-    const toDate = new Date(dateRange.to);
-    toDate.setHours(23, 59, 59, 999);
-    
-    const matchesDate = logDate >= fromDate && logDate <= toDate;
-    
-    return matchesSearch && matchesDepartment && matchesDate;
+      log.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.studentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.enrollmentNo.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = selectedStatus === "all" || log.status === selectedStatus;
+    return matchesSearch && matchesStatus;
   });
 
   const clearFilters = () => {
     setSearchTerm("");
-    setSelectedDepartment("all");
-    setDateRange(defaultRange());
+    setSelectedStatus("all");
   };
 
   const exportLogs = () => {
-    if (!filteredLogs.length) {
+    if (!filtered.length) {
       toast({ title: "Nothing to export", description: "No records match the current filters.", variant: "destructive" });
       return;
     }
-    // Export exactly what the table shows, so the file matches the filters.
     downloadCsv(
-      `attendance-logs-${dateRange.from}-to-${dateRange.to}.csv`,
-      filteredLogs.map((log) => ({
-        employeeId: log.employeeId,
-        employeeName: log.employeeName,
-        department: log.department,
-        date: log.date,
-        punchIn: log.punchInTime,
-        punchOut: log.punchOutTime,
-        lateArrival: log.lateArrival ? "Yes" : "No",
-        earlyDeparture: log.earlyDeparture ? "Yes" : "No",
-        overtimeHours: log.overtime,
-        remarks: log.remarks,
+      `attendance-logs.csv`,
+      filtered.map((log) => ({
+        StudentId: log.studentId,
+        StudentName: log.studentName,
+        EnrollmentNo: log.enrollmentNo,
+        CourseId: log.courseId,
+        BatchId: log.batchId,
+        Date: log.date,
+        Status: log.status,
+        CheckIn: log.checkInTime || "-",
+        CheckOut: log.checkOutTime || "-",
+        Remarks: log.remarks || "-",
       })),
     );
-    toast({ title: "Export ready", description: `${filteredLogs.length} record(s) downloaded as CSV.` });
+    toast({ title: "Export ready", description: `${filtered.length} record(s) downloaded.` });
+  };
+
+  const statusBadge = (status: string) => {
+    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+      PRESENT: "default",
+      ABSENT: "destructive",
+      LATE: "secondary",
+      HALF_DAY: "outline",
+      LEAVE: "outline",
+    };
+    return <Badge variant={variants[status] || "outline"}>{status.replace(/_/g, " ")}</Badge>;
   };
 
   const columns = [
     {
-      key: "employeeId" as keyof AttendanceLog,
-      header: "Employee ID",
-    },
-    {
-      key: "employeeName" as keyof AttendanceLog,
-      header: "Employee Name",
-      cell: (item: AttendanceLog) => (
-        <div className="font-medium">{item.employeeName}</div>
-      ),
-    },
-    {
-      key: "department" as keyof AttendanceLog,
-      header: "Department",
-    },
-    {
-      key: "date" as keyof AttendanceLog,
+      key: "date",
       header: "Date",
-      cell: (item: AttendanceLog) => format(new Date(item.date), "dd MMM yyyy"),
+      sortable: true,
+      cell: (log: AttendanceLog) => (
+        <span className="text-sm">{format(new Date(log.date), "dd MMM yyyy")}</span>
+      ),
     },
     {
-      key: "punchInTime" as keyof AttendanceLog,
-      header: "Punch In",
-      cell: (item: AttendanceLog) => (
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span>{format(new Date(item.punchInTime), "hh:mm a")}</span>
-          {item.lateArrival && (
-            <Badge variant="destructive" className="text-xs">Late</Badge>
-          )}
+      key: "studentName",
+      header: "Student",
+      cell: (log: AttendanceLog) => (
+        <div>
+          <p className="font-medium">{log.studentName || log.studentId}</p>
+          <p className="text-xs text-muted-foreground">{log.enrollmentNo || "—"}</p>
         </div>
       ),
     },
     {
-      key: "punchOutTime" as keyof AttendanceLog,
-      header: "Punch Out",
-      cell: (item: AttendanceLog) => (
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span>{format(new Date(item.punchOutTime), "hh:mm a")}</span>
-          {item.earlyDeparture && (
-            <Badge variant="secondary" className="text-xs">Early</Badge>
-          )}
+      key: "courseId",
+      header: "Course",
+      cell: (log: AttendanceLog) => <span className="text-sm">{log.courseId || "—"}</span>,
+    },
+    {
+      key: "batchId",
+      header: "Batch",
+      cell: (log: AttendanceLog) => <span className="text-sm">{log.batchId || "—"}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (log: AttendanceLog) => statusBadge(log.status),
+    },
+    {
+      key: "checkInTime",
+      header: "Check In",
+      cell: (log: AttendanceLog) => log.checkInTime ? (
+        <div className="flex items-center gap-1">
+          <Clock className="h-3 w-3 text-muted-foreground" />
+          <span className="text-sm">{format(new Date(log.checkInTime), "hh:mm a")}</span>
         </div>
-      ),
+      ) : <span className="text-xs text-muted-foreground">—</span>,
     },
     {
-      key: "overtime" as keyof AttendanceLog,
-      header: "Overtime",
-      cell: (item: AttendanceLog) => (
-        <span className={item.overtime > 0 ? "text-green-600 font-semibold" : "text-muted-foreground"}>
-          {item.overtime > 0 ? `+${item.overtime} hrs` : "-"}
-        </span>
-      ),
+      key: "checkOutTime",
+      header: "Check Out",
+      cell: (log: AttendanceLog) => log.checkOutTime ? (
+        <div className="flex items-center gap-1">
+          <Clock className="h-3 w-3 text-muted-foreground" />
+          <span className="text-sm">{format(new Date(log.checkOutTime), "hh:mm a")}</span>
+        </div>
+      ) : <span className="text-xs text-muted-foreground">—</span>,
     },
     {
-      key: "remarks" as keyof AttendanceLog,
+      key: "remarks",
       header: "Remarks",
-      cell: (item: AttendanceLog) => (
-        <span className="text-sm text-muted-foreground max-w-[200px] truncate">
-          {item.remarks || "-"}
-        </span>
-      ),
-    },
-    {
-      key: "actions",
-      header: "Actions",
-      cell: (item: AttendanceLog) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
-              <Eye className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>View Details</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setDetail({ log: item, mode: "in" })}>
-              View Punch In Photo
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setDetail({ log: item, mode: "out" })}>
-              View Punch Out Photo
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setDetail({ log: item, mode: "full" })}>
-              View Full Log Details
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      cell: (log: AttendanceLog) => (
+        <span className="text-xs text-muted-foreground max-w-[200px] truncate block">{log.remarks || "—"}</span>
       ),
     },
   ];
 
   return (
     <AppLayout>
-      <div className="container mx-auto p-6">
-        <PageHeader
-          title="Attendance Logs"
-          description="View detailed attendance logs and history"
-          breadcrumbs={[
-            { label: "Attendance", href: "/attendance/logs" },
-            { label: "Attendance Logs" },
-          ]}
-          actions={
-            <Button variant="outline" onClick={exportLogs}>
-              <Download className="mr-2 h-4 w-4" />
-              Export Logs
+      <PageHeader
+        title="Attendance Logs"
+        description="View detailed attendance history"
+        breadcrumbs={[
+          { label: "Attendance", href: "/attendance" },
+          { label: "Attendance Logs" },
+        ]}
+        actions={
+          <Button variant="outline" onClick={exportLogs}>
+            <Download className="mr-2 h-4 w-4" />
+            Export Logs
+          </Button>
+        }
+      />
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filter Logs
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-2 space-y-2">
+              <Label>Search Student</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, ID, or enrollment..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <SelectTrigger><SelectValue placeholder="All Statuses" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statuses</SelectItem>
+                  {statuses.map(s => <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex items-center justify-between mt-4 pt-4 border-t">
+            <p className="text-sm text-muted-foreground">
+              Showing {filtered.length} of {logs.length} records
+            </p>
+            <Button variant="outline" size="sm" onClick={clearFilters}>
+              <Calendar className="mr-2 h-4 w-4" />
+              Clear Filters
             </Button>
-          }
-        />
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Filters */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="h-5 w-5" />
-              Filter Attendance Logs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {/* Search */}
-              <div className="md:col-span-2 space-y-2">
-                <Label htmlFor="search">Search Employee</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="search"
-                    placeholder="Search by name or employee ID..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-
-              {/* Department Filter */}
-              <div className="space-y-2">
-                <Label htmlFor="department">Department</Label>
-                <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
-                  <SelectTrigger id="department">
-                    <SelectValue placeholder="All Departments" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Departments</SelectItem>
-                    <SelectItem value="IT">IT</SelectItem>
-                    <SelectItem value="HR">HR</SelectItem>
-                    <SelectItem value="Sales">Sales</SelectItem>
-                    <SelectItem value="Finance">Finance</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Date Range */}
-              <div className="space-y-2">
-                <Label htmlFor="dateRange">Date Range</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="dateRange"
-                    type="date"
-                    value={dateRange.from}
-                    onChange={(e) => setDateRange({ ...dateRange, from: e.target.value })}
-                    className="flex-1"
-                  />
-                  <span className="text-muted-foreground">to</span>
-                  <Input
-                    type="date"
-                    value={dateRange.to}
-                    onChange={(e) => setDateRange({ ...dateRange, to: e.target.value })}
-                    className="flex-1"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <p className="text-sm text-muted-foreground">
-                Showing {filteredLogs.length} of {sampleAttendanceLogs.length} records
-              </p>
-              <Button variant="outline" size="sm" onClick={clearFilters}>
-                <Calendar className="mr-2 h-4 w-4" />
-                Clear Filters
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Data Table */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>Detailed Attendance Logs</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Attendance Records</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading attendance logs...</div>
+          ) : (
             <DataTable
               columns={columns}
-              data={filteredLogs}
+              data={filtered}
               searchable={false}
-              emptyMessage="No attendance logs found for the selected criteria"
+              emptyMessage="No attendance logs found"
             />
-          </CardContent>
-        </Card>
+          )}
+        </CardContent>
+      </Card>
 
-        <Dialog open={detail !== null} onOpenChange={(open) => !open && setDetail(null)}>
-          <DialogContent className="max-w-lg">
-            {detail && (
-              <>
-                <DialogHeader>
-                  <DialogTitle>
-                    {detail.mode === "full"
-                      ? "Attendance Log Details"
-                      : `Punch ${detail.mode === "in" ? "In" : "Out"} Photo`}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {detail.log.employeeName} ({detail.log.employeeId}) •{" "}
-                    {format(new Date(detail.log.date), "dd MMM yyyy")}
-                  </DialogDescription>
-                </DialogHeader>
-
-                {detail.mode === "full" ? (
-                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    {[
-                      ["Department", detail.log.department],
-                      ["Punch In", format(new Date(detail.log.punchInTime), "dd MMM yyyy, hh:mm a")],
-                      ["Punch Out", format(new Date(detail.log.punchOutTime), "dd MMM yyyy, hh:mm a")],
-                      ["Late Arrival", detail.log.lateArrival ? "Yes" : "No"],
-                      ["Early Departure", detail.log.earlyDeparture ? "Yes" : "No"],
-                      ["Overtime", detail.log.overtime > 0 ? `${detail.log.overtime} hrs` : "None"],
-                      ["Remarks", detail.log.remarks || "-"],
-                    ].map(([label, value]) => (
-                      <div key={label} className="contents">
-                        <dt className="text-muted-foreground">{label}</dt>
-                        <dd className="font-medium">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                ) : (
-                  <div className="rounded-lg border bg-muted/40 p-4 text-center">
-                    <img
-                      src={detail.mode === "in" ? detail.log.punchInPhoto : detail.log.punchOutPhoto}
-                      alt={`Punch ${detail.mode} capture`}
-                      className="mx-auto max-h-72 rounded object-contain"
-                      // Fall back to a readable message instead of a broken image
-                      // if the photo was never uploaded.
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                        e.currentTarget.nextElementSibling?.classList.remove("hidden");
-                      }}
-                    />
-                    <p className="hidden text-sm text-muted-foreground">
-                      Capture not available for this punch.
-                    </p>
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      {format(
-                        new Date(detail.mode === "in" ? detail.log.punchInTime : detail.log.punchOutTime),
-                        "dd MMM yyyy, hh:mm a",
-                      )}
-                    </p>
+      <Dialog open={detail !== null} onOpenChange={(open) => !open && setDetail(null)}>
+        <DialogContent className="max-w-lg">
+          {detail && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Attendance Log Details</DialogTitle>
+                <DialogDescription>
+                  {detail.log.studentName || detail.log.studentId} • {format(new Date(detail.log.date), "dd MMM yyyy")}
+                </DialogDescription>
+              </DialogHeader>
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                {[
+                  ["Student ID", detail.log.studentId],
+                  ["Enrollment", detail.log.enrollmentNo || "—"],
+                  ["Course", detail.log.courseId || "—"],
+                  ["Batch", detail.log.batchId || "—"],
+                  ["Status", detail.log.status.replace(/_/g, " ")],
+                  ["Check In", detail.log.checkInTime ? format(new Date(detail.log.checkInTime), "hh:mm a") : "—"],
+                  ["Check Out", detail.log.checkOutTime ? format(new Date(detail.log.checkOutTime), "hh:mm a") : "—"],
+                  ["Remarks", detail.log.remarks || "—"],
+                ].map(([label, value]) => (
+                  <div key={String(label)}>
+                    <dt className="text-xs text-muted-foreground">{String(label)}</dt>
+                    <dd className="font-medium">{String(value)}</dd>
                   </div>
-                )}
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
-      </div>
+                ))}
+              </dl>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
-};
-
-export default AttendanceLogs;
+}

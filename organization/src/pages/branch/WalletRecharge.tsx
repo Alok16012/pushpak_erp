@@ -12,7 +12,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getWallet } from "@/lib/supabase/data";
+import { getWallet, rechargeWallet, getTransactions } from "@/lib/supabase/data";
 
 interface Institute {
   id: string;
@@ -37,25 +37,6 @@ const METHODS = [
   { id: "netbanking", label: "Net Banking", icon: Building2 },
 ];
 
-const SEED_INSTITUTES: Institute[] = [
-  { id: "main", name: "Main Campus", directorName: "Dr. Rajesh Kumar", balance: 125000 },
-  { id: "north", name: "North Campus", directorName: "Mrs. Priya Sharma", balance: 85000 },
-  { id: "south", name: "South Campus", directorName: "Mr. Anand Patel", balance: 65000 },
-  { id: "east", name: "East Campus", directorName: "Dr. Sanjay Gupta", balance: 45000 },
-  { id: "west", name: "West Campus", directorName: "Mrs. Meera Singh", balance: 35000 },
-];
-
-const SEED_HISTORY: Recharge[] = [
-  { id: "1", branch: "Main Campus", amount: 50000, method: "UPI", date: "2024-01-15", status: "completed" },
-  { id: "2", branch: "North Campus", amount: 30000, method: "Card", date: "2024-01-14", status: "completed" },
-  { id: "3", branch: "South Campus", amount: 25000, method: "Net Banking", date: "2024-01-13", status: "pending" },
-  { id: "4", branch: "East Campus", amount: 20000, method: "UPI", date: "2024-01-12", status: "completed" },
-  { id: "5", branch: "Main Campus", amount: 45000, method: "Card", date: "2024-01-10", status: "failed" },
-];
-
-const INSTITUTES_KEY = "erp-wallet-institutes";
-const HISTORY_KEY = "erp-wallet-history";
-
 const quickAmounts = [5000, 10000, 25000, 50000, 100000];
 
 const inr = (value: number) => `₹${value.toLocaleString("en-IN")}`;
@@ -68,20 +49,8 @@ export default function WalletRecharge() {
   const navigate = useNavigate();
   const [walletData, setWalletData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [institutes, setInstitutes] = useState<Institute[]>(() => {
-    try {
-      const stored = localStorage.getItem(INSTITUTES_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch { /* fall through */ }
-    return SEED_INSTITUTES;
-  });
-  const [history, setHistory] = useState<Recharge[]>(() => {
-    try {
-      const stored = localStorage.getItem(HISTORY_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch { /* fall through */ }
-    return SEED_HISTORY;
-  });
+  const [institutes, setInstitutes] = useState<Institute[]>([]);
+  const [history, setHistory] = useState<Recharge[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedInstitute, setSelectedInstitute] = useState<Institute | null>(null);
   const [amount, setAmount] = useState("");
@@ -92,9 +61,13 @@ export default function WalletRecharge() {
     let cancelled = false;
     async function loadWallet() {
       try {
-        const result = await getWallet(user?.branchId || "");
+        const [walletRes, txRes] = await Promise.all([
+          getWallet(user?.branchId || ""),
+          getTransactions(user?.branchId || ""),
+        ]);
         if (!cancelled) {
-          setWalletData(result.data);
+          setWalletData(walletRes.data);
+          setHistory(txRes.data as Recharge[] || []);
         }
       } catch {
         if (!cancelled) {
@@ -108,10 +81,7 @@ export default function WalletRecharge() {
     }
     loadWallet();
     return () => { cancelled = true; };
-  }, [toast]);
-
-  useEffect(() => { localStorage.setItem(INSTITUTES_KEY, JSON.stringify(institutes)); }, [institutes]);
-  useEffect(() => { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)); }, [history]);
+  }, [user?.branchId, toast]);
 
   const filteredInstitutes = institutes.filter(
     (inst) =>
@@ -130,7 +100,7 @@ export default function WalletRecharge() {
     setRemarks("");
   };
 
-  const recharge = () => {
+  const recharge = async () => {
     const value = Number(amount);
     if (!selectedInstitute) {
       toast({ title: "Select an institute", description: "Search for the branch you want to top up.", variant: "destructive" });
@@ -141,23 +111,25 @@ export default function WalletRecharge() {
       return;
     }
     const label = METHODS.find((m) => m.id === method)?.label ?? method;
-    setHistory((list) => [
-      {
-        id: newRechargeId(),
-        branch: selectedInstitute.name,
+    try {
+      const res = await rechargeWallet(selectedInstitute.id, {
         amount: value,
-        method: label,
-        date: new Date().toISOString().slice(0, 10),
-        status: "completed",
-        remarks: remarks || undefined,
-      },
-      ...list,
-    ]);
-    setInstitutes((list) =>
-      list.map((i) => (i.id === selectedInstitute.id ? { ...i, balance: i.balance + value } : i)),
-    );
-    toast({ title: "Recharge successful", description: `${inr(value)} added to ${selectedInstitute.name}.` });
-    reset();
+        paymentMethod: label,
+        description: remarks || `Wallet recharge for ${selectedInstitute.name}`,
+      });
+      if (res.success && res.data) {
+        setHistory((list) => [res.data as any, ...list]);
+        setInstitutes((list) =>
+          list.map((i) => (i.id === selectedInstitute.id ? { ...i, balance: Number((res.data as any).balanceAfter || i.balance + value) } : i)),
+        );
+        toast({ title: "Recharge successful", description: `${inr(value)} added to ${selectedInstitute.name}.` });
+        reset();
+      } else {
+        toast({ title: "Recharge failed", description: (res as any).error || "Unknown error", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Recharge failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    }
   };
 
   return (

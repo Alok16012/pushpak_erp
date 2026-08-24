@@ -25,7 +25,7 @@ interface TimingSlot {
   id: string;
   batchId: string;
   courseId: string;
-  day: string;
+  dayOfWeek: number;
   startTime: string;
   endTime: string;
   roomNo?: string;
@@ -34,12 +34,12 @@ interface TimingSlot {
   batch?: { course: { name: string } };
 }
 
-const DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
-const DAY_LABELS: Record<string, string> = {
-  MONDAY: "Monday", TUESDAY: "Tuesday", WEDNESDAY: "Wednesday",
-  THURSDAY: "Thursday", FRIDAY: "Friday", SATURDAY: "Saturday",
+const DAYS = [1, 2, 3, 4, 5, 6]; // 1=Monday .. 6=Saturday (Prisma: 0=Sun, 1=Mon)
+const DAY_LABELS: Record<number, string> = {
+  0: "Sunday", 1: "Monday", 2: "Tuesday", 3: "Wednesday",
+  4: "Thursday", 5: "Friday", 6: "Saturday",
 };
-const DAY_ENUM = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+const DAY_ENUM = [1, 2, 3, 4, 5, 6];
 
 const timeSlots = [
   { start: "09:00", end: "10:30" },
@@ -56,7 +56,7 @@ const ROOMS = ["Lab 101", "Lab 102", "Lab 103", "Lab 104", "Room 201", "Room 202
 const blankSlot = (batchId: string, courseId: string): Omit<TimingSlot, "id"> => ({
   batchId,
   courseId,
-  day: "MONDAY",
+  dayOfWeek: 1,
   startTime: "09:00",
   endTime: "10:30",
   subject: SUBJECTS[0],
@@ -123,7 +123,7 @@ export default function BatchTiming() {
     setDraft({
       batchId: slot.batchId,
       courseId: slot.courseId,
-      day: slot.day,
+      dayOfWeek: slot.dayOfWeek,
       startTime: slot.startTime,
       endTime: slot.endTime,
       roomNo: slot.roomNo || "",
@@ -143,7 +143,7 @@ export default function BatchTiming() {
       return;
     }
     const clash = slots.find(
-      (s) => s.id !== editingSlot?.id && s.batchId === draft.batchId && s.day === draft.day && s.startTime === draft.startTime,
+      (s) => s.id !== editingSlot?.id && s.batchId === draft.batchId && s.dayOfWeek === draft.dayOfWeek && s.startTime === draft.startTime,
     );
     if (clash) {
       toast({ title: "Slot already taken", description: `${clash.subject || "A class"} is already scheduled then.`, variant: "destructive" });
@@ -152,7 +152,7 @@ export default function BatchTiming() {
     try {
       if (editingSlot) {
         const res = await updateBatchTiming(editingSlot.id, {
-            day: draft.day,
+            dayOfWeek: draft.dayOfWeek,
             startTime: draft.startTime,
             endTime: draft.endTime,
             roomNo: draft.roomNo || null,
@@ -160,12 +160,12 @@ export default function BatchTiming() {
             instructor: draft.instructor || null,
           });
         setSlots((list) => list.map((s) => (s.id === editingSlot.id ? res.data : s)));
-        toast({ title: "Slot updated", description: `${draft.subject} on ${DAY_LABELS[draft.day]}.` });
+        toast({ title: "Slot updated", description: `${draft.subject} on ${DAY_LABELS[draft.dayOfWeek]}.` });
       } else {
         const res = await createBatchTiming({
             batchId: draft.batchId,
             courseId: draft.courseId,
-            day: draft.day,
+            dayOfWeek: draft.dayOfWeek,
             startTime: draft.startTime,
             endTime: draft.endTime,
             roomNo: draft.roomNo || undefined,
@@ -173,7 +173,7 @@ export default function BatchTiming() {
             instructor: draft.instructor || undefined,
           });
         setSlots((list) => [...list, res.data]);
-        toast({ title: "Slot added", description: `${draft.subject} on ${DAY_LABELS[draft.day]} at ${draft.startTime}.` });
+        toast({ title: "Slot added", description: `${draft.subject} on ${DAY_LABELS[draft.dayOfWeek]} at ${draft.startTime}.` });
       }
       setIsDialogOpen(false);
     } catch (err) {
@@ -200,7 +200,7 @@ export default function BatchTiming() {
     downloadCsv(
       `${currentBatch?.code || "batch"}-timetable.csv`,
       rows.map((r) => ({
-        day: DAY_LABELS[r.day] || r.day,
+        day: DAY_LABELS[r.dayOfWeek] || String(r.dayOfWeek),
         startTime: r.startTime,
         endTime: r.endTime,
         subject: r.subject || "",
@@ -212,8 +212,8 @@ export default function BatchTiming() {
     toast({ title: "Exported", description: `${rows.length} slot(s) downloaded.` });
   };
 
-  const getSlotForDayTime = (day: string, start: string, end: string) =>
-    slots.find((slot) => slot.batchId === selectedBatchId && slot.day === day && slot.startTime === start && slot.endTime === end);
+  const getSlotForDayTime = (day: number, start: string, end: string) =>
+    slots.find((slot) => slot.batchId === selectedBatchId && slot.dayOfWeek === day && slot.startTime === start && slot.endTime === end);
 
   return (
     <AppLayout>
@@ -241,13 +241,13 @@ export default function BatchTiming() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Day *</Label>
-                <Select value={draft.day} onValueChange={(v) => set("day", v)}>
+                <Select value={String(draft.dayOfWeek)} onValueChange={(v) => set("dayOfWeek", Number(v))}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select day" />
                   </SelectTrigger>
                   <SelectContent>
                     {DAY_ENUM.map((d) => (
-                      <SelectItem key={d} value={d}>{DAY_LABELS[d]}</SelectItem>
+                      <SelectItem key={d} value={String(d)}>{DAY_LABELS[d]}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -324,7 +324,7 @@ export default function BatchTiming() {
                 <SelectContent>
                   {batches.map((batch) => (
                     <SelectItem key={batch.id} value={batch.id}>
-                      {batch.code} — {batch.name} ({batch.course.name})
+                      {batch.code} — {batch.name} ({batch.courseId})
                     </SelectItem>
                   ))}
                 </SelectContent>

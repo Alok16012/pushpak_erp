@@ -81,13 +81,13 @@ export default function GenerateIDCards() {
         const mapped: IdCardStudent[] = (data ?? []).map((s: any) => ({
           id: s.id,
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
-          class: s.batch?.name?.split(/\s+/)[0] ?? s.course?.name ?? "—",
-          section: s.batch?.name?.split(/\s+/)[1] ?? "—",
+          class: s.courseId ? String(s.courseId).slice(0, 8) : "—",
+          section: s.batchId ? String(s.batchId).slice(0, 8) : "—",
           rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
-          photo: !!s.photo,
+          photo: false,
           dob: s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—",
           bloodGroup: s.bloodGroup ?? "—",
-          parentContact: s.fatherName ? `Guardian: ${s.fatherName}` : s.phone ?? "—",
+          parentContact: s.phone ?? "—",
           address: [s.streetAddress, s.city, s.state, s.pincode].filter(Boolean).join(", ") || "—",
         }));
         setStudents(mapped);

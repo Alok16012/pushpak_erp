@@ -35,8 +35,8 @@ interface Student {
   studentId: string;
   firstName: string;
   lastName: string;
-  course: string;
-  batch: string;
+  courseId: string;
+  batchId: string;
 }
 
 interface FeeInvoice {
@@ -199,8 +199,8 @@ export default function FeeAllocation() {
           id: inv.id,
           studentId: stu.studentId,
           name: `${stu.firstName} ${stu.lastName}`,
-          course: stu.course,
-          batch: stu.batch,
+          course: stu.courseId,
+          batch: stu.batchId,
           feeGroup: group?.name ?? "",
           totalFee: inv.totalAmount - inv.paidAmount,
           allocated: true,
@@ -213,8 +213,8 @@ export default function FeeAllocation() {
         id: stu.id,
         studentId: stu.studentId,
         name: `${stu.firstName} ${stu.lastName}`,
-        course: stu.course,
-        batch: stu.batch,
+        course: stu.courseId,
+        batch: stu.batchId,
         feeGroup: "",
         totalFee: 0,
         allocated: false,

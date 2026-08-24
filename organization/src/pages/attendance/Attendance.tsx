@@ -29,8 +29,8 @@ type Student = {
   firstName: string;
   lastName: string;
   enrollmentNo?: string;
-  course?: { name: string };
-  batch?: { id: string; name: string };
+  courseId?: string;
+  batchId?: string;
   attendance: Array<{ status: Status; remarks?: string }>;
 };
 const statusStyle: Record<Status, string> = {
@@ -50,7 +50,7 @@ export default function Attendance() {
   const [saving, setSaving] = useState(false);
   const load = () => {
     const branchId = user?.branchId || "";
-    return getAttendance<Student>(branchId, date)
+    return getAttendance(branchId, date)
       .then((data) => {
         setStudents(data);
         setMarks(
@@ -74,15 +74,15 @@ export default function Attendance() {
     () =>
       Array.from(
         new Map(
-          students.filter((s) => s.batch).map((s) => [s.batch!.id, s.batch!]),
+          students.filter((s) => s.batchId).map((s) => [s.batchId!, s.batchId]),
         ).values(),
       ),
     [students],
   );
   const visible = students.filter(
     (s) =>
-      (batch === "all" || s.batch?.id === batch) &&
-      `${s.firstName} ${s.lastName} ${s.enrollmentNo}`
+      (batch === "all" || s.batchId === batch) &&
+      `${s.firstName} ${s.lastName} ${s.enrollmentNo || ""}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
@@ -119,7 +119,7 @@ export default function Attendance() {
           date,
           s.enrollmentNo || "",
           `${s.firstName} ${s.lastName}`,
-          s.batch?.name || "",
+          s.batchId || "",
           marks[s.id],
         ]
           .map((v) => `"${v}"`)
@@ -230,8 +230,7 @@ export default function Attendance() {
                   </p>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {s.batch?.name || "No batch"} ·{" "}
-                  {s.course?.name || "No course"}
+                  Batch: {s.batchId || "Unassigned"} · Course: {s.courseId || "Unassigned"}
                 </p>
                 <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted p-1">
                   {(["PRESENT", "ABSENT", "LATE", "EXCUSED"] as Status[]).map(

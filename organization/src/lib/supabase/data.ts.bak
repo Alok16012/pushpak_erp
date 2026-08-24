@@ -341,29 +341,6 @@ export async function getAttendanceWithStudents(branchId: string | null, date: s
   return { success: true, data: merged };
 }
 
-
-export async function getAllAttendanceRecords(branchId?: string) {
-  const branch = branchId || "";
-  let studentsQuery = supabase
-    .from("students")
-    .select("id")
-    .eq("isActive", true)
-    .is("deletedAt", null);
-  if (branch) studentsQuery = studentsQuery.eq("branchId", branch);
-  const { data: students, error: sErr } = await studentsQuery;
-  if (sErr) throw new Error(sErr.message);
-  const ids = (students || []).map((s: any) => s.id);
-  if (!ids.length) return { success: true, data: [] };
-  const { data, error } = await supabase
-    .from("attendance_records")
-    .select("*")
-    .in("studentId", ids)
-    .order("date", { ascending: false });
-  if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
-}
-
-
 /* ============================
    FEES
    ============================ */
@@ -691,46 +668,6 @@ export async function getTransactions(branchId: string | null) {
   const { data, error } = await supabase.from("branch_transactions").select("*").eq("branchId", branchId).order("createdAt", { ascending: false });
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
-}
-
-export async function rechargeWallet(branchId: string | null, input: { amount: number; paymentMethod: string; description?: string; reference?: string }) {
-  if (!branchId) return { success: false, error: "Missing branch" };
-  const amount = Number(input.amount);
-  if (!Number.isFinite(amount) || amount <= 0) return { success: false, error: "Invalid amount" };
-  const pm = (input.paymentMethod || "UPI").toUpperCase();
-  const { data: wallet, error: wErr } = await supabase.from("branch_wallets").select("*").eq("branchId", branchId).single();
-  if (wErr && wErr.code !== "PGRST116") throw new Error(wErr.message);
-  const currentBalance = Number(wallet?.balance || 0);
-  const newBalance = currentBalance + amount;
-  if (wallet?.id) {
-    const { error: uErr } = await supabase.from("branch_wallets").update({
-      balance: newBalance,
-      lastRechargeAmount: amount,
-      lastRechargeDate: new Date().toISOString(),
-    }).eq("id", wallet.id);
-    if (uErr) throw new Error(uErr.message);
-  } else {
-    const { error: iErr } = await supabase.from("branch_wallets").insert({
-      branchId,
-      balance: newBalance,
-      lastRechargeAmount: amount,
-      lastRechargeDate: new Date().toISOString(),
-    });
-    if (iErr) throw new Error(iErr.message);
-  }
-  const { data: tx, error: tErr } = await supabase.from("branch_transactions").insert({
-    branchId,
-    amount,
-    type: "CREDIT",
-    category: "RECHARGE",
-    description: input.description || "Wallet recharge",
-    reference: input.reference || null,
-    status: "COMPLETED",
-    paymentMethod: pm as any,
-    balanceAfter: newBalance,
-  }).select("*").single();
-  if (tErr) throw new Error(tErr.message);
-  return { success: true, data: tx };
 }
 
 export async function getFeeTypes() {

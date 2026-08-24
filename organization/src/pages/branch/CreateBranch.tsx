@@ -98,15 +98,13 @@ export default function CreateBranch() {
     createBranch(user?.organizationId || "", {
       name: value("branchName"),
       code,
-      type: value("branchType") || "Sub Branch",
-      instituteType: value("instituteType") || "Other",
+      branchType: value("branchType") || "CENTER",
       city: value("city"),
       state: value("state").replace(/\b\w/g, (c) => c.toUpperCase()),
       students: 0,
       staff: Number(value("numFaculty")) || 0,
       revenue: 0,
       status: data.get("activeStatus") ? "active" : "inactive",
-      expiryDate: value("expiryDate") || value("validDate") || "—",
     }).then(() => {
       toast({
         title: "Branch created",

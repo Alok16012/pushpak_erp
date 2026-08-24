@@ -17,33 +17,11 @@ import { getBranchSettings, updateBranchSettings } from "@/lib/supabase/data";
 const DEFAULTS = {
   siteName: "",
   tagline: "",
-  description: "",
-  keywords: "",
-  domain: "",
+  seoDescription: "",
+  seoKeywords: "",
+  primaryDomain: "",
   subdomain: "",
-  ssl: true,
-  wwwRedirect: true,
-  email: "",
-  phone: "",
-  address: "",
-  onlineAdmissions: true,
-  onlineFees: true,
-  studentPortal: true,
-  parentPortal: false,
-  registrationDate: "",
-  expiryDate: "",
-  renewalDate: "",
-  bannerTitle: "",
-  bannerSubtitle: "",
-  facebook: "",
-  twitter: "",
-  instagram: "",
-  linkedin: "",
-  youtube: "",
-  whatsapp: "",
-  logo: "",
-  favicon: "",
-  banner: "",
+  enableSsl: true,
 };
 
 const STORAGE_KEY = "erp-website-settings";
@@ -96,7 +74,15 @@ export default function BranchWebsiteSettings() {
       return;
     }
     try {
-      await updateBranchSettings(user?.branchId || "", form as unknown as Record<string, unknown>);
+      await updateBranchSettings(user?.branchId || "", {
+        siteName: form.siteName,
+        tagline: form.tagline,
+        seoDescription: form.seoDescription,
+        seoKeywords: form.seoKeywords,
+        primaryDomain: form.primaryDomain,
+        subdomain: form.subdomain,
+        enableSsl: form.enableSsl,
+      });
       toast({ title: "Website settings saved", description: `${form.siteName} updated.` });
     } catch {
       toast({ title: "Failed to save settings", variant: "destructive" });

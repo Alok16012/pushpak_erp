@@ -8,27 +8,22 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Globe, Building2, Clock, CheckCircle, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadCsv } from "@/lib/export";
-import { getEnquiries, createEnquiry, updateEnquiry } from "@/lib/supabase/data";
+import { getEnquiries, updateEnquiry } from "@/lib/supabase/data";
 
 interface OnlineEnquiry {
   id: string;
-  date: string;
-  branch: string;
-  name: string;
+  visitorName: string;
   phone: string;
   email: string;
-  enquiryType: string;
-  message: string;
-  ipAddress: string;
-  status: "pending" | "reviewed" | "responded" | "closed";
-  response?: string;
-  convertedTo?: string;
+  enquiryReason: string;
+  status: "NEW" | "CONTACTED" | "VISITED" | "ADMITTED" | "CLOSED";
+  branchId: string;
+  visitDate: string;
 }
 
 const COURSE_OPTIONS = [
@@ -44,14 +39,17 @@ const STAFF_OPTIONS = ["John Doe", "Jane Smith", "Mike Johnson"];
 
 const columns: Column<OnlineEnquiry>[] = [
   {
-    key: "date",
+    key: "visitDate",
     header: "Received",
     sortable: true,
     cell: (enquiry) => (
-      <div>
-        <p className="text-sm">{enquiry.date.split(" ")[0]}</p>
-        <p className="text-xs text-muted-foreground">{enquiry.date.split(" ").slice(1).join(" ")}</p>
-      </div>
+      <span className="text-sm">
+        {new Date(enquiry.visitDate).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })}
+      </span>
     ),
   },
   {
@@ -60,38 +58,33 @@ const columns: Column<OnlineEnquiry>[] = [
     cell: (enquiry) => <Badge variant="outline">{enquiry.branch}</Badge>,
   },
   {
-    key: "name",
-    header: "Enquirer",
+    key: "visitorName",
+    header: "Visitor",
     cell: (enquiry) => (
       <div>
-        <p className="font-medium">{enquiry.name}</p>
-        <p className="text-xs text-muted-foreground">{enquiry.email}</p>
+        <p className="font-medium">{enquiry.visitorName}</p>
+        <p className="text-xs text-muted-foreground">{enquiry.phone}</p>
       </div>
     ),
   },
   {
-    key: "enquiryType",
-    header: "Type",
-    cell: (enquiry) => <Badge variant="secondary">{enquiry.enquiryType}</Badge>,
-  },
-  {
-    key: "message",
-    header: "Message",
+    key: "enquiryReason",
+    header: "Reason",
     cell: (enquiry) => (
-      <p className="text-sm text-muted-foreground truncate max-w-[200px]">{enquiry.message}</p>
+      <p className="text-sm text-muted-foreground truncate max-w-[200px]">{enquiry.enquiryReason || enquiry.enquiryReason || "—"}</p>
     ),
   },
   {
     key: "status",
     header: "Status",
-    cell: (enquiry) => <StatusBadge status={enquiry.status} />,
+    cell: (enquiry) => <StatusBadge status={enquiry.status.toLowerCase() as "pending" | "reviewed" | "responded" | "closed"} />,
   },
 ];
 
 export default function OnlineBranchEnquiry() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const __branchId = user?.branchId || "";
+  const branchId = user?.branchId || "";
   const [enquiries, setEnquiries] = useState<OnlineEnquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<OnlineEnquiry | null>(null);
@@ -105,7 +98,7 @@ export default function OnlineBranchEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const result = await getEnquiries(__branchId);
+        const result = await getEnquiries(branchId);
         if (!cancelled) {
           setEnquiries(result.data as unknown as OnlineEnquiry[]);
         }
@@ -125,7 +118,7 @@ export default function OnlineBranchEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const result = await getEnquiries(__branchId);
+      const result = await getEnquiries(branchId);
       setEnquiries(result.data as unknown as OnlineEnquiry[]);
     } catch {
       // silent
@@ -133,14 +126,14 @@ export default function OnlineBranchEnquiry() {
   };
 
   const markReviewed = async (enquiry: OnlineEnquiry) => {
-    if (enquiry.status !== "pending") {
+    if (enquiry.status !== "NEW") {
       toast({ title: "Already reviewed", description: `This enquiry is ${enquiry.status}.` });
       return;
     }
     try {
-      await updateEnquiry(enquiry.id, _branchId, { status: "reviewed" });
+      await updateEnquiry(enquiry.id, branchId, { status: "CONTACTED" });
       await refreshEnquiries();
-      toast({ title: "Marked as reviewed", description: enquiry.name });
+      toast({ title: "Marked as contacted", description: enquiry.visitorName });
     } catch {
       toast({ title: "Failed to update enquiry", variant: "destructive" });
     }
@@ -153,7 +146,7 @@ export default function OnlineBranchEnquiry() {
       return;
     }
     try {
-      await updateEnquiry(responding.id, _branchId, { status: "responded", response: response.trim() });
+      await updateEnquiry(responding.id, branchId, { status: "CONTACTED", response: response.trim() });
       await refreshEnquiries();
       toast({ title: "Response sent", description: `Emailed to ${responding.email}.` });
       setResponding(null);
@@ -164,34 +157,20 @@ export default function OnlineBranchEnquiry() {
 
   const convertToLead = async () => {
     if (!converting) return;
-    if (converting.convertedTo) {
-      toast({ title: "Already converted", description: "A branch enquiry exists for this form submission." });
-      return;
-    }
     try {
-      const leadData = {
-        date: new Date().toISOString().slice(0, 10),
-        name: converting.name,
-        phone: converting.phone,
-        email: converting.email,
-        course: lead.course,
-        source: "Website",
-        assignedTo: lead.assignedTo,
-        followUpDate: new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10),
-        status: "new",
-        priority: converting.enquiryType === "Admission" ? "high" : "medium",
-        notes: `From ${converting.branch} website (${converting.enquiryType}): ${converting.message}`,
-      };
-      const newLead = await createEnquiry(_branchId, leadData);
-      await updateEnquiry(converting.id, _branchId, { status: "closed", convertedTo: newLead.data.id as string });
+      const notes = converting.enquiryReason ? `Enquiry reason: ${converting.enquiryReason}` : "";
+      await updateEnquiry(converting.id, branchId, {
+        status: "CONTACTED",
+        enquiryReason: converting.enquiryReason ? `[Converted] ${converting.enquiryReason}` : converting.enquiryReason,
+      });
       await refreshEnquiries();
       toast({
-        title: "Converted to lead",
-        description: `${converting.name} added to Branch Enquiries, assigned to ${lead.assignedTo}.`,
+        title: "Marked for follow-up",
+        description: `${converting.visitorName} has been flagged for conversion.`,
       });
       setConverting(null);
     } catch {
-      toast({ title: "Failed to convert to lead", variant: "destructive" });
+      toast({ title: "Failed to update enquiry", variant: "destructive" });
     }
   };
 
@@ -199,42 +178,38 @@ export default function OnlineBranchEnquiry() {
     downloadCsv(
       "online-branch-enquiries.csv",
       enquiries.map((enquiry) => ({
-        Received: enquiry.date,
-        Branch: enquiry.branch,
-        Name: enquiry.name,
+        Visitor: enquiry.visitorName,
         Phone: enquiry.phone,
         Email: enquiry.email,
-        Type: enquiry.enquiryType,
-        Message: enquiry.message,
-        IP: enquiry.ipAddress,
+        Reason: enquiry.enquiryReason,
+        BranchId: enquiry.branchId,
+        VisitDate: enquiry.visitDate,
         Status: enquiry.status,
-        Response: enquiry.response ?? "",
       })),
     );
     toast({ title: "Enquiries exported", description: `${enquiries.length} rows written to CSV.` });
   };
 
   const handleActions = (enquiry: OnlineEnquiry) => [
-    { label: "View Full Message", onClick: () => setDetails(enquiry) },
-    { label: "Mark as Reviewed", onClick: () => markReviewed(enquiry) },
+    { label: "View Details", onClick: () => setDetails(enquiry) },
+    { label: "Mark as Contacted", onClick: () => markReviewed(enquiry) },
     {
       label: "Send Response",
       onClick: () => {
-        setResponse(enquiry.response ?? "");
+        setResponse(enquiry.enquiryReason ?? "");
         setResponding(enquiry);
       },
     },
     {
-      label: "Convert to Lead",
+      label: "Flag for Lead",
       onClick: () => {
-        setLead({ course: COURSE_OPTIONS[0], assignedTo: STAFF_OPTIONS[0] });
         setConverting(enquiry);
       },
     },
     { label: "Close", onClick: () => setClosing(enquiry), destructive: true },
   ];
 
-  const branchCount = new Set(enquiries.map((enquiry) => enquiry.branch)).size;
+  const branchCount = new Set(enquiries.map((enquiry) => enquiry.branchId)).size;
 
   return (
     <AppLayout>
@@ -257,25 +232,25 @@ export default function OnlineBranchEnquiry() {
         <StatsCard
           title="Total Online Enquiries"
           value={enquiries.length}
-          subtitle="This month"
+          subtitle="All records"
           icon={Globe}
           trend={{ value: 20, isPositive: true }}
         />
         <StatsCard
-          title="Pending Review"
-          value={enquiries.filter(e => e.status === "pending").length}
+          title="New Enquiries"
+          value={enquiries.filter(e => e.status === "NEW").length}
           subtitle="Needs attention"
           icon={Clock}
         />
         <StatsCard
-          title="Responded"
-          value={enquiries.filter(e => e.status === "responded").length}
-          subtitle="This week"
+          title="Contacted"
+          value={enquiries.filter(e => e.status === "CONTACTED").length}
+          subtitle="In progress"
           icon={CheckCircle}
         />
         <StatsCard
           title="By Branch"
-          value={branchCount}
+          value={new Set(enquiries.map((enquiry) => enquiry.branchId)).size}
           subtitle="Branches with enquiries"
           icon={Building2}
         />
@@ -292,53 +267,28 @@ export default function OnlineBranchEnquiry() {
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{details?.name}</DialogTitle>
+            <DialogTitle>{details?.visitorName}</DialogTitle>
             <DialogDescription>{details?.phone} · {details?.email}</DialogDescription>
           </DialogHeader>
           {details && (
             <div className="space-y-4">
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 {[
-                  ["Received", details.date],
-                  ["Branch", details.branch],
-                  ["Enquiry type", details.enquiryType],
-                  ["Source IP", details.ipAddress],
+                  ["Visit date", details.visitDate],
+                  ["Branch", details.branchId],
                   ["Status", details.status],
+                  ["Reason", details.enquiryReason],
                 ].map(([label, value]) => (
                   <div key={label}>
                     <dt className="text-xs text-muted-foreground">{label}</dt>
-                    <dd className="font-medium capitalize">{value}</dd>
+                    <dd className="font-medium">{value}</dd>
                   </div>
                 ))}
               </dl>
-              <div>
-                <p className="text-xs text-muted-foreground">Message</p>
-                <p className="rounded-lg border p-3 text-sm">{details.message}</p>
-              </div>
-              {details.response && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Response sent</p>
-                  <p className="rounded-lg border bg-muted/40 p-3 text-sm">{details.response}</p>
-                </div>
-              )}
-              {details.convertedTo && (
-                <p className="text-sm text-muted-foreground">Converted to a branch enquiry lead.</p>
-              )}
             </div>
           )}
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (!details) return;
-                setResponse(details.response ?? "");
-                setResponding(details);
-                setDetails(null);
-              }}
-            >
-              Send response
-            </Button>
-            <Button onClick={() => details && markReviewed(details)}>Mark as reviewed</Button>
+            <Button variant="outline" onClick={() => setDetails(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -346,18 +296,18 @@ export default function OnlineBranchEnquiry() {
       <Dialog open={!!responding} onOpenChange={(open) => !open && setResponding(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Send response</DialogTitle>
-            <DialogDescription>Replying to {responding?.name} at {responding?.email}</DialogDescription>
+            <DialogTitle>Update enquiry</DialogTitle>
+            <DialogDescription>Update status or notes for {responding?.visitorName}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <p className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-              {responding?.message}
+              {responding?.enquiryReason || "No details provided."}
             </p>
             <div className="space-y-2">
-              <Label>Your response</Label>
+              <Label>Notes</Label>
               <Textarea
-                rows={5}
-                placeholder="Thanks for reaching out — here are the details you asked for..."
+                rows={4}
+                placeholder="Add follow-up notes..."
                 value={response}
                 onChange={(e) => setResponse(e.target.value)}
               />
@@ -365,7 +315,7 @@ export default function OnlineBranchEnquiry() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setResponding(null)}>Cancel</Button>
-            <Button onClick={sendResponse}>Send response</Button>
+            <Button onClick={sendResponse}>Save update</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -373,38 +323,14 @@ export default function OnlineBranchEnquiry() {
       <Dialog open={!!converting} onOpenChange={(open) => !open && setConverting(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Convert to lead</DialogTitle>
+            <DialogTitle>Flag for lead</DialogTitle>
             <DialogDescription>
-              Creates a branch enquiry for {converting?.name} on the follow-up desk.
+              Mark {converting?.visitorName}'s enquiry for follow-up conversion.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Course interest</Label>
-              <Select value={lead.course} onValueChange={(value) => setLead((c) => ({ ...c, course: value }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {COURSE_OPTIONS.map((course) => (
-                    <SelectItem key={course} value={course}>{course}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Assign to</Label>
-              <Select value={lead.assignedTo} onValueChange={(value) => setLead((c) => ({ ...c, assignedTo: value }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {STAFF_OPTIONS.map((staff) => (
-                    <SelectItem key={staff} value={staff}>{staff}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConverting(null)}>Cancel</Button>
-            <Button onClick={convertToLead}>Create lead</Button>
+            <Button onClick={convertToLead}>Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -423,7 +349,7 @@ export default function OnlineBranchEnquiry() {
               onClick={async () => {
                 if (!closing) return;
                 try {
-                  await updateEnquiry(closing.id, _branchId, { status: "closed" });
+                  await updateEnquiry(closing.id, branchId, { status: "CLOSED" });
                   await refreshEnquiries();
                   toast({ title: "Enquiry closed", description: closing.name });
                 } catch {
