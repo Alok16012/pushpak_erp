@@ -32,12 +32,9 @@ type Exam = {
   maxMarks: number;
   passMarks: number;
   status: string;
-  courseId: string;
-  course: { id: string; name: string };
   results: Array<{
     marks: number;
     studentId: string;
-    student: { firstName: string; lastName: string; enrollmentNo?: string };
   }>;
 };
 type Student = {
@@ -45,10 +42,9 @@ type Student = {
   firstName: string;
   lastName: string;
   enrollmentNo?: string;
-  course?: { id: string; name: string };
 };
 type Course = { id: string; name: string; code: string };
-type Batch = { id: string; name: string; code: string; course: { id: string } };
+type Batch = { id: string; name: string; code: string; courseId: string };
 
 const blankExam = {
   courseId: "",
@@ -112,7 +108,7 @@ export default function AssessmentsWorkspace() {
   const examStudents = useMemo(
     () =>
       selectedExam
-        ? students.filter((s) => s.course?.id === selectedExam.courseId)
+        ? students.filter((s) => s.id)
         : [],
     [students, selectedExam],
   );
@@ -121,13 +117,13 @@ export default function AssessmentsWorkspace() {
     setCreating(true);
     try {
       await createExam(branchId, {
-          courseId: draft.courseId,
-          ...(draft.batchId ? { batchId: draft.batchId } : {}),
           name: draft.name,
+          examType: "UNIT_TEST",
           subject: draft.subject,
+          totalMarks: Number(draft.maxMarks),
+          passingMarks: Number(draft.passMarks),
           examDate: draft.examDate,
-          maxMarks: Number(draft.maxMarks),
-          passMarks: Number(draft.passMarks),
+          ...(draft.batchId ? { batchId: draft.batchId } : {}),
         });
       toast({
         title: "Exam scheduled",
@@ -251,38 +247,40 @@ export default function AssessmentsWorkspace() {
                     <div>
                       <p className="font-semibold">{e.subject}</p>
                       <p className="text-xs text-muted-foreground">
-                        {e.course.name} ·{" "}
                         {new Date(e.examDate).toLocaleDateString("en-IN")}
                       </p>
                     </div>
                     <Badge>{e.status.replace("_", " ")}</Badge>
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    {e.results.map((r) => (
-                      <div
-                        key={r.student.enrollmentNo}
-                        className="rounded-xl bg-muted/60 p-3"
-                      >
-                        <p className="text-sm font-medium">
-                          {r.student.firstName} {r.student.lastName}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {r.student.enrollmentNo}
-                        </p>
-                        <p className="mt-2 text-lg font-semibold">
-                          {r.marks}/{e.maxMarks}{" "}
-                          <span
-                            className={
-                              r.marks >= e.passMarks
-                                ? "text-emerald-600"
-                                : "text-orange-600"
-                            }
-                          >
-                            {r.marks >= e.passMarks ? "Pass" : "Review"}
-                          </span>
-                        </p>
-                      </div>
-                    ))}
+                    {e.results.map((r) => {
+                      const student = students.find((s) => s.id === r.studentId);
+                      return (
+                        <div
+                          key={r.studentId}
+                          className="rounded-xl bg-muted/60 p-3"
+                        >
+                          <p className="text-sm font-medium">
+                            {student?.firstName || "Student"} {student?.lastName || ""}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {student?.enrollmentNo || r.studentId.slice(0, 8)}
+                          </p>
+                          <p className="mt-2 text-lg font-semibold">
+                            {r.marks}/{e.maxMarks}{" "}
+                            <span
+                              className={
+                                r.marks >= e.passMarks
+                                  ? "text-emerald-600"
+                                  : "text-orange-600"
+                              }
+                            >
+                              {r.marks >= e.passMarks ? "Pass" : "Review"}
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -330,7 +328,7 @@ export default function AssessmentsWorkspace() {
                       </SelectTrigger>
                       <SelectContent>
                         {batches
-                          .filter((b) => b.course.id === draft.courseId)
+                          .filter((b) => b.courseId === draft.courseId)
                           .map((b) => (
                             <SelectItem key={b.id} value={b.id}>
                               {b.name} · {b.code}

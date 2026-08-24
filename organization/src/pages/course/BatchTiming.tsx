@@ -17,7 +17,8 @@ interface Batch {
   id: string;
   name: string;
   code: string;
-  course: { id: string; name: string };
+  courseId: string;
+  course?: { id: string; name: string };
 }
 
 interface TimingSlot {
@@ -81,7 +82,7 @@ export default function BatchTiming() {
       setBatches(activeBatches);
       if (!selectedBatchId && activeBatches.length > 0) {
         setSelectedBatchId(activeBatches[0].id);
-        setDraft((d) => blankSlot(activeBatches[0].id, activeBatches[0].course.id));
+        setDraft((d) => blankSlot(activeBatches[0].id, activeBatches[0].courseId));
       }
     } catch {
       toast({ title: "Failed to load batches", variant: "destructive" });
@@ -113,7 +114,7 @@ export default function BatchTiming() {
     if (!selectedBatchId) return;
     const batch = batches.find((b) => b.id === selectedBatchId);
     setEditingSlot(null);
-    setDraft(blankSlot(selectedBatchId, batch?.course.id || ""));
+    setDraft(blankSlot(selectedBatchId, batch?.courseId || ""));
     setIsDialogOpen(true);
   };
 

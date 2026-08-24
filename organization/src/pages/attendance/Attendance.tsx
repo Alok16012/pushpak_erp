@@ -55,7 +55,7 @@ export default function Attendance() {
         setStudents(data);
         setMarks(
           Object.fromEntries(
-            data.map((s) => [s.id, s.attendance[0]?.status || "PRESENT"]),
+            data.map((s) => [s.id, "PRESENT"]),
           ),
         );
       })

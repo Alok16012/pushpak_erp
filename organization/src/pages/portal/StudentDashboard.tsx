@@ -107,14 +107,18 @@ export default function StudentDashboard() {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
+      if (!userId || !branchId) {
+        setLoading(false);
+        return;
+      }
       try {
         const [profileRes, attendanceRes, invoicesRes, resultsRes, classesRes, noticesRes] = await Promise.all([
-          getStudentProfile(userId!, branchId!),
-          getStudentAttendance(userId!, branchId!),
-          getStudentPortalInvoices(userId!, branchId!),
-          getStudentPortalResults(userId!, branchId!),
-          getStudentPortalClasses(userId!, branchId!),
-          getNotices(branchId!),
+          getStudentProfile(userId, branchId),
+          getStudentAttendance(userId, branchId),
+          getStudentPortalInvoices(userId, branchId),
+          getStudentPortalResults(userId, branchId),
+          getStudentPortalClasses(userId, branchId),
+          getNotices(branchId),
         ]);
 
         if (!cancelled) {
@@ -135,7 +139,7 @@ export default function StudentDashboard() {
     };
     load();
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [userId, branchId, toast]);
 
   const presence = useMemo(() => {
     const total = attendance.length;

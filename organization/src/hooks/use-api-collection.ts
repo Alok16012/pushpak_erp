@@ -56,7 +56,7 @@ export function useApiCollection<T extends WithId>(
         const { data, error: err } = await supabase
           .from(table)
           .insert(item)
-          .select(undefined, { count: "exact", head: false })
+          .select("*")
           .single();
 
         if (err) throw new Error(err.message);

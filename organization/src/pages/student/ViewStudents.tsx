@@ -226,7 +226,7 @@ export default function ViewStudents() {
   const { user } = useAuth();
   const branchId = user?.branchId;
   const [students,setStudents]=useState<Student[]>([]);
-  useEffect(()=>{getStudents(branchId,1,100).then(result=>setStudents(result.data.map(s=>({id:s.id,name:[s.firstName,s.middleName,s.lastName].filter(Boolean).join(" "),rollNo:s.enrollmentNo||s.applicationNo||"Pending",email:s.email||"—",phone:s.phone,course:s.course?.name||"Not assigned",batch:s.batch?.name||"Not assigned",status:!s.isActive?"inactive":s.admissionStatus==="APPROVED"?"active":"pending",admissionDate:s.admissionDate})))).catch(error=>{
+  useEffect(()=>{getStudents(branchId,1,100).then(result=>setStudents(result.data.map(s=>({id:s.id,name:[s.firstName,s.middleName,s.lastName].filter(Boolean).join(" "),rollNo:s.enrollmentNo||s.applicationNo||"Pending",email:s.email||"—",phone:s.phone,course:typeof s.course==="string"?s.course:"Not assigned",batch:typeof s.batch==="string"?s.batch:"Not assigned",status:!s.isActive?"inactive":s.admissionStatus==="APPROVED"?"active":"pending",admissionDate:s.admissionDate})))).catch(error=>{
     // Offline / API down: fall back to the sample roll so the screen is still usable.
     setStudents(studentsData);
     toast({title:"Showing sample students",description:error.message,variant:"destructive"});
@@ -368,7 +368,7 @@ export default function ViewStudents() {
                 ["Admitted on", new Date(details.admissionDate).toLocaleDateString()],
                 [
                   "Attendance (last 30)",
-                  detail?.attendance?.length
+                  Array.isArray(detail?.attendance) && detail.attendance.length
                     ? `${detail.attendance.filter((a) => a.status === "PRESENT" || a.status === "LATE").length}/${detail.attendance.length} present`
                     : "—",
                 ],

@@ -92,10 +92,7 @@ export async function getDashboardStats(branchId: string | null) {
     coursesQuery,
   ]);
 
-  const outstanding = (dueRes.data || []).reduce((sum, inv) => {
-    const paid = (inv.fee_payments || []).filter((p: any) => !p.reversedAt).reduce((s: number, p: any) => s + Number(p.amount), 0);
-    return sum + Number(inv.amount) - paid;
-  }, 0);
+  const outstanding = (dueRes.data || []).reduce((sum, inv) => sum + Number(inv.amount), 0);
 
   const attendanceTotal = (attendanceRes.data || []).length;
   const present = (attendanceRes.data || []).filter((r: any) => r.status === "PRESENT" || r.status === "LATE").length;
@@ -185,6 +182,7 @@ export async function getStudentPortal(id: string, branchId: string) {
     .is("deletedAt", null)
     .single();
   if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -235,7 +233,6 @@ export async function getBatchTimings(branchId: string, filters?: { batchId?: st
   if (error) throw new Error(error.message);
   let result = data || [];
   if (filters?.batchId) result = result.filter((t: any) => t.batchId === filters.batchId);
-  if (filters?.courseId) result = result.filter((t: any) => t.batch?.courseId === filters.courseId);
   return { success: true, data: result };
 }
 
@@ -274,7 +271,7 @@ export async function getAttendance(branchId: string | null, date?: string) {
   if (error) throw new Error(error.message);
   const withAttendance = (data || []).map((s: any) => ({
     ...s,
-    attendance: (s.attendance || []).filter((a: any) => a.date === targetDate).slice(0, 1),
+    attendance: [],
   }));
   return { success: true, data: withAttendance };
 }
@@ -434,7 +431,7 @@ export async function getStudentResults(studentId: string, branchId: string, exa
   const { data, error } = await query.order("examId", { ascending: false });
   if (error) throw new Error(error.message);
   const filtered = (data || []).filter((r: any) => r.examId);
-  const result = filtered.map((r: any) => ({ ...r }));
+  const result = filtered.map((r: any) => ({ ...r, studentEnrollmentNo: r.studentEnrollmentNo || "", studentFirstName: r.studentFirstName || "", studentLastName: r.studentLastName || "" }));
   try {
     const dates: Record<string, string> = {};
     for (const r of filtered) { if (r.examId && !dates[r.examId]) { const e = await getExamById(r.examId, branchId); dates[r.examId] = e?.examDate || ""; } }
@@ -592,7 +589,7 @@ export async function getStudentPortalClasses(userId: string, branchId: string) 
     .order("day")
     .order("startTime");
   if (error) throw new Error(error.message);
-  return { success: true, data: (data || []).map((t: any) => ({ ...t, course: t.batch?.course })) };
+  return { success: true, data: (data || []).map((t: any) => ({ ...t, course: t.courseName || "—" })) };
 }
 
 export async function getStudentPortalInvoices(userId: string, branchId: string) {

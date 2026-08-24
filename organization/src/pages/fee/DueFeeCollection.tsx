@@ -26,11 +26,9 @@ interface BackendInvoice {
   status: string;
   createdAt: string;
   updatedAt: string;
-  student: {
-    firstName: string;
-    lastName: string;
-    enrollmentNo: string;
-  };
+  studentFirstName?: string;
+  studentLastName?: string;
+  studentEnrollmentNo?: string;
   payments: {
     id: string;
     amount: number;
@@ -207,8 +205,8 @@ export default function DueFeeCollection() {
           }));
           return {
             id: invoice.id,
-            studentId: invoice.student.enrollmentNo,
-            name: `${invoice.student.firstName} ${invoice.student.lastName}`,
+            studentId: invoice.studentId,
+            name: `Student #${invoice.studentId.slice(-6)}`,
             course: invoice.description,
             batch: "",
             phone: "",
@@ -217,7 +215,12 @@ export default function DueFeeCollection() {
             daysOverdue: 0,
             lastReminder: "-",
             status: "cleared",
-            history,
+            history: (invoice.payments || []).map((p) => ({
+              date: p.paidAt,
+              amount: Number(p.amount),
+              method: p.method || "—",
+              reference: p.referenceNo || p.receiptNo || "—",
+            })),
           };
         });
         setFees(mapped.map(derive));

@@ -206,11 +206,49 @@ export default function FeeCollection() {
   const [isCreateDialogOpen,setIsCreateDialogOpen]=useState(false);
   const [invoice,setInvoice]=useState({studentId:"",description:"",amount:"",dueDate:""});
   const [creating,setCreating]=useState(false);
-  const load=()=>getInvoices(branchId).then(result=>setRecords(result.data.map(i=>{const paid=i.payments.reduce((s,p)=>s+Number(p.amount),0);return{id:i.id,studentName:`${i.student.firstName} ${i.student.lastName}`,rollNo:i.student.enrollmentNo||"Pending",course:"Enrolled course",feeType:i.description,totalAmount:Number(i.amount),paidAmount:paid,dueAmount:Number(i.amount)-paid,dueDate:i.dueDate,status:i.status.toLowerCase() as FeeRecord["status"]}}))).catch(error=>toast({title:"Could not load fees",description:error.message,variant:"destructive"}));
-  useEffect(()=>{void load()},[]);
-  useEffect(()=>{getStudents(branchId,1,100).then(result=>setStudents(result.data.map(s=>({id:s.id,firstName:s.firstName,lastName:s.lastName,enrollmentNo:s.enrollmentNo})))).catch(()=>{/* the invoice dialog surfaces this on open */})},[]);
+  const load = async () => {
+    try {
+      const result = await getInvoices(branchId);
+      const records: FeeRecord[] = result.data.map((i: any) => ({
+        id: i.id,
+        studentName: "Student " + String(i.studentId || "").slice(-4),
+        rollNo: String(i.studentId || "—").slice(0, 8),
+        course: "—",
+        feeType: i.description || "Fee",
+        totalAmount: Number(i.amount),
+        paidAmount: 0,
+        dueAmount: Number(i.amount),
+        dueDate: i.dueDate || "—",
+        status: (i.status || "").toLowerCase() === "due" ? "due"
+          : (i.status || "").toLowerCase() === "partial" ? "partial"
+          : "paid",
+      }));
+      setRecords(records);
+    } catch (error) {
+      toast({ title: "Could not load fees", description: error instanceof Error ? error.message : "Unknown error", variant: "destructive" });
+    }
+  };
+  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    getStudents(branchId, 1, 100).then(result => {
+      setStudents(result.data.map((s) => ({ id: s.id, firstName: s.firstName, lastName: s.lastName, enrollmentNo: s.enrollmentNo })));
+    }).catch(() => { /* the invoice dialog surfaces this on open */ });
+  }, []);
 
-  const createInvoice=async()=>{setCreating(true);try{await createInvoiceFn(branchId,{studentId:invoice.studentId,description:invoice.description,amount:Number(invoice.amount),dueDate:invoice.dueDate});toast({title:"Invoice created",description:`${invoice.description} raised successfully.`});setIsCreateDialogOpen(false);setInvoice({studentId:"",description:"",amount:"",dueDate:""});await load()}catch(error){toast({title:"Could not create invoice",description:error instanceof Error?error.message:"Please try again",variant:"destructive"})}finally{setCreating(false)}};
+  const createInvoice = async () => {
+    setCreating(true);
+    try {
+      await createInvoiceFn(branchId, { studentId: invoice.studentId, description: invoice.description, amount: Number(invoice.amount), dueDate: invoice.dueDate });
+      toast({ title: "Invoice created", description: `${invoice.description} raised successfully.` });
+      setIsCreateDialogOpen(false);
+      setInvoice({ studentId: "", description: "", amount: "", dueDate: "" });
+      await load();
+    } catch (error) {
+      toast({ title: "Could not create invoice", description: error instanceof Error ? error.message : "Please try again", variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const collected = !!selectedRecord && lastReceipt?.recordId === selectedRecord.id;
 
@@ -253,8 +291,17 @@ export default function FeeCollection() {
     { label: "Print Statement", onClick: () => printStatement(record) },
   ];
   const printStatement=(record:FeeRecord)=>{feeStatementPdf(record);toast({title:"PDF statement generated",description:"The print-ready statement is in Downloads."})};
-  /** Stays open on success so the numbered receipt can be printed straight away. */
-  const collect=async()=>{if(!selectedRecord)return;try{const payment=await addPayment(selectedRecord.id,{amount:Number(amount),method});setLastReceipt({recordId:selectedRecord.id,receiptNo:payment.data.receiptNo});toast({title:"Payment collected",description:`Receipt ${payment.data.receiptNo} created successfully.`});await load()}catch(error){toast({title:"Payment failed",description:error instanceof Error?error.message:"Please try again",variant:"destructive"})}};
+  const collect = async () => {
+    if (!selectedRecord) return;
+    try {
+      const payment = await addPayment(selectedRecord.id, { amount: Number(amount), method });
+      setLastReceipt({ recordId: selectedRecord.id, receiptNo: payment.data.receiptNo });
+      toast({ title: "Payment collected", description: `Receipt ${payment.data.receiptNo} created successfully.` });
+      await load();
+    } catch (error) {
+      toast({ title: "Payment failed", description: error instanceof Error ? error.message : "Please try again", variant: "destructive" });
+    }
+  };
 
   return (
     <AppLayout>
