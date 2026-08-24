@@ -52,9 +52,29 @@ export async function signUp(email: string, password: string, metadata: Record<s
    DASHBOARD
    ============================ */
 
-export async function getDashboardStats(branchId: string) {
+export async function getDashboardStats(branchId: string | null) {
   const today = new Date().toISOString().slice(0, 10);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+
+  const orgId = branchId ? await getOrgIdForBranch(branchId) : null;
+
+  const studentsQuery = supabase.from("students").select("*", { count: "exact", head: true }).eq("isActive", true).is("deletedAt", null);
+  if (branchId) studentsQuery.eq("branchId", branchId);
+
+  const enquiriesQuery = supabase.from("visit_enquiries").select("*", { count: "exact", head: true }).gte("createdAt", today);
+  if (branchId) enquiriesQuery.eq("branchId", branchId);
+
+  const dueQuery = supabase.from("fee_invoices").select("*, fee_payments(*)").in("status", ["DUE", "PARTIAL"]);
+  if (branchId) dueQuery.eq("branchId", branchId);
+
+  const attendanceQuery = supabase.from("attendance_records").select("status").eq("date", today);
+  if (branchId) attendanceQuery.eq("branchId", branchId);
+
+  const paymentsQuery = supabase.from("fee_payments").select("amount").is("reversedAt", null).gte("paidAt", monthStart);
+  if (branchId) paymentsQuery.eq("branchId", branchId);
+
+  const coursesQuery = supabase.from("courses").select("*", { count: "exact", head: true }).eq("isActive", true).is("deletedAt", null);
+  if (orgId) coursesQuery.eq("organizationId", orgId);
 
   const [
     studentsRes,
@@ -64,12 +84,12 @@ export async function getDashboardStats(branchId: string) {
     paymentsRes,
     coursesRes,
   ] = await Promise.all([
-    supabase.from("students").select("*", { count: "exact", head: true }).eq("branchId", branchId).eq("isActive", true).is("deletedAt", null),
-    supabase.from("visit_enquiries").select("*", { count: "exact", head: true }).eq("branchId", branchId).gte("createdAt", today),
-    supabase.from("fee_invoices").select("*, fee_payments(*)").eq("branchId", branchId).in("status", ["DUE", "PARTIAL"]),
-    supabase.from("attendance_records").select("status").eq("branchId", branchId).eq("date", today),
-    supabase.from("fee_payments").select("amount").eq("branchId", branchId).is("reversedAt", null).gte("paidAt", monthStart),
-    supabase.from("courses").select("*", { count: "exact", head: true }).eq("organizationId", (await getOrgIdForBranch(branchId)) || "").eq("isActive", true).is("deletedAt", null),
+    studentsQuery,
+    enquiriesQuery,
+    dueQuery,
+    attendanceQuery,
+    paymentsQuery,
+    coursesQuery,
   ]);
 
   const outstanding = (dueRes.data || []).reduce((sum, inv) => {
@@ -98,7 +118,8 @@ export async function getDashboardStats(branchId: string) {
   };
 }
 
-async function getOrgIdForBranch(branchId: string): Promise<string | null> {
+async function getOrgIdForBranch(branchId: string | null): Promise<string | null> {
+  if (!branchId) return null;
   const { data } = await supabase.from("branches").select("organizationId").eq("id", branchId).single();
   return data?.organizationId || null;
 }
@@ -497,13 +518,18 @@ export async function deleteNotice(id: string) {
    BRANCHES
    ============================ */
 
-export async function getBranches(organizationId: string) {
-  const { data, error } = await supabase
+export async function getBranches(organizationId: string | null) {
+  let query = supabase
     .from("branches")
     .select("*, director:branchDirector(*), address:branchAddress(*), settings:branch_settings(*), wallet:branchWallet(*)")
-    .eq("organizationId", organizationId)
     .is("deletedAt", null)
     .order("name");
+
+  if (organizationId) {
+    query = query.eq("organizationId", organizationId);
+  }
+
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };
 }
