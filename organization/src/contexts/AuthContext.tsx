@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { viewForRole } from "@/lib/roles";
 
 type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
 
 type Auth = {
   user: User | null;
+  view: "admin" | "franchise" | "student";
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
@@ -15,9 +17,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const view = viewForRole(user?.role);
+
   useEffect(() => {
     const saved = localStorage.getItem("erp-user");
-    if (saved) setUser(JSON.parse(saved));
+    if (saved) {
+      const parsed = JSON.parse(saved) as User;
+      setUser(parsed);
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
@@ -53,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw new Error(error.message);
   };
 
-  return <Context.Provider value={{ user, login, logout, loading }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ user, view, login, logout, loading }}>{children}</Context.Provider>;
 }
 
 export const useAuth = () => {
