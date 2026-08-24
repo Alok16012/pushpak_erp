@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase/client";
-import { VIEWS, type View } from "@/lib/roles";
+import { VIEWS, viewForRole, type View } from "@/lib/roles";
 import { Button } from "@/components/ui/button";import { Input } from "@/components/ui/input";import { Label } from "@/components/ui/label";import { AlertCircle, ArrowRight, LockKeyhole, Loader2 } from "lucide-react";
 
 type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
@@ -32,8 +32,8 @@ export default function Login(){
   },[]);
 
   if(user){
-    const role=user.role;
-    const home=role==="SUPER_ADMIN"||role==="ORGANIZATION_ADMIN"?"/dashboard":role==="BRANCH_ADMIN"||role==="RECEPTIONIST"||role==="ACCOUNTANT"||role==="TEACHER"?"/branch":"/portal";
+    const view=viewForRole(user.role);
+    const home=view==="student"?"/me":"/";
     return <Navigate to={home} replace/>;
   }
 
