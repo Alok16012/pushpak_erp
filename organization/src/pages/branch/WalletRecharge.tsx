@@ -23,12 +23,12 @@ interface Institute {
 
 type Recharge = {
   id: string;
-  branch: string;
+  branchId: string;
   amount: number;
-  method: string;
-  date: string;
-  status: "completed" | "pending" | "failed";
-  remarks?: string;
+  paymentMethod: string;
+  createdAt: string;
+  status: "COMPLETED" | "PENDING" | "FAILED";
+  description?: string;
 };
 
 const METHODS = [
@@ -102,8 +102,8 @@ export default function WalletRecharge() {
   );
 
   const totalBalance = institutes.reduce((sum, i) => sum + i.balance, 0);
-  const thisMonth = history.filter((h) => h.date.slice(0, 7) === new Date().toISOString().slice(0, 7));
-  const pending = history.filter((h) => h.status === "pending");
+  const thisMonth = history.filter((h) => h.createdAt.slice(0, 7) === new Date().toISOString().slice(0, 7));
+  const pending = history.filter((h) => h.status === "PENDING");
 
   const reset = () => {
     setSelectedInstitute(null);
@@ -305,23 +305,28 @@ export default function WalletRecharge() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {history.slice(0, 5).map((item) => (
-                  <div key={item.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                    <div>
-                      <p className="font-medium text-sm">{item.branch}</p>
-                      <p className="text-xs text-muted-foreground">{item.date} · {item.method}</p>
+                {history.slice(0, 5).map((item) => {
+                  const branchName = institutes.find((i) => i.id === item.branchId)?.name ?? item.branchId;
+                  const itemDate = item.createdAt ?? "";
+                  const itemMethod = item.paymentMethod ?? item.method ?? "—";
+                  return (
+                    <div key={item.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                      <div>
+                        <p className="font-medium text-sm">{branchName}</p>
+                        <p className="text-xs text-muted-foreground">{itemDate} · {itemMethod}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium text-sm">₹{item.amount.toLocaleString()}</p>
+                        <Badge
+                          variant={item.status === "COMPLETED" ? "default" : item.status === "PENDING" ? "secondary" : "destructive"}
+                          className="text-xs"
+                        >
+                          {item.status}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-medium text-sm">₹{item.amount.toLocaleString()}</p>
-                      <Badge
-                        variant={item.status === "completed" ? "default" : item.status === "pending" ? "secondary" : "destructive"}
-                        className="text-xs"
-                      >
-                        {item.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <Button variant="ghost" className="w-full mt-4" size="sm" onClick={() => navigate("/branch/transactions")}>
                 View All Transactions

@@ -68,7 +68,6 @@ export async function getDashboardStats(branchId: string | null) {
   if (branchId) dueQuery.eq("branchId", branchId);
 
   const attendanceQuery = supabase.from("attendance_records").select("status").eq("date", today);
-  if (branchId) attendanceQuery.eq("branchId", branchId);
 
   const paymentsQuery = supabase.from("fee_payments").select("amount").gte("paidAt", monthStart);
   if (branchId) paymentsQuery.eq("branchId", branchId);
@@ -374,6 +373,9 @@ export async function getInvoices(branchId: string | null) {
     .select("*")
     .in("status", ["PENDING", "PARTIAL", "OVERDUE"])
     .order("createdAt", { ascending: false });
+  if (branchId) {
+    query = query.eq("branchId", branchId);
+  }
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true, data: data || [] };

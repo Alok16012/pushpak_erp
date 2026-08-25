@@ -64,12 +64,20 @@ export default function GenerateAdmitCards() {
 
   const [examValue, setExamValue] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [examValue, setExamValue] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [sectionFilter, setSectionFilter] = useState("all");
   const [feeFilter, setFeeFilter] = useState("all");
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  const template = useMemo(
+    () => templates.find((t) => t.id === templateId),
+    [templates, templateId],
+  );
+  const exam = useMemo(() => findExam(examValue), [examValue]);
+  const effectiveTemplate = template;
 
   useEffect(() => {
     let cancelled = false;
