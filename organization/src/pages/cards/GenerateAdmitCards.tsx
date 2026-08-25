@@ -33,7 +33,7 @@ import {
   admitCardSheetHtml,
   findExam,
 } from "@/data/admit-card-templates";
-import { getStudents, createInvoice } from "@/lib/supabase/data";
+import { getStudents, getBatches, getInvoices } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface AdmitCardStudent {
@@ -60,6 +60,7 @@ export default function GenerateAdmitCards() {
   const [templates, setTemplates] = useState<AdmitCardTemplate[]>([]);
   const [admitStudents, setAdmitStudents] = useState<AdmitCardStudent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [batchMap, setBatchMap] = useState<Record<string, { name: string; code: string }>>({});
 
   const [examValue, setExamValue] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -79,34 +80,58 @@ export default function GenerateAdmitCards() {
     return () => { cancelled = true; };
   }, []);
 
-  const persistTemplates = (next: AdmitCardTemplate[]) => {
-    setTemplates(next);
-    try { localStorage.setItem(ADMIT_CARD_TEMPLATES_KEY, JSON.stringify(next)); } catch { /* quota */ }
-  };
-
-  const template = templates.find((t) => t.id === templateId);
-  /** The exam picked here wins over whatever the template was designed against. */
-  const effectiveTemplate = template
-    ? { ...template, exam: examValue || template.exam }
-    : undefined;
-  const exam = findExam(effectiveTemplate?.exam ?? examValue);
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     const branchId = user?.branchId || "";
-    getStudents(branchId, 1, 100)
-      .then((data) => {
+    Promise.all([
+      getStudents(branchId, 1, 100),
+      getBatches(branchId),
+      getInvoices(user?.branchId || ""),
+    ])
+      .then(([studentsRes, batchesRes, invoicesRes]) => {
         if (cancelled) return;
-        const feeStatuses: Array<"paid" | "pending" | "overdue"> = ["paid", "pending", "overdue"];
-        const mapped: AdmitCardStudent[] = (data ?? []).map((s: any, idx: number) => ({
-          id: s.id,
-          name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
-          class: s.batch?.name?.split(/\s+/)[0] ?? "8th",
-          section: s.batch?.name?.split(/\s+/)[1] ?? "A",
-          rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
-          feeStatus: feeStatuses[idx % 3],
-        }));
+        // Build batch lookup: batchId -> { name, code }
+        const map: Record<string, { name: string; code: string }> = {};
+        for (const b of batchesRes.data || []) {
+          map[b.id] = { name: b.name, code: b.code };
+        }
+        setBatchMap(map);
+
+        // Build invoice lookup: studentId -> best status
+        const invoiceByStudent: Record<string, string> = {};
+        for (const inv of invoicesRes.data || []) {
+          const sid = (inv as any).studentId;
+          if (!sid) continue;
+          const status = (inv as any).status || "PENDING";
+          // Best status: PAID > PARTIAL > anything else
+          if (!invoiceByStudent[sid] || status === "PAID") {
+            invoiceByStudent[sid] = status;
+          }
+        }
+
+        const feeMap: Record<string, "paid" | "pending" | "overdue"> = {
+          PAID: "paid",
+          PARTIAL: "pending",
+          PENDING: "pending",
+          OVERDUE: "overdue",
+        };
+
+        const mapped: AdmitCardStudent[] = (studentsRes.data || []).map((s: any) => {
+          const batchKey = s.batchId || "";
+          const batch = map[batchKey];
+          const parts = batch?.name?.split(/\s+/) || ["—", "—"];
+          const invoiceStatus = invoiceByStudent[s.id] || "PENDING";
+          const feeStatus = feeMap[invoiceStatus] || "pending";
+          return {
+            id: s.id,
+            name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
+            class: parts[0] || "—",
+            section: parts[1] || "—",
+            rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
+            feeStatus,
+          };
+        });
         setAdmitStudents(mapped);
       })
       .catch(() => {
@@ -116,7 +141,7 @@ export default function GenerateAdmitCards() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [user?.branchId, toast]);
 
   const filteredStudents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();

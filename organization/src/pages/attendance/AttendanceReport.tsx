@@ -58,7 +58,7 @@ export default function AttendanceReport() {
         if (cancelled) return;
         const rawRecords = res.data || [];
         const studentIds = Array.from(new Set(rawRecords.map((r: any) => r.studentId)));
-        const { default: supabase } = await import("@/lib/supabase");
+        const { supabase } = await import("@/lib/supabase/client");
         const { data: students } = await supabase
           .from("students")
           .select("id, firstName, lastName, enrollmentNo")

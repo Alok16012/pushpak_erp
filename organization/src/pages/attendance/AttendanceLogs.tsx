@@ -73,7 +73,7 @@ export default function AttendanceLogs() {
         // Build lookup of unique student IDs
         const studentIds = Array.from(new Set(rawRecords.map((r: any) => r.studentId)));
         // Fetch student details
-        const { default: supabase } = await import("@/lib/supabase");
+        const { supabase } = await import("@/lib/supabase/client");
         const { data: students } = await supabase
           .from("students")
           .select("id, firstName, lastName, enrollmentNo, courseId, batchId")

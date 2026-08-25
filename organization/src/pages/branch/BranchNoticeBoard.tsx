@@ -15,6 +15,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getNotices, createNotice, updateNotice, deleteNotice } from "@/lib/supabase/data";
 
+type NoticeType = "BRANCH" | "BATCH";
+type NoticePriority = "LOW" | "MEDIUM" | "HIGH";
+
 interface Notice {
   id: string;
   title: string;
@@ -30,26 +33,26 @@ interface Notice {
 }
 
 const BATCHES = ["All Batches", "Batch A - Morning", "Batch B - Evening", "Batch C - Weekend", "Batch D - Online"];
-const BRANCHES = ["All Branches", "Main Campus", "North Campus", "South Campus"];
 
 const today = () => new Date().toISOString().slice(0, 10);
 const inAMonth = () => new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
 
-const blankDraft = (): Notice => ({
+const blankDraft = (branchId: string): Notice => ({
   id: "",
   title: "",
   content: "",
-  branchId: user?.branchId || "",
+  branchId,
   batch: BATCHES[0],
-  priority: "medium",
+  priority: "MEDIUM",
   publishDate: today(),
+  expiryDate: inAMonth(),
   isPinned: false,
   views: 0,
-  noticeType: "branch",
+  type: "BRANCH",
 });
 
 const priorityVariant = (priority: string) =>
-  priority === "high" ? "destructive" : priority === "medium" ? "default" : "secondary";
+  priority === "HIGH" ? "destructive" : priority === "MEDIUM" ? "default" : "secondary";
 
 /** Notices expiring within a week - drives the "Expiring Soon" tile. */
 const expiringSoon = (notices: Notice[]) => {
@@ -85,11 +88,11 @@ export default function BranchNoticeBoard() {
   const set = <K extends keyof Notice>(key: K, value: Notice[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
-  const branchNotices = items.filter((n) => n.type === "branch");
-  const batchNotices = items.filter((n) => n.type === "batch");
+  const branchNotices = items.filter((n) => n.type === "BRANCH");
+  const batchNotices = items.filter((n) => n.type === "BATCH");
 
   const openCreate = () => {
-    setDraft(blankDraft());
+    setDraft(blankDraft(user?.branchId || ""));
     setIsDialogOpen(true);
   };
 
@@ -235,7 +238,7 @@ export default function BranchNoticeBoard() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Notice Type</Label>
-                <Select value={draft.noticeType} onValueChange={(val) => set("noticeType", val as Notice["noticeType"])}>
+                <Select value={draft.type} onValueChange={(val) => set("type", val as NoticeType)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select notice type" />
                   </SelectTrigger>
@@ -247,7 +250,7 @@ export default function BranchNoticeBoard() {
               </div>
               <div className="space-y-2">
                 <Label>Target</Label>
-                {draft.noticeType === "BRANCH" ? (
+                {draft.type === "BRANCH" ? (
                   <Select value={draft.branchId} onValueChange={(v) => set("branchId", v)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select branch" />
@@ -277,9 +280,9 @@ export default function BranchNoticeBoard() {
                   <SelectValue placeholder="Select priority" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="high">High Priority</SelectItem>
-                  <SelectItem value="medium">Medium Priority</SelectItem>
-                  <SelectItem value="low">Low Priority</SelectItem>
+                  <SelectItem value="HIGH">High Priority</SelectItem>
+                  <SelectItem value="MEDIUM">Medium Priority</SelectItem>
+                  <SelectItem value="LOW">Low Priority</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -12,7 +12,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getWallet, rechargeWallet, getTransactions } from "@/lib/supabase/data";
+import { getWallet, rechargeWallet, getTransactions, getBranches } from "@/lib/supabase/data";
 
 interface Institute {
   id: string;
@@ -32,9 +32,9 @@ type Recharge = {
 };
 
 const METHODS = [
-  { id: "card", label: "Credit/Debit Card", icon: CreditCard },
-  { id: "upi", label: "UPI Payment", icon: Wallet },
-  { id: "netbanking", label: "Net Banking", icon: Building2 },
+  { id: "upi", label: "UPI Payment", enumValue: "UPI", icon: Wallet },
+  { id: "card", label: "Credit/Debit Card", enumValue: "CARD", icon: CreditCard },
+  { id: "netbanking", label: "Net Banking", enumValue: "NET_BANKING", icon: Building2 },
 ];
 
 const quickAmounts = [5000, 10000, 25000, 50000, 100000];
@@ -61,11 +61,23 @@ export default function WalletRecharge() {
     let cancelled = false;
     async function loadWallet() {
       try {
-        const [walletRes, txRes] = await Promise.all([
+        const orgId = user?.organizationId || null;
+        const [branchesRes, walletRes, txRes] = await Promise.all([
+          getBranches(orgId),
           getWallet(user?.branchId || ""),
           getTransactions(user?.branchId || ""),
         ]);
         if (!cancelled) {
+          const branches = (branchesRes.data || []).filter((b: any) => b.isActive !== false);
+          const walletMap = new Map((txRes.data || []).filter((t: any) => t.status === "COMPLETED").map((t: any) => [t.branchId, t.balanceAfter]));
+          setInstitutes(
+            branches.map((b: any) => ({
+              id: b.id,
+              name: b.name,
+              directorName: b.code,
+              balance: Number(walletMap.get(b.id) ?? 0),
+            }))
+          );
           setWalletData(walletRes.data);
           setHistory(txRes.data as Recharge[] || []);
         }
@@ -81,7 +93,7 @@ export default function WalletRecharge() {
     }
     loadWallet();
     return () => { cancelled = true; };
-  }, [user?.branchId, toast]);
+  }, [user?.branchId, user?.organizationId, toast]);
 
   const filteredInstitutes = institutes.filter(
     (inst) =>
@@ -110,11 +122,11 @@ export default function WalletRecharge() {
       toast({ title: "Invalid amount", description: "Enter a recharge amount greater than zero.", variant: "destructive" });
       return;
     }
-    const label = METHODS.find((m) => m.id === method)?.label ?? method;
+    const methodEnum = METHODS.find((m) => m.id === method)?.enumValue ?? "UPI";
     try {
       const res = await rechargeWallet(selectedInstitute.id, {
         amount: value,
-        paymentMethod: label,
+        paymentMethod: methodEnum,
         description: remarks || `Wallet recharge for ${selectedInstitute.name}`,
       });
       if (res.success && res.data) {
