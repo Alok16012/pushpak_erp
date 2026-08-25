@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -20,8 +20,37 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Users, UserPlus, Clock, LogOut, Eye, Download, Printer, MapPin, Phone } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getEnquiries, deleteEnquiry, updateEnquiry } from "@/lib/supabase/data";
 
-interface Visitor {
+type DbVisitor = {
+  id: string;
+  branchId: string;
+  visitorName: string;
+  phone: string;
+  email: string | null;
+  idType: string;
+  idNumber: string | null;
+  company: string | null;
+  address: string | null;
+  visitDate: string;
+  visitTime: string;
+  purpose: string;
+  personToMeet: string;
+  department: string;
+  noOfPersons: number;
+  enquiryReason: string | null;
+  location: string | null;
+  remarks: string | null;
+  followUpDate: string | null;
+  followUpTime: string | null;
+  followUpNotes: string | null;
+  status: string;
+  createdAt: string;
+};
+
+type Visitor = {
   id: string;
   name: string;
   phone: string;
@@ -37,257 +66,246 @@ interface Visitor {
   enquiryReason: string;
   location: string;
   followUpDate: string | null;
-}
+};
 
-const visitorsData: Visitor[] = [
-  {
-    id: "V001",
-    name: "Rajesh Kumar",
-    phone: "+91 98765 43210",
-    email: "rajesh.k@email.com",
-    purpose: "Admission Enquiry",
-    personToMeet: "Principal",
-    department: "Administration",
-    checkIn: "2024-01-24 09:30",
-    checkOut: "2024-01-24 10:45",
-    status: "completed",
-    idType: "Aadhar Card",
-    idNumber: "XXXX-XXXX-1234",
-    enquiryReason: "Looking for admission in Class 10 for son",
-    location: "Mumbai, Maharashtra",
-    followUpDate: "2024-01-28",
-  },
-  {
-    id: "V002",
-    name: "Priya Sharma",
-    phone: "+91 98765 43211",
-    email: "priya.s@email.com",
-    purpose: "Fee Related",
-    personToMeet: "Accounts Dept",
-    department: "Accounts",
-    checkIn: "2024-01-24 10:00",
-    checkOut: null,
-    status: "active",
-    idType: "PAN Card",
-    idNumber: "ABCDE1234F",
-    enquiryReason: "Fee discount enquiry for scholarship",
-    location: "Pune, Maharashtra",
-    followUpDate: "2024-01-26",
-  },
-  {
-    id: "V003",
-    name: "Amit Patel",
-    phone: "+91 98765 43212",
-    email: "amit.p@email.com",
-    purpose: "Meeting",
-    personToMeet: "Admin Officer",
-    department: "Administration",
-    checkIn: "2024-01-24 11:15",
-    checkOut: null,
-    status: "active",
-    idType: "Driving License",
-    idNumber: "DL-XXXX-1234",
-    enquiryReason: "Discussion about school infrastructure project",
-    location: "Delhi",
-    followUpDate: null,
-  },
-  {
-    id: "V004",
-    name: "Sunita Verma",
-    phone: "+91 98765 43213",
-    email: "sunita.v@email.com",
-    purpose: "Complaint",
-    personToMeet: "Counselor",
-    department: "Academics",
-    checkIn: "2024-01-24 09:00",
-    checkOut: "2024-01-24 09:45",
-    status: "completed",
-    idType: "Voter ID",
-    idNumber: "ABC1234567",
-    enquiryReason: "Complaint regarding student behavior issue",
-    location: "Thane, Maharashtra",
-    followUpDate: "2024-01-30",
-  },
-  {
-    id: "V005",
-    name: "Vikram Singh",
-    phone: "+91 98765 43214",
-    email: "vikram.s@email.com",
-    purpose: "Delivery",
-    personToMeet: "Other Staff",
-    department: "Administration",
-    checkIn: "2024-01-24 12:00",
-    checkOut: "2024-01-24 12:15",
-    status: "completed",
-    idType: "Aadhar Card",
-    idNumber: "XXXX-XXXX-5678",
-    enquiryReason: "Stationery delivery for office",
-    location: "Navi Mumbai",
-    followUpDate: null,
-  },
-  {
-    id: "V006",
-    name: "Meera Joshi",
-    phone: "+91 98765 43215",
-    email: "meera.j@email.com",
-    purpose: "Interview",
-    personToMeet: "HR Department",
-    department: "Human Resources",
-    checkIn: "2024-01-24 14:00",
-    checkOut: null,
-    status: "pending",
-    idType: "Passport",
-    idNumber: "J1234567",
-    enquiryReason: "Teacher position interview",
-    location: "Bangalore, Karnataka",
-    followUpDate: "2024-01-25",
-  },
-];
+const PURPOSE_DISPLAY: Record<string, string> = {
+  ADMISSION: "Admission Enquiry",
+  FEE: "Fee Related",
+  MEETING: "Meeting",
+  COMPLAINT: "Complaint",
+  DELIVERY: "Delivery",
+  INTERVIEW: "Interview",
+  OTHER: "Other",
+};
 
-const columns: Column<Visitor>[] = [
-  {
-    key: "name",
-    header: "Visitor",
-    sortable: true,
-    cell: (visitor) => (
-      <div className="flex items-center gap-3">
-        <Avatar className="h-9 w-9">
-          <AvatarFallback className="bg-primary/10 text-primary text-sm">
-            {visitor.name.split(" ").map((n) => n[0]).join("")}
-          </AvatarFallback>
-        </Avatar>
-        <div>
-          <p className="font-medium">{visitor.name}</p>
-          <p className="text-xs text-muted-foreground">{visitor.id}</p>
+const mapDbToVisitor = (db: DbVisitor): Visitor => ({
+  id: db.id,
+  name: db.visitorName,
+  phone: db.phone,
+  email: db.email || "",
+  purpose: PURPOSE_DISPLAY[db.purpose] || db.purpose,
+  personToMeet: db.personToMeet,
+  department: db.department,
+  checkIn: `${db.visitDate.split("T")[0]} ${db.visitTime}`,
+  checkOut: null,
+  status: db.status === "CLOSED" || db.status === "CONVERTED" ? "completed" : "active",
+  idType: db.idType,
+  idNumber: db.idNumber || "",
+  enquiryReason: db.enquiryReason || "",
+  location: db.location || "",
+  followUpDate: db.followUpDate ? db.followUpDate.split("T")[0] : null,
+});
+
+export default function VisitorsInformation() {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { user, branchId, loading: authLoading } = useAuth();
+  const [visitors, setVisitors] = useState<Visitor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
+  const [isCheckoutDialogOpen, setIsCheckoutDialogOpen] = useState(false);
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  const loadVisitors = async () => {
+    if (!branchId) return;
+    setLoading(true);
+    try {
+      const res = await getEnquiries(branchId, 1, 100);
+      const mapped = (res.data || []).map(mapDbToVisitor);
+      setVisitors(mapped);
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to load visitors",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authLoading && branchId) {
+      loadVisitors();
+    }
+  }, [authLoading, branchId]);
+
+  const handleCheckout = async () => {
+    if (!selectedVisitor || !branchId) return;
+    setIsCheckingOut(true);
+    try {
+      await updateEnquiry(selectedVisitor.id, branchId, { status: "CLOSED" });
+      toast({ title: "Checked Out", description: "Visitor has been checked out." });
+      setIsCheckoutDialogOpen(false);
+      loadVisitors();
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Checkout failed",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
+  const handleDelete = async (visitor: Visitor) => {
+    if (!confirm(`Delete visitor record for ${visitor.name}?`)) return;
+    if (!branchId) return;
+    setIsDeleting(true);
+    try {
+      await deleteEnquiry(visitor.id, branchId);
+      toast({ title: "Deleted", description: "Visitor record deleted." });
+      loadVisitors();
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Delete failed",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleActions = (visitor: Visitor) => [
+    { label: "View Details", onClick: () => { setSelectedVisitor(visitor); setIsViewDialogOpen(true); } },
+    ...(visitor.status === "active"
+      ? [{ label: "Check Out", onClick: () => { setSelectedVisitor(visitor); setIsCheckoutDialogOpen(true); } }]
+      : []),
+    { label: "Print Pass", onClick: () => console.log("Print", visitor.id) },
+    { label: "Edit", onClick: () => navigate(`/reception/enquiry?edit=${visitor.id}`) },
+    { label: "Delete", onClick: () => handleDelete(visitor), destructive: true },
+  ];
+
+  const activeVisitors = visitors.filter((v) => v.status === "active").length;
+  const completedToday = visitors.filter((v) => v.status === "completed").length;
+  const totalToday = visitors.length;
+
+  const columns: Column<Visitor>[] = [
+    {
+      key: "name",
+      header: "Visitor",
+      sortable: true,
+      cell: (visitor) => (
+        <div className="flex items-center gap-3">
+          <Avatar className="h-9 w-9">
+            <AvatarFallback className="bg-primary/10 text-primary text-sm">
+              {visitor.name.split(" ").map((n) => n[0]).join("")}
+            </AvatarFallback>
+          </Avatar>
+          <div>
+            <p className="font-medium">{visitor.name}</p>
+            <p className="text-xs text-muted-foreground">{visitor.id}</p>
+          </div>
         </div>
-      </div>
-    ),
-  },
-  {
-    key: "phone",
-    header: "Contact",
-    cell: (visitor) => (
-      <div>
-        <p className="text-sm">{visitor.phone}</p>
-        <p className="text-xs text-muted-foreground">{visitor.email}</p>
-      </div>
-    ),
-  },
-  {
-    key: "purpose",
-    header: "Purpose",
-    sortable: true,
-    cell: (visitor) => (
-      <Badge variant="secondary">{visitor.purpose}</Badge>
-    ),
-  },
-  {
-    key: "location",
-    header: "Location",
-    sortable: true,
-    cell: (visitor) => (
-      <div className="flex items-center gap-1.5">
-        <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-sm">{visitor.location}</span>
-      </div>
-    ),
-  },
-  {
-    key: "personToMeet",
-    header: "Person to Meet",
-    sortable: true,
-  },
-  {
-    key: "checkIn",
-    header: "Check-in",
-    sortable: true,
-    cell: (visitor) => (
-      <div className="flex items-center gap-2">
-        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-        <span className="text-sm">
-          {new Date(visitor.checkIn).toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
-      </div>
-    ),
-  },
-  {
-    key: "checkOut",
-    header: "Check-out",
-    cell: (visitor) => (
-      visitor.checkOut ? (
+      ),
+    },
+    {
+      key: "phone",
+      header: "Contact",
+      cell: (visitor) => (
+        <div>
+          <p className="text-sm">{visitor.phone}</p>
+          <p className="text-xs text-muted-foreground">{visitor.email}</p>
+        </div>
+      ),
+    },
+    {
+      key: "purpose",
+      header: "Purpose",
+      sortable: true,
+      cell: (visitor) => <Badge variant="secondary">{visitor.purpose}</Badge>,
+    },
+    {
+      key: "location",
+      header: "Location",
+      sortable: true,
+      cell: (visitor) => (
+        <div className="flex items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-sm">{visitor.location}</span>
+        </div>
+      ),
+    },
+    {
+      key: "personToMeet",
+      header: "Person to Meet",
+      sortable: true,
+    },
+    {
+      key: "checkIn",
+      header: "Check-in",
+      sortable: true,
+      cell: (visitor) => (
         <div className="flex items-center gap-2">
-          <LogOut className="h-3.5 w-3.5 text-muted-foreground" />
+          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-sm">
-            {new Date(visitor.checkOut).toLocaleTimeString("en-US", {
+            {new Date(visitor.checkIn).toLocaleTimeString("en-US", {
               hour: "2-digit",
               minute: "2-digit",
             })}
           </span>
         </div>
-      ) : (
-        <span className="text-xs text-muted-foreground">--</span>
-      )
-    ),
-  },
-  {
-    key: "status",
-    header: "Status",
-    cell: (visitor) => <StatusBadge status={visitor.status} />,
-  },
-  {
-    key: "followUpDate",
-    header: "Follow-up",
-    sortable: true,
-    cell: (visitor) => (
-      visitor.followUpDate ? (
-        <div className="flex items-center gap-1.5">
-          <Phone className="h-3.5 w-3.5 text-primary" />
-          <span className="text-sm">
-            {new Date(visitor.followUpDate).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })}
-          </span>
-        </div>
-      ) : (
-        <span className="text-xs text-muted-foreground">--</span>
-      )
-    ),
-  },
-];
-
-export default function VisitorsInformation() {
-  const navigate = useNavigate();
-  const [selectedVisitor, setSelectedVisitor] = useState<Visitor | null>(null);
-  const [isCheckoutDialogOpen, setIsCheckoutDialogOpen] = useState(false);
-  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-
-  const activeVisitors = visitorsData.filter((v) => v.status === "active").length;
-  const completedToday = visitorsData.filter((v) => v.status === "completed").length;
-  const totalToday = visitorsData.length;
-
-  const handleCheckout = (visitor: Visitor) => {
-    setSelectedVisitor(visitor);
-    setIsCheckoutDialogOpen(true);
-  };
-
-  const handleView = (visitor: Visitor) => {
-    setSelectedVisitor(visitor);
-    setIsViewDialogOpen(true);
-  };
-
-  const handleActions = (visitor: Visitor) => [
-    { label: "View Details", onClick: () => handleView(visitor) },
-    ...(visitor.status === "active"
-      ? [{ label: "Check Out", onClick: () => handleCheckout(visitor) }]
-      : []),
-    { label: "Print Pass", onClick: () => console.log("Print", visitor.id) },
-    { label: "Edit", onClick: () => console.log("Edit", visitor.id) },
-    { label: "Delete", onClick: () => console.log("Delete", visitor.id), destructive: true },
+      ),
+    },
+    {
+      key: "checkOut",
+      header: "Check-out",
+      cell: (visitor) => (
+        visitor.checkOut ? (
+          <div className="flex items-center gap-2">
+            <LogOut className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-sm">
+              {new Date(visitor.checkOut).toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">--</span>
+        )
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (visitor) => <StatusBadge status={visitor.status} />,
+    },
+    {
+      key: "followUpDate",
+      header: "Follow-up",
+      sortable: true,
+      cell: (visitor) => (
+        visitor.followUpDate ? (
+          <div className="flex items-center gap-1.5">
+            <Phone className="h-3.5 w-3.5 text-primary" />
+            <span className="text-sm">
+              {new Date(visitor.followUpDate).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              })}
+            </span>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">--</span>
+        )
+      ),
+    },
   ];
+
+  if (authLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -352,13 +370,17 @@ export default function VisitorsInformation() {
           <CardTitle>Today's Visitors</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
-            data={visitorsData}
-            columns={columns}
-            selectable
-            searchPlaceholder="Search visitors by name, phone, or purpose..."
-            actions={handleActions}
-          />
+          {loading ? (
+            <p className="text-center text-muted-foreground py-8">Loading visitors...</p>
+          ) : (
+            <DataTable
+              data={visitors}
+              columns={columns}
+              selectable
+              searchPlaceholder="Search visitors by name, phone, or purpose..."
+              actions={handleActions}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -404,23 +426,14 @@ export default function VisitorsInformation() {
                   </p>
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="checkoutRemarks">Remarks (Optional)</Label>
-                <Textarea
-                  id="checkoutRemarks"
-                  placeholder="Any notes about the visit..."
-                  rows={2}
-                />
-              </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCheckoutDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => setIsCheckoutDialogOpen(false)}>
-              Confirm Check-out
+            <Button onClick={handleCheckout} disabled={isCheckingOut}>
+              {isCheckingOut ? "Checking out..." : "Confirm Check-out"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -528,13 +541,6 @@ export default function VisitorsInformation() {
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" className="gap-2">
-              <Printer className="h-4 w-4" />
-              Print Pass
-            </Button>
-            <Button onClick={() => setIsViewDialogOpen(false)}>Close</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AppLayout>

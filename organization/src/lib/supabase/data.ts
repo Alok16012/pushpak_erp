@@ -531,6 +531,12 @@ export async function getPendingEnquiries(branchId: string | null) {
   return { success: true, data: data || [] };
 }
 
+export async function deleteEnquiry(id: string, branchId: string) {
+  const { error } = await supabase.from("visit_enquiries").delete().eq("id", id).eq("branchId", branchId);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
 /* ============================
    NOTICES
    ============================ */
