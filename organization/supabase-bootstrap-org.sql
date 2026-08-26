@@ -27,12 +27,11 @@ ALTER TABLE public.branches ALTER COLUMN "userId" DROP NOT NULL;
 
 -- ---------------------------------------------------------------------
 -- 2. Create the organization + link it to the admin login
---    >>> EDIT the two values below before running <<<
 -- ---------------------------------------------------------------------
 DO $$
 DECLARE
-  admin_email text := 'admin@example.com';   -- <<< your login email
-  org_name    text := 'Idealdigiskills';     -- <<< your institute name
+  admin_email text := 'admin@pushpak.com';   -- the login email
+  org_name    text := 'Idealdigiskills';     -- the institute name
   admin_id    uuid;
   org_id      text;
 BEGIN
@@ -62,15 +61,13 @@ BEGIN
     RETURNING id INTO org_id;
   END IF;
 
-  -- the app reads these three keys on every page
+  -- the app reads these keys on every page; an existing role is kept as is
   UPDATE auth.users
   SET raw_user_meta_data =
         coalesce(raw_user_meta_data, '{}'::jsonb)
-        || jsonb_build_object(
-             'organizationId', org_id,
-             'role', 'ORGANIZATION_ADMIN',
-             'userType', 'ORGANIZATION'
-           )
+        || jsonb_build_object('organizationId', org_id)
+        || jsonb_build_object('role', coalesce(raw_user_meta_data ->> 'role', 'ORGANIZATION_ADMIN'))
+        || jsonb_build_object('userType', coalesce(raw_user_meta_data ->> 'userType', 'ORGANIZATION'))
   WHERE id = admin_id;
 
   RAISE NOTICE 'Organization % linked to %', org_id, admin_email;
