@@ -40,10 +40,14 @@ export function BranchAdminSection() {
           <div className="space-y-2">
             <Label htmlFor="adminUsername">Admin Username *</Label>
             <Input id="adminUsername" name="adminUsername" placeholder="admin_username" />
+            <p className="text-xs text-muted-foreground">
+              This is the login ID the branch will sign in with.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="adminPassword">Admin Password *</Label>
             <Input id="adminPassword" name="adminPassword" type="password" placeholder="••••••••" />
+            <p className="text-xs text-muted-foreground">At least 6 characters.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="adminEmail">Admin Email</Label>

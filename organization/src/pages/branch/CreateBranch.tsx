@@ -12,7 +12,7 @@ import { BranchDocumentsSection } from "@/components/branch/BranchDocumentsSecti
 import { BranchAdminSection } from "@/components/branch/BranchAdminSection";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { createBranchWithDetails, getBranches } from "@/lib/supabase/data";
+import { createBranchWithDetails, createBranchLogin, getBranches } from "@/lib/supabase/data";
 
 interface Branch {
   id: string;
@@ -93,6 +93,14 @@ export default function CreateBranch() {
       toast({ title: "Pincode must be 6 digits", variant: "destructive" });
       return;
     }
+    if (value("adminPassword").length < 6) {
+      toast({
+        title: "Admin password is too short",
+        description: "Use at least 6 characters - this is the branch's login password.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     if (!user?.organizationId) {
       toast({ title: "No organization assigned", variant: "destructive" });
@@ -150,11 +158,29 @@ export default function CreateBranch() {
             referralCode: value("referralCode") || null,
           }
         : undefined,
-    }).then(() => {
-      toast({
-        title: "Branch created",
-        description: `${value("branchName")} (${code}) was added to the register.`,
-      });
+    }).then(async (created) => {
+      // The branch exists now; its login is a separate step, so a failure here
+      // is reported on its own rather than losing the branch.
+      try {
+        const login = await createBranchLogin({
+          branchId: created.data.id as string,
+          username: value("adminUsername"),
+          password: value("adminPassword"),
+          name: value("adminName"),
+          email: value("adminEmail"),
+          phone: value("adminPhone"),
+        });
+        toast({
+          title: "Branch created",
+          description: `${value("branchName")} (${code}) is on the register. Login ID: ${login.data.username}`,
+        });
+      } catch (error) {
+        toast({
+          title: "Branch created, login was not",
+          description: `${error instanceof Error ? error.message : "Could not create the branch login"}. Add it from Supabase Authentication.`,
+          variant: "destructive",
+        });
+      }
       navigate("/branch/view");
     }).catch((error: unknown) => {
       toast({

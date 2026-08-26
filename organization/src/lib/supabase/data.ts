@@ -710,6 +710,29 @@ export async function updateBranch(id: string, organizationId: string, input: Re
   return { success: true, data };
 }
 
+/**
+ * Creates the branch's login. The account itself is minted by the
+ * create-branch-user edge function, which holds the service-role key -
+ * signing up from the browser would swap out the admin's own session.
+ */
+export async function createBranchLogin(input: {
+  branchId: string;
+  username: string;
+  password: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+}) {
+  const { data, error } = await supabase.functions.invoke("create-branch-user", { body: input });
+  if (error) {
+    // the function replies with { error } on 4xx, which is more useful than "non-2xx"
+    const detail = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(detail?.error || error.message);
+  }
+  if (data?.error) throw new Error(data.error);
+  return { success: true, data } as { success: true; data: { loginEmail: string; username: string } };
+}
+
 /** City and state live on branch_addresses, the rest on the branch row itself. */
 export async function updateBranchWithDetails(
   id: string,
