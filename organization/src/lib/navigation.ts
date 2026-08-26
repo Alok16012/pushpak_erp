@@ -293,7 +293,7 @@ const studentMenu: MenuItem[] = [
   {
     title: "Documents",
     icon: IdCard,
-    items: [{ title: "ID & Admit Card", url: "/me/documents", icon: Printer }],
+    items: [{ title: "Cards & Certificate", url: "/me/documents", icon: Printer }],
   },
   {
     title: "Account",

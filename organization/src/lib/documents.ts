@@ -155,58 +155,10 @@ export function marksheetPdf(s: StudentDocument) {
   save(doc, `marksheet-${s.enrollmentNo}.pdf`);
 }
 
-export function certificatePdf(s: StudentDocument) {
-  const doc = new jsPDF("landscape");
-  doc.setFillColor(24, 24, 27);
-  doc.rect(0, 0, 297, 210, "F");
-  doc.setDrawColor(199, 255, 47);
-  doc.setLineWidth(2);
-  doc.roundedRect(10, 10, 277, 190, 5, 5);
-  doc.setTextColor(199, 255, 47);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text("IDEALDIGISKILLS", 148.5, 38, { align: "center" });
-  doc.setTextColor(255);
-  doc.setFontSize(12);
-  doc.text("CERTIFICATE OF COURSE COMPLETION", 148.5, 57, { align: "center" });
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(190);
-  doc.setFontSize(11);
-  doc.text("This is to certify that", 148.5, 78, { align: "center" });
-  doc.setTextColor(255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(30);
-  doc.text(`${s.firstName} ${s.lastName}`, 148.5, 101, { align: "center" });
-  doc.setDrawColor(199, 255, 47);
-  doc.line(78, 108, 219, 108);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  doc.text(
-    `has successfully completed ${s.course?.name || "the assigned course"}`,
-    148.5,
-    126,
-    { align: "center" },
-  );
-  doc.setTextColor(190);
-  doc.setFontSize(10);
-  doc.text(
-    `Enrollment: ${s.enrollmentNo || "Pending"}  |  Institute: ${s.branch.name}`,
-    148.5,
-    143,
-    { align: "center" },
-  );
-  doc.setTextColor(255);
-  doc.text("AUTHORIZED SIGNATORY", 228, 176, { align: "center" });
-  doc.text(new Date().toLocaleDateString("en-IN"), 69, 176, {
-    align: "center",
-  });
-  doc.setTextColor(199, 255, 47);
-  doc.setFontSize(8);
-  doc.text("Digitally generated from verified ERP records", 148.5, 190, {
-    align: "center",
-  });
-  save(doc, `certificate-${s.enrollmentNo}.pdf`);
-}
+/* The course-completion certificate is not drawn here: it follows a saved
+   template (see `@/lib/certificate-pdf` and `@/data/certificate-templates`)
+   so the institute owns the wording and every student fills the same base
+   format. */
 
 export function feeStatementPdf(record: {
   studentName: string;

@@ -15,9 +15,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import { Link } from "react-router-dom";
 import {
   admissionPdf,
-  certificatePdf,
   marksheetPdf,
   type StudentDocument,
 } from "@/lib/documents";
@@ -181,7 +181,7 @@ export default function AssessmentsWorkspace() {
     }
   };
 
-  const generate = async (kind: "admission" | "marksheet" | "certificate") => {
+  const generate = async (kind: "admission" | "marksheet") => {
     if (!studentId) return;
     try {
       const data = await api<StudentDocument>(
@@ -190,7 +190,6 @@ export default function AssessmentsWorkspace() {
       ({
         admission: admissionPdf,
         marksheet: marksheetPdf,
-        certificate: certificatePdf,
       })[kind](data);
       toast({
         title: "PDF generated",
@@ -551,10 +550,7 @@ export default function AssessmentsWorkspace() {
                     [
                       ["Admission summary", "admission"],
                       ["Marksheet", "marksheet"],
-                      ["Certificate", "certificate"],
-                    ] satisfies Array<
-                      [string, "admission" | "marksheet" | "certificate"]
-                    >
+                    ] satisfies Array<[string, "admission" | "marksheet"]>
                   ).map(([label, kind]) => (
                     <Button
                       key={kind}
@@ -566,6 +562,14 @@ export default function AssessmentsWorkspace() {
                       {label}
                     </Button>
                   ))}
+                  {/* Certificates run off the published template, so they are
+                      issued from their own designer rather than from here. */}
+                  <Button asChild variant="outline" className="h-24 flex-col gap-2">
+                    <Link to="/certificate/generate">
+                      <Award className="h-5 w-5" />
+                      Certificate
+                    </Link>
+                  </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Documents use live admission, course, payment, and published

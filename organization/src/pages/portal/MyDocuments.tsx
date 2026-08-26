@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, FileText, IdCard, Printer, Send } from "lucide-react";
+import { Award, Download, FileText, IdCard, Printer, Send } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,14 @@ import { useToast } from "@/hooks/use-toast";
 import { downloadHtml, printHtml } from "@/lib/export";
 import { admissionPdf } from "@/lib/documents";
 import { admitCardsPdf } from "@/lib/admit-card-pdf";
+import { certificatesPdf } from "@/lib/certificate-pdf";
+import { CertificateSheet, useCertificateQrs } from "@/components/certificates/CertificateSheet";
+import { CERTIFICATE_TEMPLATES_KEY, CERTIFICATE_TEMPLATE_SEED, certificateHtml, type CertificateTemplate } from "@/data/certificate-templates";
 import { ID_CARD_TEMPLATES_KEY, ID_CARD_TEMPLATE_SEED, idCardHtml, type IdCardTemplate } from "@/data/id-card-templates";
 import { ADMIT_CARD_TEMPLATES_KEY, ADMIT_CARD_TEMPLATE_SEED, EXAMS, admitCardHtml, type AdmitCardTemplate } from "@/data/admit-card-templates";
 import {
   INVOICE_SEED, PORTAL_KEYS, PROFILE_SEED, REQUEST_KINDS, RESULT_SEED,
-  asAdmitCardStudent, asIdCardStudent, asStudentDocument, feeSummary, money,
+  asAdmitCardStudent, asCertificateStudent, asIdCardStudent, asStudentDocument, feeSummary, money, resultSummary,
   type PortalInvoice, type PortalRequest, type PortalResult, type StudentProfile,
 } from "@/data/student-portal";
 
@@ -33,6 +36,7 @@ export default function MyDocuments() {
   // published by the institute is the card the student gets.
   const { items: idTemplates } = useLocalCollection<IdCardTemplate>(ID_CARD_TEMPLATES_KEY, ID_CARD_TEMPLATE_SEED);
   const { items: admitTemplates } = useLocalCollection<AdmitCardTemplate>(ADMIT_CARD_TEMPLATES_KEY, ADMIT_CARD_TEMPLATE_SEED);
+  const { items: certTemplates } = useLocalCollection<CertificateTemplate>(CERTIFICATE_TEMPLATES_KEY, CERTIFICATE_TEMPLATE_SEED);
 
   const activeIdTemplates = idTemplates.filter((template) => template.status === "active");
   const activeAdmitTemplates = admitTemplates.filter((template) => template.status === "active");
@@ -53,6 +57,17 @@ export default function MyDocuments() {
   const admitBlocked = dues.overdue > 0;
   const admitStudent = asAdmitCardStudent(profile, dues.due > 0 ? (admitBlocked ? "overdue" : "pending") : "paid");
   const admitCard = admitTemplate ? { ...admitTemplate, exam: examValue } : undefined;
+
+  // A certificate is only released once every subject is cleared and the fee
+  // account is settled — the same two gates Results applies.
+  const certTemplate = certTemplates.find((template) => template.status === "active") ?? null;
+  const certStudent = asCertificateStudent(profile, results);
+  const certQrs = useCertificateQrs(certTemplate, [certStudent]);
+  const pending = resultSummary(results).failed;
+  const certBlocked = pending > 0 || dues.due > 0;
+  const certHold = pending > 0
+    ? `${pending} subject${pending === 1 ? "" : "s"} still need a pass before the certificate is issued.`
+    : `${money(dues.due)} is outstanding. The certificate is released once the fee account is settled.`;
 
   const printIdCard = () => {
     if (!idTemplate) return toast({ title: "No ID card template published", variant: "destructive" });
@@ -75,6 +90,27 @@ export default function MyDocuments() {
     toast({ title: "Admit card downloaded", description: `${exam?.label} · ${exam?.window}` });
   };
 
+  const guardCertificate = () => {
+    if (!certTemplate) {
+      toast({ title: "No certificate template published", variant: "destructive" });
+      return false;
+    }
+    if (certBlocked) {
+      toast({ title: "Certificate on hold", description: certHold, variant: "destructive" });
+      return false;
+    }
+    return true;
+  };
+  const printCertificate = () => {
+    if (!guardCertificate() || !certTemplate) return;
+    printHtml(`Certificate — ${profile.name}`, certificateHtml(certTemplate, certStudent, certQrs[certStudent.id]));
+  };
+  const downloadCertificate = () => {
+    if (!guardCertificate() || !certTemplate) return;
+    certificatesPdf(certTemplate, [certStudent], certQrs, `certificate-${certStudent.certificateNo}.pdf`);
+    toast({ title: "Certificate downloaded", description: `Certificate no. ${certStudent.certificateNo}` });
+  };
+
   const submitRequest = () => {
     if (!requestNote.trim()) return toast({ title: "Add a note", description: "Say what you need the document for.", variant: "destructive" });
     addRequest({ kind: requestKind, detail: requestNote.trim(), raisedAt: new Date().toISOString(), status: "open" });
@@ -86,9 +122,9 @@ export default function MyDocuments() {
   return (
     <AppLayout>
       <PageHeader
-        title="ID & admit card"
+        title="Cards & certificate"
         description="The documents the institute has published for you, plus a way to ask for one it has not."
-        breadcrumbs={[{ label: "ID & admit card" }]}
+        breadcrumbs={[{ label: "Cards & certificate" }]}
         actions={<Button variant="outline" onClick={() => setRequestOpen(true)}><Send />Request a document</Button>}
       />
 
@@ -135,6 +171,24 @@ export default function MyDocuments() {
           </CardContent>
         </Card>
 
+        <Card className="xl:col-span-2">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="flex items-center gap-2"><Award className="h-4 w-4" />Course completion certificate</CardTitle>
+            {certTemplate && <Badge variant="secondary">Certificate no. {certStudent.certificateNo}</Badge>}
+          </CardHeader>
+          <CardContent>
+            {certBlocked && <p className="mb-3 rounded-xl border border-destructive/25 bg-destructive/10 p-3 text-xs text-destructive">Held back: {certHold}</p>}
+            {certTemplate
+              ? <CertificateSheet className="mx-auto max-w-[560px]" template={certTemplate} student={certStudent} qr={certQrs[certStudent.id]} />
+              : <p className="py-10 text-center text-sm text-muted-foreground">Your institute has not published a certificate template yet.</p>}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button size="sm" onClick={downloadCertificate} disabled={!certTemplate}><Download className="mr-1.5 h-3.5 w-3.5" />Download PDF</Button>
+              <Button size="sm" variant="outline" onClick={printCertificate} disabled={!certTemplate}><Printer className="mr-1.5 h-3.5 w-3.5" />Print</Button>
+              <span className="self-center text-xs text-muted-foreground">Scan the QR on the certificate to verify it online.</span>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader><CardTitle>Other documents</CardTitle></CardHeader>
           <CardContent className="space-y-2">
@@ -143,7 +197,7 @@ export default function MyDocuments() {
               <Button size="sm" variant="outline" onClick={() => { admissionPdf(asStudentDocument(profile, invoices, results)); toast({ title: "Admission summary downloaded" }); }}><Download className="mr-1.5 h-3.5 w-3.5" />PDF</Button>
             </div>
             <div className="flex items-center gap-3 rounded-2xl border border-border/70 p-3">
-              <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Marksheet & certificate</p><p className="text-xs text-muted-foreground">Issued from your published results</p></div>
+              <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Marksheet</p><p className="text-xs text-muted-foreground">Issued per assessment from your published results</p></div>
               <Button size="sm" variant="ghost" asChild><Link to="/me/results">Open results</Link></Button>
             </div>
           </CardContent>

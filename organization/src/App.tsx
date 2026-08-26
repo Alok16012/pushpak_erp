@@ -61,6 +61,10 @@ import AcademicsWorkspace from "./pages/course/AcademicsWorkspace";
 // Exam Management
 import AssessmentsWorkspace from "./pages/exam/AssessmentsWorkspace";
 
+// Certificates
+import CertificateTemplate from "./pages/certificate/CertificateTemplate";
+import GenerateCertificates from "./pages/certificate/GenerateCertificates";
+
 // Online Exam
 import CreateOnlineExam from "./pages/online-exam/CreateOnlineExam";
 import QuestionPaperBuilder from "./pages/online-exam/QuestionPaperBuilder";
@@ -203,8 +207,8 @@ const App = () => (
           <Route path="/cards/generate-admit" element={<GenerateAdmitCards />} />
           
           {/* Certificates */}
-          <Route path="/certificate/template" element={<AssessmentsWorkspace />} />
-          <Route path="/certificate/generate" element={<AssessmentsWorkspace />} />
+          <Route path="/certificate/template" element={<CertificateTemplate />} />
+          <Route path="/certificate/generate" element={<GenerateCertificates />} />
           
           {/* Marksheets */}
           <Route path="/marksheet/template" element={<AssessmentsWorkspace />} />

@@ -10,10 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocalCollection, useLocalState } from "@/hooks/use-local-collection";
 import { useToast } from "@/hooks/use-toast";
-import { certificatePdf, marksheetPdf } from "@/lib/documents";
+import { marksheetPdf } from "@/lib/documents";
+import { certificatesPdf } from "@/lib/certificate-pdf";
+import { useCertificateQrs } from "@/components/certificates/CertificateSheet";
+import { CERTIFICATE_TEMPLATES_KEY, CERTIFICATE_TEMPLATE_SEED, type CertificateTemplate } from "@/data/certificate-templates";
 import { downloadCsv, printHtml } from "@/lib/export";
 import {
-  INVOICE_SEED, PORTAL_KEYS, PROFILE_SEED, RESULT_SEED, asStudentDocument, feeSummary, resultSummary,
+  INVOICE_SEED, PORTAL_KEYS, PROFILE_SEED, RESULT_SEED, asCertificateStudent, asStudentDocument, feeSummary, resultSummary,
   type PortalInvoice, type PortalResult, type StudentProfile,
 } from "@/data/student-portal";
 
@@ -25,6 +28,9 @@ export default function MyResults() {
   const [profile] = useLocalState<StudentProfile>(PORTAL_KEYS.profile, PROFILE_SEED);
   const { items: results } = useLocalCollection<PortalResult>(PORTAL_KEYS.results, RESULT_SEED);
   const { items: invoices } = useLocalCollection<PortalInvoice>(PORTAL_KEYS.fees, INVOICE_SEED);
+  // The certificate is whatever base format the institute published — the
+  // student's own record is simply poured into it.
+  const { items: certTemplates } = useLocalCollection<CertificateTemplate>(CERTIFICATE_TEMPLATES_KEY, CERTIFICATE_TEMPLATE_SEED);
   const exams = [...new Set(results.map((result) => result.exam))];
   const [exam, setExam] = useState(exams[0] ?? "");
 
@@ -32,6 +38,9 @@ export default function MyResults() {
   const summary = resultSummary(rows);
   const overall = resultSummary(results);
   const dues = feeSummary(invoices).due;
+  const certTemplate = certTemplates.find((template) => template.status === "active") ?? null;
+  const certStudent = asCertificateStudent(profile, results);
+  const certQrs = useCertificateQrs(certTemplate, [certStudent]);
 
   const marksheet = () => {
     if (!rows.length) return;
@@ -56,8 +65,9 @@ export default function MyResults() {
   const certificate = () => {
     if (overall.failed) return toast({ title: "Certificate not available yet", description: `${overall.failed} subject${overall.failed === 1 ? "" : "s"} still need a pass before the certificate is issued.`, variant: "destructive" });
     if (dues > 0) return toast({ title: "Clear your dues first", description: "The certificate is released once the fee account is settled.", variant: "destructive" });
-    certificatePdf(asStudentDocument(profile, invoices, results));
-    toast({ title: "Certificate downloaded" });
+    if (!certTemplate) return toast({ title: "No certificate template published", description: "Your institute has not published a certificate format yet.", variant: "destructive" });
+    certificatesPdf(certTemplate, [certStudent], certQrs, `certificate-${certStudent.certificateNo}.pdf`);
+    toast({ title: "Certificate downloaded", description: `${certTemplate.name} · certificate no. ${certStudent.certificateNo}` });
   };
 
   return (

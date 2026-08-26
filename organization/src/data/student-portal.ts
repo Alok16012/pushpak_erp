@@ -7,6 +7,7 @@
 import type { StudentDocument } from "@/lib/documents";
 import type { IdCardStudent } from "@/data/id-card-templates";
 import type { AdmitCardStudent } from "@/data/admit-card-templates";
+import type { CertificateStudent } from "@/data/certificate-templates";
 
 export const PORTAL_KEYS = {
   profile: "erp-portal-profile",
@@ -30,6 +31,10 @@ export interface StudentProfile {
   phone: string;
   guardian: string;
   guardianPhone: string;
+  /** Parentage and Aadhaar are printed on the completion certificate. */
+  fatherName: string;
+  motherName: string;
+  aadhaar: string;
   address: string;
   dob: string;
   bloodGroup: string;
@@ -112,6 +117,9 @@ export const PROFILE_SEED: StudentProfile = {
   phone: "+91 98220 41100",
   guardian: "Meera Sharma",
   guardianPhone: "+91 98220 41199",
+  fatherName: "Rakesh Sharma",
+  motherName: "Meera Sharma",
+  aadhaar: "774512908833",
   address: "24 Shivaji Nagar, Pune - 411005",
   dob: "12 Mar 2007",
   bloodGroup: "B+",
@@ -294,6 +302,45 @@ export const asIdCardStudent = (profile: StudentProfile): IdCardStudent => ({
   parentContact: profile.guardianPhone,
   address: profile.address,
 });
+
+const asDayMonthYear = (value: Date) =>
+  [value.getDate(), value.getMonth() + 1, value.getFullYear()]
+    .map((part, index) => (index === 2 ? String(part) : String(part).padStart(2, "0")))
+    .join("-");
+
+/**
+ * The student's own record in the shape the certificate base format expects.
+ * The course period runs from the admission date over `durationMonths`, and the
+ * grade comes from the published results rather than being stored twice.
+ */
+export const asCertificateStudent = (
+  profile: StudentProfile,
+  results: PortalResult[],
+  durationMonths = 12,
+): CertificateStudent => {
+  const start = new Date(profile.admissionDate);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + durationMonths);
+  const serial = profile.enrollmentNo.replace(/[^a-z0-9]/gi, "");
+
+  return {
+    id: profile.id,
+    name: profile.name,
+    fatherName: profile.fatherName,
+    motherName: profile.motherName,
+    registrationNo: profile.enrollmentNo,
+    dob: profile.dob,
+    aadhaar: profile.aadhaar,
+    course: profile.course,
+    durationMonths,
+    courseFrom: asDayMonthYear(start),
+    courseTo: asDayMonthYear(end),
+    marks: resultSummary(results).percentage,
+    certificateNo: serial,
+    issueDate: asDayMonthYear(end),
+    photo: profile.photo,
+  };
+};
 
 export const asAdmitCardStudent = (
   profile: StudentProfile,

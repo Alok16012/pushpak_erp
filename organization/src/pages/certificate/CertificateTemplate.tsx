@@ -6,274 +6,478 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Copy, Eye, Plus, Save, Trash2, Upload, X } from "lucide-react";
+import { useState } from "react";
+import { newId, useLocalCollection } from "@/hooks/use-local-collection";
+import { useToast } from "@/hooks/use-toast";
+import { printHtml, pickImage } from "@/lib/export";
+import { certificatesPdf } from "@/lib/certificate-pdf";
+import { CertificateSheet, useCertificateQrs } from "@/components/certificates/CertificateSheet";
 import {
-  Plus,
-  Save,
-  Eye,
-  Trash2,
-  Copy,
-  Type,
-  Image,
-  QrCode,
-  Award,
-  GripVertical,
-  Stamp,
-} from "lucide-react";
+  ACCENT_OPTIONS,
+  CERTIFICATE_TEMPLATES_KEY,
+  CERTIFICATE_TEMPLATE_SEED,
+  CertificateTemplate as Template,
+  FRAME_COLORS,
+  FRAME_OPTIONS,
+  SAMPLE_CERTIFICATE_STUDENT,
+  blankCertificateTemplate,
+  certificateHtml,
+} from "@/data/certificate-templates";
 
-const savedTemplates = [
-  { id: "1", name: "Character Certificate", type: "Character", status: "active" },
-  { id: "2", name: "Transfer Certificate", type: "Transfer", status: "active" },
-  { id: "3", name: "Bonafide Certificate", type: "Bonafide", status: "draft" },
-  { id: "4", name: "Merit Certificate", type: "Merit", status: "active" },
-];
+type Draft = Omit<Template, "id">;
 
-const fieldElements = [
-  { icon: Type, label: "Student Name", type: "text" },
-  { icon: Type, label: "Father's Name", type: "text" },
-  { icon: Type, label: "Date of Birth", type: "text" },
-  { icon: Type, label: "Class & Section", type: "text" },
-  { icon: Type, label: "Admission No", type: "text" },
-  { icon: Type, label: "Issue Date", type: "text" },
-  { icon: Type, label: "Certificate No", type: "text" },
-  { icon: Image, label: "Student Photo", type: "image" },
-  { icon: Image, label: "School Logo", type: "image" },
-  { icon: QrCode, label: "QR Code", type: "qr" },
-  { icon: Stamp, label: "School Seal", type: "seal" },
-  { icon: Type, label: "Certificate Body", type: "textarea" },
-];
+export default function CertificateTemplatePage() {
+  const { toast } = useToast();
+  const { items, add, update, remove } = useLocalCollection<Template>(
+    CERTIFICATE_TEMPLATES_KEY,
+    CERTIFICATE_TEMPLATE_SEED,
+  );
+  const [editingId, setEditingId] = useState<string | null>(items[0]?.id ?? null);
+  const [draft, setDraft] = useState<Draft>(() => {
+    if (!items[0]) return blankCertificateTemplate();
+    const { id: _id, ...rest } = items[0];
+    return rest;
+  });
+  const [deleting, setDeleting] = useState<Template | null>(null);
 
-const certificateTypes = [
-  { value: "character", label: "Character Certificate" },
-  { value: "transfer", label: "Transfer Certificate (TC)" },
-  { value: "bonafide", label: "Bonafide Certificate" },
-  { value: "merit", label: "Merit Certificate" },
-  { value: "participation", label: "Participation Certificate" },
-  { value: "achievement", label: "Achievement Certificate" },
-  { value: "sports", label: "Sports Certificate" },
-];
+  const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
 
-export default function CertificateTemplate() {
+  const current: Template = { ...draft, id: editingId ?? "preview" };
+  const student = SAMPLE_CERTIFICATE_STUDENT;
+  const qrs = useCertificateQrs(current, [student]);
+
+  /** Every image slot on the sheet goes through the same picker. */
+  const upload = async (accept: string, apply: (dataUrl: string) => void) => {
+    const picked = await pickImage(accept, 1_500_000);
+    if (picked === "too-large") {
+      toast({ title: "Image too large", description: "Use an image under 1.5 MB.", variant: "destructive" });
+      return;
+    }
+    if (!picked) return;
+    apply(picked.dataUrl);
+  };
+
+  const load = (template: Template) => {
+    const { id, ...rest } = template;
+    setEditingId(id);
+    setDraft(rest);
+  };
+
+  const startNew = () => {
+    setEditingId(null);
+    setDraft(blankCertificateTemplate());
+    toast({ title: "New template", description: "The base format is ready — fill in the institute details." });
+  };
+
+  const save = () => {
+    if (!draft.name.trim()) {
+      toast({ title: "Name required", description: "Give the template a name before saving.", variant: "destructive" });
+      return;
+    }
+    if (!draft.instituteName.trim()) {
+      toast({ title: "Institute name required", description: "The certificate head prints blank without it.", variant: "destructive" });
+      return;
+    }
+    if (editingId) {
+      update(editingId, draft);
+      toast({ title: "Template updated", description: `${draft.name} was saved.` });
+      return;
+    }
+    const id = newId("certtpl");
+    add({ ...draft, id });
+    setEditingId(id);
+    toast({ title: "Template saved", description: `${draft.name} is now available in Generate Certificates.` });
+  };
+
+  const duplicate = (template: Template) => {
+    const { id: _id, ...rest } = template;
+    add({ ...rest, name: `${template.name} (Copy)`, status: "draft" });
+    toast({ title: "Template duplicated", description: `A draft copy of ${template.name} was created.` });
+  };
+
+  const preview = () =>
+    printHtml(draft.name || "Certificate", certificateHtml(current, student, qrs[student.id]));
+
+  const downloadSample = () => {
+    certificatesPdf(current, [student], qrs, `${draft.name || "certificate"}-sample.pdf`);
+    toast({ title: "Sample PDF generated", description: "A one-page proof is in your Downloads." });
+  };
+
+  const setSignatory = (index: number, patch: Partial<Template["signatories"][number]>) =>
+    set("signatories", draft.signatories.map((person, i) => (i === index ? { ...person, ...patch } : person)));
+
+  const setBadge = (index: number, patch: Partial<Template["badges"][number]>) =>
+    set("badges", draft.badges.map((badge, i) => (i === index ? { ...badge, ...patch } : badge)));
+
   return (
     <AppLayout>
       <PageHeader
         title="Certificate Template"
-        description="Design and customize certificate templates"
-        breadcrumbs={[
-          { label: "Certificate & Marksheet", href: "/certificate/template" },
-          { label: "Certificate Template" },
-        ]}
+        description="The base format is fixed — edit the institute wording here and every student's certificate fills itself in"
+        breadcrumbs={[{ label: "Certificates", href: "/certificate/template" }, { label: "Certificate Template" }]}
         actions={
-          <div className="flex gap-2">
-            <Button variant="outline">
-              <Eye className="h-4 w-4 mr-2" />
-              Preview
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={downloadSample}>Sample PDF</Button>
+            <Button variant="outline" onClick={preview}>
+              <Eye className="mr-2 h-4 w-4" />
+              Print preview
             </Button>
-            <Button>
-              <Save className="h-4 w-4 mr-2" />
-              Save Template
+            <Button onClick={save}>
+              <Save className="mr-2 h-4 w-4" />
+              {editingId ? "Update template" : "Save template"}
             </Button>
           </div>
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Left Panel - Elements */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-lg">Elements</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {fieldElements.map((element, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-3 p-3 border rounded-lg cursor-move hover:bg-muted/50 transition-colors"
-              >
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-                <element.icon className="h-4 w-4 text-primary" />
-                <span className="text-sm">{element.label}</span>
-              </div>
-            ))}
-            <p className="text-xs text-muted-foreground pt-2">
-              Drag elements to the canvas to add them to your template
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        <div className="space-y-4 xl:col-span-3">
+          <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-lg">Live preview</CardTitle>
+              <Badge variant="secondary">Sample: {student.name}</Badge>
+            </CardHeader>
+            <CardContent>
+              <CertificateSheet template={current} student={student} qr={qrs[student.id]} />
+              <p className="pt-3 text-xs text-muted-foreground">
+                Names, parentage, registration, course, grade, marks and certificate number come from
+                the student record — the layout above never changes.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Center - Canvas */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">Template Canvas</CardTitle>
-              <Select defaultValue="a4">
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="a4">A4 Size</SelectItem>
-                  <SelectItem value="letter">Letter</SelectItem>
-                  <SelectItem value="legal">Legal</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="border-2 border-dashed rounded-lg p-4 min-h-[700px] bg-background">
-              {/* Certificate Preview */}
-              <div className="border-4 border-double border-primary/30 rounded-lg p-8 bg-gradient-to-b from-card to-muted/20 shadow-sm">
-                <div className="text-center mb-6">
-                  <div className="flex justify-center mb-4">
-                    <div className="w-20 h-20 bg-muted rounded-full flex items-center justify-center">
-                      <Award className="h-10 w-10 text-muted-foreground" />
-                    </div>
-                  </div>
-                  <h1 className="text-2xl font-bold text-primary">SCHOOL NAME</h1>
-                  <p className="text-sm text-muted-foreground">School Address, City, State - PIN</p>
-                  <p className="text-xs text-muted-foreground">Phone: +91 XXXXXXXXXX | Email: school@example.com</p>
-                </div>
-
-                <div className="text-center mb-8">
-                  <div className="inline-block border-b-2 border-primary pb-1">
-                    <h2 className="text-xl font-semibold tracking-wider">CHARACTER CERTIFICATE</h2>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-2">Certificate No: CC/2024/001</p>
-                </div>
-
-                <div className="text-justify leading-relaxed mb-8 px-4">
-                  <p className="mb-4">
-                    This is to certify that <strong className="text-primary">Student Name</strong>, 
-                    Son/Daughter of <strong>Father's Name</strong>, 
-                    Date of Birth <strong>01/01/2010</strong>, 
-                    was a bonafide student of this institution.
-                  </p>
-                  <p className="mb-4">
-                    He/She was studying in <strong>Class 10th, Section A</strong> during the academic session 
-                    <strong> 2023-24</strong> bearing Admission Number <strong>ADM/2020/001</strong>.
-                  </p>
-                  <p>
-                    During his/her stay in this institution, his/her character and conduct were found to be 
-                    <strong> Good</strong>. We wish him/her success in all future endeavors.
-                  </p>
-                </div>
-
-                <div className="flex justify-between items-end px-4">
-                  <div className="text-center">
-                    <div className="w-20 h-20 border rounded flex items-center justify-center mb-2">
-                      <QrCode className="h-12 w-12 text-muted-foreground" />
-                    </div>
-                    <p className="text-xs text-muted-foreground">Scan to verify</p>
-                  </div>
-
-                  <div className="text-center">
-                    <p className="text-sm mb-1">Date: _______________</p>
-                    <p className="text-xs text-muted-foreground">Issue Date</p>
-                  </div>
-
-                  <div className="text-center">
-                    <div className="w-16 h-16 border rounded-full flex items-center justify-center mb-2 mx-auto">
-                      <Stamp className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                    <div className="w-28 border-t border-foreground mb-1"></div>
-                    <p className="text-xs">Principal's Signature</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Right Panel - Properties & Saved Templates */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="space-y-6 xl:col-span-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Properties</CardTitle>
+              <CardTitle className="text-lg">Template</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Template Name</Label>
-                <Input placeholder="Enter template name" />
-              </div>
+            <CardContent>
+              <Tabs defaultValue="institute">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="institute">Head</TabsTrigger>
+                  <TabsTrigger value="authority">Authority</TabsTrigger>
+                  <TabsTrigger value="people">Sign-off</TabsTrigger>
+                  <TabsTrigger value="look">Look</TabsTrigger>
+                </TabsList>
 
-              <div className="space-y-2">
-                <Label>Certificate Type</Label>
-                <Select>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {certificateTypes.map((type) => (
-                      <SelectItem key={type.value} value={type.value}>
-                        {type.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <TabsContent value="institute" className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>Template name</Label>
+                    <Input value={draft.name} placeholder="e.g. ADCA Completion" onChange={(e) => set("name", e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Branch code</Label>
+                    <Input value={draft.branchCode} onChange={(e) => set("branchCode", e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Institute name</Label>
+                    <Input value={draft.instituteName} onChange={(e) => set("instituteName", e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Address line 1</Label>
+                      <Input value={draft.addressLine1} onChange={(e) => set("addressLine1", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Address line 2</Label>
+                      <Input value={draft.addressLine2} onChange={(e) => set("addressLine2", e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input value={draft.title} onChange={(e) => set("title", e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Institute logo</Label>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => upload("image/*", (dataUrl) => set("logo", dataUrl))}>
+                        <Upload className="mr-2 h-3.5 w-3.5" />
+                        {draft.logo ? "Replace" : "Upload"}
+                      </Button>
+                      {draft.logo && (
+                        <Button variant="ghost" size="sm" onClick={() => set("logo", null)}>
+                          <X className="mr-1 h-3.5 w-3.5" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </TabsContent>
 
-              <div className="space-y-2">
-                <Label>Certificate Body</Label>
-                <Textarea 
-                  placeholder="Enter certificate text with placeholders like {student_name}, {father_name}, etc."
-                  rows={4}
-                />
-              </div>
+                <TabsContent value="authority" className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>Heading</Label>
+                    <Input value={draft.authorityHeading} onChange={(e) => set("authorityHeading", e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Authorising company</Label>
+                    <Input value={draft.authorityName} onChange={(e) => set("authorityName", e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Registration lines</Label>
+                    <Textarea
+                      rows={5}
+                      value={draft.authorityLines.join("\n")}
+                      onChange={(e) => set("authorityLines", e.target.value.split("\n"))}
+                    />
+                    <p className="text-xs text-muted-foreground">One line per row — CIN, UDYAM, ISO, registered office.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Website</Label>
+                      <Input value={draft.website} onChange={(e) => set("website", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input value={draft.email} onChange={(e) => set("email", e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Verification note</Label>
+                    <Input value={draft.verificationNote} onChange={(e) => set("verificationNote", e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Verification URL (QR)</Label>
+                    <Input value={draft.verifyBaseUrl} onChange={(e) => set("verifyBaseUrl", e.target.value)} />
+                    <p className="text-xs text-muted-foreground">
+                      The certificate number is appended, so each student's QR resolves to their own record.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Grading legend</Label>
+                    <Textarea rows={2} value={draft.gradeLegend} onChange={(e) => set("gradeLegend", e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Competency paragraph</Label>
+                    <Textarea rows={4} value={draft.competencyNote} onChange={(e) => set("competencyNote", e.target.value)} />
+                  </div>
+                </TabsContent>
 
-              <div className="flex items-center justify-between">
-                <Label>Show QR Code</Label>
-                <Switch defaultChecked />
-              </div>
+                <TabsContent value="people" className="space-y-4 pt-4">
+                  <div className="flex items-center justify-between">
+                    <Label>Signatories</Label>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={draft.signatories.length >= 4}
+                      onClick={() =>
+                        set("signatories", [...draft.signatories, { id: newId("sig"), name: "", role: "", signature: null }])
+                      }
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {draft.signatories.map((person, index) => (
+                    <div key={person.id} className="space-y-2 rounded-lg border p-3">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="flex-1"
+                          placeholder="Name"
+                          value={person.name}
+                          onChange={(e) => setSignatory(index, { name: e.target.value })}
+                        />
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => set("signatories", draft.signatories.filter((_, i) => i !== index))}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <Input
+                        placeholder="Designation, e.g. (Centre Head)"
+                        value={person.role}
+                        onChange={(e) => setSignatory(index, { role: e.target.value })}
+                      />
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => upload("image/*", (dataUrl) => setSignatory(index, { signature: dataUrl }))}
+                        >
+                          <Upload className="mr-2 h-3.5 w-3.5" />
+                          {person.signature ? "Replace signature" : "Upload signature"}
+                        </Button>
+                        {person.signature && (
+                          <Button size="sm" variant="ghost" onClick={() => setSignatory(index, { signature: null })}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
 
-              <div className="flex items-center justify-between">
-                <Label>Show Photo</Label>
-                <Switch />
-              </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <Label>Accreditation badges</Label>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={draft.badges.length >= 5}
+                      onClick={() => set("badges", [...draft.badges, { id: newId("badge"), label: "ISO", image: null }])}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {draft.badges.map((badge, index) => (
+                    <div key={badge.id} className="flex items-center gap-2">
+                      <Input
+                        className="flex-1"
+                        placeholder="Label"
+                        value={badge.label}
+                        onChange={(e) => setBadge(index, { label: e.target.value })}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => upload("image/*", (dataUrl) => setBadge(index, { image: dataUrl }))}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive"
+                        onClick={() => set("badges", draft.badges.filter((_, i) => i !== index))}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </TabsContent>
 
-              <div className="flex items-center justify-between">
-                <Label>Show School Seal</Label>
-                <Switch defaultChecked />
-              </div>
+                <TabsContent value="look" className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label>Border</Label>
+                    <Select value={draft.frame} onValueChange={(value) => set("frame", value as Template["frame"])}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FRAME_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Border colour</Label>
+                    <Select value={draft.frameColor} onValueChange={(value) => set("frameColor", value)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FRAME_COLORS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <span className="flex items-center gap-2">
+                              <span className="h-3 w-3 rounded-full" style={{ background: option.value }} />
+                              {option.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Text accent</Label>
+                    <Select value={draft.accent} onValueChange={(value) => set("accent", value)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ACCENT_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <span className="flex items-center gap-2">
+                              <span className="h-3 w-3 rounded-full" style={{ background: option.value }} />
+                              {option.label}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="flex items-center justify-between">
-                <Label>Decorative Border</Label>
-                <Switch defaultChecked />
-              </div>
+                  <div className="space-y-2">
+                    <Label>Pre-printed stationery</Label>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => upload("image/*", (dataUrl) => set("background", dataUrl))}>
+                        <Upload className="mr-2 h-3.5 w-3.5" />
+                        {draft.background ? "Replace artwork" : "Upload artwork"}
+                      </Button>
+                      {draft.background && (
+                        <Button variant="ghost" size="sm" onClick={() => set("background", null)}>
+                          <X className="mr-1 h-3.5 w-3.5" />
+                          Use drawn border
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Upload your own blank certificate (A4 portrait) to replace the drawn guilloche border entirely.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <Label>Show logo</Label>
+                    <Switch checked={draft.showLogo} onCheckedChange={(value) => set("showLogo", value)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label>Show verification QR</Label>
+                    <Switch checked={draft.showQr} onCheckedChange={(value) => set("showQr", value)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label>Show award seal</Label>
+                    <Switch checked={draft.showSeal} onCheckedChange={(value) => set("showSeal", value)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label>Guilloche watermark</Label>
+                    <Switch checked={draft.showWatermark} onCheckedChange={(value) => set("showWatermark", value)} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label>Publish as active</Label>
+                    <Switch
+                      checked={draft.status === "active"}
+                      onCheckedChange={(value) => set("status", value ? "active" : "draft")}
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">Saved Templates</CardTitle>
-                <Button size="sm" variant="ghost">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
+            <CardHeader className="flex-row items-center justify-between space-y-0">
+              <CardTitle className="text-lg">Saved templates</CardTitle>
+              <Button size="sm" variant="ghost" onClick={startNew}>
+                <Plus className="h-4 w-4" />
+              </Button>
             </CardHeader>
             <CardContent className="space-y-2">
-              {savedTemplates.map((template) => (
+              {items.length === 0 && <p className="text-sm text-muted-foreground">No templates saved yet.</p>}
+              {items.map((template) => (
                 <div
                   key={template.id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50"
+                  className={`flex items-center justify-between rounded-lg border p-3 hover:bg-muted/50 ${
+                    editingId === template.id ? "border-primary" : ""
+                  }`}
                 >
-                  <div>
+                  <button type="button" className="flex-1 text-left" onClick={() => load(template)}>
                     <p className="text-sm font-medium">{template.name}</p>
-                    <p className="text-xs text-muted-foreground">{template.type}</p>
-                  </div>
+                    <p className="text-xs capitalize text-muted-foreground">
+                      {template.frame} · {template.signatories.length} signatories
+                    </p>
+                  </button>
                   <div className="flex items-center gap-1">
-                    <Badge variant={template.status === "active" ? "default" : "secondary"}>
-                      {template.status}
-                    </Badge>
-                    <Button size="icon" variant="ghost" className="h-7 w-7">
+                    <Badge variant={template.status === "active" ? "default" : "secondary"}>{template.status}</Badge>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => duplicate(template)}>
                       <Copy className="h-3 w-3" />
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-destructive"
+                      onClick={() => setDeleting(template)}
+                    >
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
@@ -283,6 +487,35 @@ export default function CertificateTemplate() {
           </Card>
         </div>
       </div>
+
+      <AlertDialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this template?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleting?.name} will no longer be selectable in Generate Certificates.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!deleting) return;
+                remove(deleting.id);
+                if (editingId === deleting.id) {
+                  setEditingId(null);
+                  setDraft(blankCertificateTemplate());
+                }
+                toast({ title: "Template deleted", description: `${deleting.name} was removed.` });
+                setDeleting(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
