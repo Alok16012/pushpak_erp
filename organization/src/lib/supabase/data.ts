@@ -608,6 +608,45 @@ export async function createBranch(organizationId: string, input: Record<string,
   return { success: true, data };
 }
 
+/**
+ * A branch is spread over three tables. PostgREST has no transaction across
+ * requests, so if a follow-up insert fails the branch row is removed again -
+ * otherwise its unique code would block the next attempt.
+ */
+export async function createBranchWithDetails(
+  organizationId: string,
+  input: {
+    branch: Record<string, unknown>;
+    address: Record<string, unknown>;
+    director: Record<string, unknown>;
+  },
+) {
+  const { data: branch, error } = await supabase
+    .from("branches")
+    .insert({ ...input.branch, organizationId })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+
+  const branchId = branch.id as string;
+  try {
+    const { error: addressError } = await supabase
+      .from("branch_addresses")
+      .insert({ ...input.address, branchId });
+    if (addressError) throw new Error(addressError.message);
+
+    const { error: directorError } = await supabase
+      .from("branch_directors")
+      .insert({ ...input.director, branchId });
+    if (directorError) throw new Error(directorError.message);
+  } catch (err) {
+    await supabase.from("branches").delete().eq("id", branchId);
+    throw err;
+  }
+
+  return { success: true, data: branch };
+}
+
 export async function updateBranch(id: string, organizationId: string, input: Record<string, unknown>) {
   const { data, error } = await supabase.from("branches").update(input).eq("id", id).eq("organizationId", organizationId).select("*").single();
   if (error) throw new Error(error.message);

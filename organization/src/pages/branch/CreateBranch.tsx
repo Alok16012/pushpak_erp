@@ -12,7 +12,7 @@ import { BranchDocumentsSection } from "@/components/branch/BranchDocumentsSecti
 import { BranchAdminSection } from "@/components/branch/BranchAdminSection";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { createBranch } from "@/lib/supabase/data";
+import { createBranchWithDetails, getBranches } from "@/lib/supabase/data";
 
 interface Branch {
   id: string;
@@ -31,6 +31,7 @@ const REQUIRED: Array<[string, string]> = [
   ["city", "City"],
   ["pincode", "Pincode"],
   ["phone", "Phone"],
+  ["email", "Email"],
   ["directorName", "Director Name"],
   ["directorGender", "Gender"],
   ["directorDOB", "Date of Birth"],
@@ -38,6 +39,10 @@ const REQUIRED: Array<[string, string]> = [
   ["adminUsername", "Admin Username"],
   ["adminPassword", "Admin Password"],
 ];
+
+/** Select values arrive slugged ("uttar-pradesh"); the tables store them as text. */
+const titleCase = (value: string) =>
+  value.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default function CreateBranch() {
   const { user } = useAuth();
@@ -49,14 +54,14 @@ export default function CreateBranch() {
   useEffect(() => {
     const fetchBranches = async () => {
       try {
-        const body = await api<{ items: Branch[] }>("/core/branches");
-        setBranches(body.data.items);
+        const result = await getBranches(user?.organizationId || null);
+        setBranches((result.data ?? []) as Branch[]);
       } catch {
         // start with empty list on failure
       }
     };
     fetchBranches();
-  }, []);
+  }, [user?.organizationId]);
 
   // The sections are uncontrolled, so the form itself is the source of truth -
   // `FormData` reads every named input, textarea, Select and Switch in one go.
@@ -95,24 +100,59 @@ export default function CreateBranch() {
       return;
     }
     setSaving(true);
-    createBranch(user?.organizationId || "", {
-      name: value("branchName"),
-      code,
-      branchType: value("branchType") || "CENTER",
-      city: value("city"),
-      state: value("state").replace(/\b\w/g, (c) => c.toUpperCase()),
-      students: 0,
-      staff: Number(value("numFaculty")) || 0,
-      revenue: 0,
-      status: data.get("activeStatus") ? "active" : "inactive",
+    // Branch details live across three tables: the branch itself, its address
+    // and its director. Enum columns take the uppercase form of the select value.
+    createBranchWithDetails(user.organizationId, {
+      branch: {
+        name: value("branchName"),
+        code,
+        branchType: (value("branchType") || "sub").toUpperCase(),
+        instituteType: (value("instituteType") || "other").toUpperCase(),
+        academicYear: value("academicYear"),
+        establishedYear: Number(value("establishedYear")) || null,
+        website: value("website") || null,
+        description: value("description") || null,
+        phone: value("phone"),
+        altPhone: value("altPhone") || null,
+        whatsappNumber: value("whatsappNumber") || null,
+        email: value("email"),
+        numComputers: Number(value("numComputers")) || 0,
+        numFaculty: Number(value("numFaculty")) || 0,
+        numRooms: Number(value("numRooms")) || 0,
+        isActive: Boolean(data.get("activeStatus")),
+        onlineEnrollment: Boolean(data.get("onlineEnrollment")),
+        smsNotifications: Boolean(data.get("smsNotifications")),
+        emailNotifications: Boolean(data.get("emailNotifications")),
+      },
+      address: {
+        streetAddress: value("address"),
+        state: titleCase(value("state")),
+        district: value("district"),
+        block: value("block") || null,
+        city: value("city"),
+        pincode: value("pincode"),
+        latitude: value("latitude") ? Number(value("latitude")) : null,
+        longitude: value("longitude") ? Number(value("longitude")) : null,
+        country: titleCase(value("country")) || "India",
+      },
+      director: {
+        name: value("directorName"),
+        gender: value("directorGender").toUpperCase(),
+        dob: new Date(value("directorDOB")).toISOString(),
+        bloodGroup: value("directorBloodGroup") || null,
+      },
     }).then(() => {
       toast({
         title: "Branch created",
         description: `${value("branchName")} (${code}) was added to the register.`,
       });
       navigate("/branch/view");
-    }).catch(() => {
-      toast({ title: "Failed to create branch", variant: "destructive" });
+    }).catch((error: unknown) => {
+      toast({
+        title: "Failed to create branch",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
       setSaving(false);
     });
   };
