@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getEnquiries, createEnquiry, updateEnquiry } from "@/lib/supabase/data";
+import { getEnquiries, createEnquiry, updateEnquiry, getBranches } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 
 const records = [
@@ -106,6 +106,11 @@ export default function EnquiriesWorkspace() {
   const { toast } = useToast();
   const { user } = useAuth();
   const branchId = user?.branchId || "";
+  // Org-level accounts are not tied to a branch, so they pick the one the
+  // visitor is checking in to before the enquiry can be written.
+  const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [pickedBranchId, setPickedBranchId] = useState("");
+  const targetBranchId = branchId || pickedBranchId;
   const [mode, setMode] = useState<"list" | "form">("list");
   const [stage, setStage] = useState(0);
   const [query, setQuery] = useState("");
@@ -222,6 +227,24 @@ export default function EnquiriesWorkspace() {
     loadEnquiries();
     return () => { cancelled = true; };
   }, [toast]);
+  useEffect(() => {
+    if (branchId) return;
+    let cancelled = false;
+    getBranches(user?.organizationId || null)
+      .then((result) => {
+        if (cancelled) return;
+        const list = (result.data ?? []).map((b: Record<string, unknown>) => ({
+          id: b.id as string,
+          name: b.name as string,
+        }));
+        setBranches(list);
+        if (list.length === 1) setPickedBranchId(list[0].id);
+      })
+      .catch(() => {
+        if (!cancelled) setBranches([]);
+      });
+    return () => { cancelled = true; };
+  }, [branchId, user?.organizationId]);
   const save = () =>
     toast({
       title: "Draft saved",
@@ -238,7 +261,7 @@ export default function EnquiriesWorkspace() {
             Delivery: "DELIVERY",
           } as Record<string, string>
         )[draft.purpose] || "OTHER";
-      const created = await createEnquiry(user?.branchId, {
+      const created = await createEnquiry(targetBranchId, {
             visitorName: draft.name,
             phone: draft.phone,
             email: draft.email || undefined,
@@ -627,6 +650,33 @@ export default function EnquiriesWorkspace() {
                   title="Review & register"
                   subtitle="Add context for the team, then complete check-in."
                 >
+                  {!branchId && (
+                    <div className="sm:col-span-2">
+                      <Field label="Branch *">
+                        <Select
+                          value={pickedBranchId}
+                          onValueChange={setPickedBranchId}
+                        >
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                branches.length
+                                  ? "Select the branch for this visit"
+                                  : "No branches available"
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {branches.map((b) => (
+                              <SelectItem key={b.id} value={b.id}>
+                                {b.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </div>
+                  )}
                   <div className="sm:col-span-2">
                     <Field label="Reception notes">
                       <Textarea
@@ -671,7 +721,7 @@ export default function EnquiriesWorkspace() {
                   <ArrowRight />
                 </Button>
               ) : (
-                <Button onClick={submit}>
+                <Button onClick={submit} disabled={!targetBranchId}>
                   <Check />
                   Register & check in
                 </Button>

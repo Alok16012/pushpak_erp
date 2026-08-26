@@ -507,7 +507,7 @@ export async function getEnquiries(branchId: string | null, page = 1, limit = 20
 }
 
 export async function createEnquiry(branchId: string, input: Record<string, unknown>) {
-  if (!branchId) throw new Error("No branch linked to this account. Ask an admin to set your branch before registering visitors.");
+  if (!branchId) throw new Error("Select a branch for this visit before registering the visitor.");
   const payload = {
     ...input,
     branchId,
