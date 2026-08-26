@@ -6,6 +6,8 @@ type User = { id: string; name: string; email: string; role: string; organizatio
 
 type Auth = {
   user: User | null;
+  branchId: string | null;
+  organizationId: string | null;
   view: "admin" | "franchise" | "student";
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -60,7 +62,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw new Error(error.message);
   };
 
-  return <Context.Provider value={{ user, view, login, logout, loading }}>{children}</Context.Provider>;
+  return (
+    <Context.Provider
+      value={{
+        user,
+        branchId: user?.branchId || null,
+        organizationId: user?.organizationId || null,
+        view,
+        login,
+        logout,
+        loading,
+      }}
+    >
+      {children}
+    </Context.Provider>
+  );
 }
 
 export const useAuth = () => {

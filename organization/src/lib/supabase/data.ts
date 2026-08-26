@@ -507,7 +507,14 @@ export async function getEnquiries(branchId: string | null, page = 1, limit = 20
 }
 
 export async function createEnquiry(branchId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("visit_enquiries").insert({ ...input, branchId, visitDate: new Date().toISOString(), visitTime: new Date().toTimeString().slice(0, 5) }).select("*").single();
+  if (!branchId) throw new Error("No branch linked to this account. Ask an admin to set your branch before registering visitors.");
+  const payload = {
+    ...input,
+    branchId,
+    visitDate: input.visitDate || new Date().toISOString(),
+    visitTime: input.visitTime || new Date().toTimeString().slice(0, 5),
+  };
+  const { data, error } = await supabase.from("visit_enquiries").insert(payload).select("*").single();
   if (error) throw new Error(error.message);
   return { success: true, data };
 }

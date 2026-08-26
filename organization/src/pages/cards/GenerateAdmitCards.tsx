@@ -64,7 +64,6 @@ export default function GenerateAdmitCards() {
 
   const [examValue, setExamValue] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [examValue, setExamValue] = useState("");
   const [classFilter, setClassFilter] = useState("all");
   const [sectionFilter, setSectionFilter] = useState("all");
   const [feeFilter, setFeeFilter] = useState("all");
