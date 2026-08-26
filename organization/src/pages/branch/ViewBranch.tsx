@@ -9,14 +9,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Building2, Users, GraduationCap, IndianRupee } from "lucide-react";
+import { Plus, Building2, Users, GraduationCap, IndianRupee, CalendarClock } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getBranches, updateBranch, deleteBranch } from "@/lib/supabase/data";
+import { getBranchesWithStats, updateBranchWithDetails, deleteBranch } from "@/lib/supabase/data";
 import { printHtml } from "@/lib/export";
 
+/**
+ * The register row: the branch columns plus the bits gathered from its
+ * address, licence and student/fee counts.
+ */
 interface Branch {
   id: string;
   name: string;
@@ -27,6 +31,7 @@ interface Branch {
   students: number;
   staff: number;
   revenue: number;
+  expiryDate: string;
   status: "active" | "inactive";
 }
 
@@ -60,14 +65,14 @@ const columns: Column<Branch>[] = [
     key: "city",
     header: "Location",
     cell: (branch) => (
-      <span>{branch.city}, {branch.state}</span>
+      <span>{[branch.city, branch.state].filter(Boolean).join(", ") || "—"}</span>
     ),
   },
   {
     key: "students",
     header: "Students",
     sortable: true,
-    cell: (branch) => <span className="font-medium">{branch.students.toLocaleString()}</span>,
+    cell: (branch) => <span className="font-medium">{(branch.students ?? 0).toLocaleString()}</span>,
   },
   {
     key: "staff",
@@ -78,13 +83,14 @@ const columns: Column<Branch>[] = [
     key: "revenue",
     header: "Revenue",
     sortable: true,
-    cell: (branch) => <span className="font-medium text-success">Rs.{(branch.revenue / 100000).toFixed(1)}L</span>,
+    cell: (branch) => <span className="font-medium text-success">Rs.{((branch.revenue ?? 0) / 100000).toFixed(1)}L</span>,
   },
   {
      key: "expiryDate",
      header: "Expiry",
      sortable: true,
      cell: (branch) => {
+       if (!branch.expiryDate) return <span className="text-muted-foreground">—</span>;
        const expiry = new Date(branch.expiryDate);
        const today = new Date();
        const isExpired = expiry < today;
@@ -93,7 +99,7 @@ const columns: Column<Branch>[] = [
          <div className="flex items-center gap-1">
            <CalendarClock className={`h-4 w-4 ${isExpired ? 'text-destructive' : isExpiringSoon ? 'text-warning' : 'text-muted-foreground'}`} />
            <span className={isExpired ? 'text-destructive' : isExpiringSoon ? 'text-warning' : ''}>
-             {branch.expiryDate}
+             {expiry.toLocaleDateString()}
            </span>
          </div>
        );
@@ -119,16 +125,20 @@ export default function ViewBranch() {
   useEffect(() => {
     const fetchBranches = async () => {
       try {
-        const body = await getBranches(user?.organizationId || null);
-        setBranchesData(body.data);
-      } catch {
-        toast({ title: "Failed to load branches", variant: "destructive" });
+        const body = await getBranchesWithStats(user?.organizationId || null);
+        setBranchesData(body.data as unknown as Branch[]);
+      } catch (error) {
+        toast({
+          title: "Failed to load branches",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
       } finally {
         setLoading(false);
       }
     };
     fetchBranches();
-  }, [toast]);
+  }, [toast, user?.organizationId]);
 
   const certificate = (branch: Branch) =>
     printHtml(
@@ -164,12 +174,24 @@ export default function ViewBranch() {
       return;
     }
     try {
-      await updateBranch(editing.id, user?.organizationId || "", editing);
+      await updateBranchWithDetails(editing.id, user?.organizationId || "", {
+        branch: {
+          name: editing.name,
+          branchType: editing.branchType,
+          numFaculty: editing.staff,
+          isActive: editing.status === "active",
+        },
+        address: { city: editing.city, state: editing.state },
+      });
       setBranchesData((prev) => prev.map((b) => (b.id === editing.id ? editing : b)));
       toast({ title: "Branch updated", description: `${editing.name} was saved.` });
       setEditing(null);
-    } catch {
-      toast({ title: "Failed to update branch", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to update branch",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -185,9 +207,9 @@ export default function ViewBranch() {
     setPendingDelete(null);
   };
 
-  const totalStudents = branchesData.reduce((sum, b) => sum + b.students, 0);
-  const totalStaff = branchesData.reduce((sum, b) => sum + b.staff, 0);
-  const totalRevenue = branchesData.reduce((sum, b) => sum + b.revenue, 0);
+  const totalStudents = branchesData.reduce((sum, b) => sum + (b.students ?? 0), 0);
+  const totalStaff = branchesData.reduce((sum, b) => sum + (b.staff ?? 0), 0);
+  const totalRevenue = branchesData.reduce((sum, b) => sum + (b.revenue ?? 0), 0);
   const activeBranches = branchesData.filter(b => b.status === "active").length;
 
   if (loading) {
@@ -264,10 +286,10 @@ export default function ViewBranch() {
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               {[
                 ["Branch type", details.branchType],
-                ["Location", `${details.city}, ${details.state}`],
-                ["Students", details.students.toLocaleString()],
-                ["Staff", String(details.staff)],
-                ["Revenue", `Rs.${(details.revenue / 100000).toFixed(1)}L`],
+                ["Location", [details.city, details.state].filter(Boolean).join(", ") || "—"],
+                ["Students", (details.students ?? 0).toLocaleString()],
+                ["Staff", String(details.staff ?? 0)],
+                ["Revenue", `Rs.${((details.revenue ?? 0) / 100000).toFixed(1)}L`],
                 ["Status", details.status === "active" ? "Active" : "Inactive"],
               ].map(([label, value]) => (
                 <div key={label}>
@@ -317,9 +339,9 @@ export default function ViewBranch() {
                 <Select value={editing.branchType} onValueChange={(value) => setEditing({ ...editing, branchType: value })}>
                   <SelectTrigger id="edit-branchType"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="HEADQUARTERS">Headquarters</SelectItem>
+                    <SelectItem value="MAIN">Main Branch</SelectItem>
+                    <SelectItem value="SUB">Sub Branch</SelectItem>
                     <SelectItem value="FRANCHISE">Franchise</SelectItem>
-                    <SelectItem value="CENTER">Center</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -347,8 +369,8 @@ export default function ViewBranch() {
           <DialogHeader>
             <DialogTitle>Delete {pendingDelete?.name}?</DialogTitle>
             <DialogDescription>
-              This removes the branch from the register along with its {pendingDelete?.students.toLocaleString()} students
-              and {pendingDelete?.staff} staff from the totals above.
+              This removes the branch from the register along with its {(pendingDelete?.students ?? 0).toLocaleString()} students
+              and {pendingDelete?.staff ?? 0} staff from the totals above.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

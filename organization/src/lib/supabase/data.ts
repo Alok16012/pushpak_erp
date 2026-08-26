@@ -609,7 +609,56 @@ export async function createBranch(organizationId: string, input: Record<string,
 }
 
 /**
- * A branch is spread over three tables. PostgREST has no transaction across
+ * The branch list is assembled from four tables: the branch row itself, its
+ * address, its licence expiry and the counts the register shows per branch.
+ */
+export async function getBranchesWithStats(organizationId: string | null) {
+  const { data: branches } = await getBranches(organizationId);
+  const ids = (branches as Record<string, unknown>[]).map((b) => b.id as string);
+  if (!ids.length) return { success: true, data: [] as Record<string, unknown>[] };
+
+  const [addresses, licenses, students, invoices] = await Promise.all([
+    supabase.from("branch_addresses").select("branchId, city, state").in("branchId", ids),
+    supabase.from("branch_licenses").select("branchId, expiryDate").in("branchId", ids),
+    supabase.from("students").select("id, branchId").in("branchId", ids).is("deletedAt", null),
+    supabase.from("fee_invoices").select("branchId, paidAmount").in("branchId", ids),
+  ]);
+
+  const addressFor = new Map<string, { city?: string; state?: string }>();
+  for (const row of addresses.data || []) addressFor.set(row.branchId as string, row);
+  const expiryFor = new Map<string, string>();
+  for (const row of licenses.data || []) expiryFor.set(row.branchId as string, row.expiryDate as string);
+  const studentsFor = new Map<string, number>();
+  for (const row of students.data || []) {
+    const key = row.branchId as string;
+    studentsFor.set(key, (studentsFor.get(key) || 0) + 1);
+  }
+  const revenueFor = new Map<string, number>();
+  for (const row of invoices.data || []) {
+    const key = row.branchId as string;
+    revenueFor.set(key, (revenueFor.get(key) || 0) + (Number(row.paidAmount) || 0));
+  }
+
+  return {
+    success: true,
+    data: (branches as Record<string, unknown>[]).map((b) => {
+      const id = b.id as string;
+      return {
+        ...b,
+        city: addressFor.get(id)?.city || "",
+        state: addressFor.get(id)?.state || "",
+        expiryDate: expiryFor.get(id) || "",
+        students: studentsFor.get(id) || 0,
+        staff: Number(b.numFaculty) || 0,
+        revenue: revenueFor.get(id) || 0,
+        status: b.isActive ? "active" : "inactive",
+      };
+    }),
+  };
+}
+
+/**
+ * A branch is spread over several tables. PostgREST has no transaction across
  * requests, so if a follow-up insert fails the branch row is removed again -
  * otherwise its unique code would block the next attempt.
  */
@@ -619,6 +668,7 @@ export async function createBranchWithDetails(
     branch: Record<string, unknown>;
     address: Record<string, unknown>;
     director: Record<string, unknown>;
+    license?: Record<string, unknown>;
   },
 ) {
   const { data: branch, error } = await supabase
@@ -639,6 +689,13 @@ export async function createBranchWithDetails(
       .from("branch_directors")
       .insert({ ...input.director, branchId });
     if (directorError) throw new Error(directorError.message);
+
+    if (input.license) {
+      const { error: licenseError } = await supabase
+        .from("branch_licenses")
+        .insert({ ...input.license, branchId });
+      if (licenseError) throw new Error(licenseError.message);
+    }
   } catch (err) {
     await supabase.from("branches").delete().eq("id", branchId);
     throw err;
@@ -651,6 +708,23 @@ export async function updateBranch(id: string, organizationId: string, input: Re
   const { data, error } = await supabase.from("branches").update(input).eq("id", id).eq("organizationId", organizationId).select("*").single();
   if (error) throw new Error(error.message);
   return { success: true, data };
+}
+
+/** City and state live on branch_addresses, the rest on the branch row itself. */
+export async function updateBranchWithDetails(
+  id: string,
+  organizationId: string,
+  input: { branch: Record<string, unknown>; address?: Record<string, unknown> },
+) {
+  const result = await updateBranch(id, organizationId, input.branch);
+  if (input.address) {
+    const { error } = await supabase
+      .from("branch_addresses")
+      .update(input.address)
+      .eq("branchId", id);
+    if (error) throw new Error(error.message);
+  }
+  return result;
 }
 
 export async function deleteBranch(id: string) {

@@ -141,6 +141,15 @@ export default function CreateBranch() {
         dob: new Date(value("directorDOB")).toISOString(),
         bloodGroup: value("directorBloodGroup") || null,
       },
+      // The registration input is a month picker, so it needs a day to parse.
+      license: value("expiryDate")
+        ? {
+            registrationDate: new Date(`${value("registrationDate") || value("expiryDate").slice(0, 7)}-01`).toISOString(),
+            validDate: value("validDate") ? new Date(value("validDate")).toISOString() : null,
+            expiryDate: new Date(value("expiryDate")).toISOString(),
+            referralCode: value("referralCode") || null,
+          }
+        : undefined,
     }).then(() => {
       toast({
         title: "Branch created",
