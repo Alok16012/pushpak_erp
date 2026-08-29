@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 
 interface FeeInvoice {
   id: string;
@@ -36,6 +37,7 @@ const columns: Column<FeeInvoice>[] = [
 
 export default function FeesPage() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [invoices, setInvoices] = useState<FeeInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<FeeInvoice | null>(null);
@@ -43,9 +45,8 @@ export default function FeesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/fees/invoices");
-      if (!res.ok) throw new Error();
-      setInvoices(await res.json());
+      const { data } = await supabase.from("fee_invoices").select("*, student:profiles(first_name, last_name, enrollment_no), payments(*)").order("created_at", { ascending: false });
+      if (data) setInvoices(data as FeeInvoice[]);
     } catch {
       toast({ title: "Could not load invoices", variant: "destructive" });
     } finally {
@@ -53,17 +54,32 @@ export default function FeesPage() {
     }
   };
 
-  useEffect(() => { void load(); }, [toast]);
+  useEffect(() => { void load(); }, [supabase]);
 
   const save = async () => {
     if (!editing) return;
     try {
-      const res = await fetch("/api/fees/invoices", {
-        method: editing.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: editing.description, amount: editing.amount, due_date: editing.due_date, student_id: editing.student.id }),
-      });
-      if (!res.ok) throw new Error();
+      let error;
+      if (editing.id) {
+        const result = await supabase.from("fee_invoices").update({
+          description: editing.description,
+          amount: editing.amount,
+          due_date: editing.due_date,
+          student_id: editing.student.id,
+        }).eq("id", editing.id);
+        error = result.error;
+      } else {
+        const result = await (supabase.from("fee_invoices") as any).insert({
+          description: editing.description,
+          amount: editing.amount,
+          due_date: editing.due_date,
+          student_id: editing.student.id,
+          invoice_no: `INV-${Date.now()}`,
+          status: "DUE",
+        });
+        error = result.error;
+      }
+      if (error) throw error;
       toast({ title: editing.id ? "Invoice updated" : "Invoice created" });
       setEditing(null);
       void load();

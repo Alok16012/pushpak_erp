@@ -1,7 +1,7 @@
 [build]
   base = "nextjs-app"
   command = "npm ci && npm run build"
-  publish = ".next"
+  publish = "out"
 
 [build.environment]
   NODE_VERSION = "22.12.0"

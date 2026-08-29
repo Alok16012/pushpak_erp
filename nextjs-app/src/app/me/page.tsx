@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, User, Mail, Phone, BookOpen, Calendar, IndianRupee, FileText } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
+import { createClient } from "@/lib/supabase/client";
 
 interface FeeSummary {
   total: number;
@@ -25,6 +26,7 @@ interface AttendanceSummary {
 
 export default function StudentPortal() {
   const { profile } = useAuth();
+  const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [fees, setFees] = useState<FeeSummary>({ total: 0, paid: 0, pending: 0 });
   const [attendance, setAttendance] = useState<AttendanceSummary>({ present: 0, absent: 0, total: 0 });
@@ -35,11 +37,20 @@ export default function StudentPortal() {
       setLoading(true);
       try {
         const [feesRes, attRes] = await Promise.all([
-          fetch(`/api/fees/students/${profile.id}`),
-          fetch(`/api/attendance?studentId=${profile.id}`),
+          supabase.from("fee_invoices").select("id, amount, payments(*)").eq("student_id", profile.id),
+          supabase.from("attendance_records").select("status").eq("student_id", profile.id),
         ]);
-        if (feesRes.ok) setFees(await feesRes.json());
-        if (attRes.ok) setAttendance(await attRes.json());
+        if (feesRes.data) {
+          const invs = feesRes.data as any[];
+          const total = invs.reduce((s, i) => s + Number(i.amount), 0);
+          const paid = invs.reduce((s, i) => s + (i.payments || []).reduce((ps: number, p: any) => ps + Number(p.amount), 0), 0);
+          setFees({ total, paid, pending: total - paid });
+        }
+        if (attRes.data) {
+          const rows = attRes.data as any[];
+          const present = rows.filter(r => r.status === "PRESENT" || r.status === "LATE").length;
+          setAttendance({ present, absent: rows.filter(r => r.status === "ABSENT").length, total: rows.length });
+        }
       } catch {
         // silent
       } finally {
@@ -47,7 +58,7 @@ export default function StudentPortal() {
       }
     };
     void load();
-  }, [profile]);
+  }, [profile, supabase]);
 
   if (loading) {
     return (

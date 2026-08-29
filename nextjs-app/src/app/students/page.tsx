@@ -30,6 +30,7 @@ import {
 import { Plus, Download, Upload } from "lucide-react";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 
 interface Student {
   id: string;
@@ -100,34 +101,29 @@ const columns: Column<Student>[] = [
 
 export default function StudentsPage() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const res = await fetch("/api/students");
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        setStudents(
-          data.map((s: any) => ({
-            id: s.id,
-            name: [s.first_name, s.middle_name, s.last_name]
-              .filter(Boolean)
-              .join(" "),
-            rollNo: s.enrollment_no || s.application_no || "Pending",
-            email: s.email || "—",
-            phone: s.phone,
-            course: s.course?.name || "Not assigned",
-            batch: s.batch?.name || "Not assigned",
-            status: !s.is_active
-              ? "inactive"
-              : s.admission_status === "APPROVED"
-                ? "active"
-                : "pending",
-            admissionDate: s.admission_date,
-          }))
-        );
+        const { data } = await supabase.from("students").select("*, course:courses(name), batch:batches(name)").order("created_at", { ascending: false });
+        if (data) {
+          setStudents(
+            data.map((s: any) => ({
+              id: s.id,
+              name: [s.first_name, s.middle_name, s.last_name].filter(Boolean).join(" "),
+              rollNo: s.enrollment_no || s.application_no || "Pending",
+              email: s.email || "—",
+              phone: s.phone,
+              course: s.course?.name || "Not assigned",
+              batch: s.batch?.name || "Not assigned",
+              status: !s.is_active ? "inactive" : s.admission_status === "APPROVED" ? "active" : "pending",
+              admissionDate: s.admission_date,
+            }))
+          );
+        }
       } catch {
         toast({
           title: "Could not load students",
@@ -138,7 +134,7 @@ export default function StudentsPage() {
       }
     };
     void load();
-  }, [toast]);
+  }, [supabase, toast]);
 
   const exportCsv = () => {
     const rows = [
@@ -172,20 +168,37 @@ export default function StudentsPage() {
     },
   ];
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editing) return;
-    setStudents((list) =>
-      list.map((s) => (s.id === editing.id ? editing : s))
-    );
-    toast({ title: "Student updated" });
-    setEditing(null);
+    const { error } = await supabase
+      .from("students")
+      .update({
+        first_name: editing.name.split(" ")[0],
+        email: editing.email,
+        phone: editing.phone,
+      })
+      .eq("id", editing.id);
+    if (!error) {
+      setStudents((list) =>
+        list.map((s) => (s.id === editing.id ? editing : s))
+      );
+      toast({ title: "Student updated" });
+      setEditing(null);
+    } else {
+      toast({ title: "Update failed", variant: "destructive" });
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!pendingDelete) return;
-    setStudents((list) => list.filter((s) => s.id !== pendingDelete.id));
-    toast({ title: "Student removed" });
-    setPendingDelete(null);
+    const { error } = await supabase.from("students").delete().eq("id", pendingDelete.id);
+    if (!error) {
+      setStudents((list) => list.filter((s) => s.id !== pendingDelete.id));
+      toast({ title: "Student removed" });
+      setPendingDelete(null);
+    } else {
+      toast({ title: "Delete failed", variant: "destructive" });
+    }
   };
 
   return (

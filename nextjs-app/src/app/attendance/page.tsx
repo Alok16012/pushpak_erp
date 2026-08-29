@@ -11,6 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { UsersRound, Loader2 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 interface AttendanceRecord {
   id: string;
@@ -21,6 +22,7 @@ interface AttendanceRecord {
 }
 
 export default function AttendancePage() {
+  const supabase = createClient();
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
@@ -29,8 +31,22 @@ export default function AttendancePage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/attendance?date=${date}`);
-      if (res.ok) setRecords(await res.json());
+      const { data } = await supabase.from("students").select("id, first_name, last_name, enrollment_no, batch:batches(name)");
+      if (data) {
+        const mapped = data.map((s: any) => ({
+          id: s.id,
+          student: {
+            id: s.id,
+            firstName: s.first_name,
+            lastName: s.last_name,
+            enrollmentNo: s.enrollment_no,
+          },
+          course: null,
+          batch: s.batch,
+          attendance: [],
+        }));
+        setRecords(mapped);
+      }
     } catch {
       // silent
     } finally {
@@ -38,25 +54,31 @@ export default function AttendancePage() {
     }
   };
 
-  useEffect(() => { void load(); }, [date]);
-
-  const updateStatus = (studentId: string, status: string) => {
-    setRecords(list => list.map(r => {
-      if (r.id !== studentId) return r;
-      return { ...r, attendance: [{ status }] };
-    }));
+  const updateStatus = (recordId: string, status: string) => {
+    setRecords(prev =>
+      prev.map(r =>
+        r.id === recordId
+          ? { ...r, attendance: [{ status }] }
+          : r
+      )
+    );
   };
+
+  useEffect(() => { void load(); }, [date]);
 
   const submitAttendance = async () => {
     setSaving(true);
     try {
-      const payload = { date, records: records.map(r => ({ studentId: r.id, status: r.attendance[0]?.status || "PRESENT" })) };
-      const res = await fetch("/api/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error();
+      const payload = records.map(r => ({
+        student_id: r.id,
+        date,
+        status: r.attendance[0]?.status || "PRESENT",
+        marked_by_id: r.id,
+        branch_id: null,
+      }));
+      for (const rec of payload) {
+        await (supabase.from("attendance_records") as any).upsert(rec, { onConflict: "student_id,date" });
+      }
       alert("Attendance saved successfully!");
     } catch {
       alert("Failed to save attendance");

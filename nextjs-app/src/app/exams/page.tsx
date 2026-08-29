@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 
 interface Exam {
   id: string;
@@ -35,6 +36,7 @@ const columns: Column<Exam>[] = [
 
 export default function ExamsPage() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Exam | null>(null);
@@ -42,9 +44,8 @@ export default function ExamsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/exams");
-      if (!res.ok) throw new Error();
-      setExams(await res.json());
+      const { data } = await supabase.from("exams").select("*, course:courses(id, name), results:exam_results(student:profiles(first_name, last_name, enrollment_no), marks)").order("exam_date", { ascending: false });
+      if (data) setExams(data as Exam[]);
     } catch {
       toast({ title: "Could not load exams", variant: "destructive" });
     } finally {
@@ -52,17 +53,31 @@ export default function ExamsPage() {
     }
   };
 
-  useEffect(() => { void load(); }, [toast]);
+  useEffect(() => { void load(); }, [supabase]);
 
   const save = async () => {
     if (!editing) return;
     try {
-      const res = await fetch("/api/exams", {
-        method: editing.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editing),
-      });
-      if (!res.ok) throw new Error();
+      let error;
+      if (editing.id) {
+        const result = await supabase.from("exams").update({
+          name: editing.name,
+          exam_date: editing.exam_date,
+          total_marks: editing.total_marks,
+          course_id: editing.course?.id,
+        }).eq("id", editing.id);
+        error = result.error;
+      } else {
+        const result = await (supabase.from("exams") as any).insert({
+          name: editing.name,
+          exam_date: editing.exam_date,
+          total_marks: editing.total_marks,
+          course_id: editing.course?.id,
+          status: "DRAFT",
+        });
+        error = result.error;
+      }
+      if (error) throw error;
       toast({ title: editing.id ? "Exam updated" : "Exam created" });
       setEditing(null);
       void load();
@@ -73,12 +88,8 @@ export default function ExamsPage() {
 
   const publishResults = async (examId: string) => {
     try {
-      const res = await fetch(`/api/exams/${examId}/results`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results: [], publish: true }),
-      });
-      if (!res.ok) throw new Error();
+      const { error } = await supabase.from("exams").update({ status: "PUBLISHED" }).eq("id", examId);
+      if (error) throw error;
       toast({ title: "Results published" });
       void load();
     } catch {

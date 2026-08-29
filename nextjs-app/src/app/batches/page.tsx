@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/index";
 import { Plus, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 
 interface Batch {
   id: string;
@@ -37,6 +38,7 @@ const columns: Column<Batch>[] = [
 
 export default function BatchesPage() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [courses, setCourses] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,12 +47,12 @@ export default function BatchesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [batchesRes, coursesRes] = await Promise.all([
-        fetch("/api/batches"),
-        fetch("/api/courses"),
+      const [batchesData, coursesData] = await Promise.all([
+        supabase.from("batches").select("*, course:courses(id,name)").order("created_at", { ascending: false }),
+        supabase.from("courses").select("id,name"),
       ]);
-      if (batchesRes.ok) setBatches(await batchesRes.json());
-      if (coursesRes.ok) setCourses(await coursesRes.json());
+      if (batchesData.data) setBatches(batchesData.data as Batch[]);
+      if (coursesData.data) setCourses(coursesData.data as { id: string; name: string }[]);
     } catch {
       toast({ title: "Could not load data", variant: "destructive" });
     } finally {
@@ -58,17 +60,20 @@ export default function BatchesPage() {
     }
   };
 
-  useEffect(() => { void load(); }, [toast]);
+  useEffect(() => { void load(); }, [supabase]);
 
   const save = async () => {
     if (!editing) return;
     try {
-      const res = await fetch("/api/batches", {
-        method: editing.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editing),
-      });
-      if (!res.ok) throw new Error();
+      let error;
+      if (editing.id) {
+        const result = await supabase.from("batches").update(editing).eq("id", editing.id);
+        error = result.error;
+      } else {
+        const result = await (supabase.from("batches") as any).insert(editing);
+        error = result.error;
+      }
+      if (error) throw error;
       toast({ title: editing.id ? "Batch updated" : "Batch created" });
       setEditing(null);
       void load();

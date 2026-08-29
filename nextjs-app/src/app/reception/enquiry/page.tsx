@@ -22,6 +22,7 @@ import {
   FileText, Star,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 
 type VisitorIdType = "AADHAR" | "PAN" | "DRIVING" | "VOTER";
 type EnquiryStatus = "NEW" | "CONTACTED" | "CONVERTED" | "CLOSED";
@@ -159,6 +160,7 @@ const sectionOptions = [
 
 export default function ReceptionEnquiryPage() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Visitor | null>(null);
@@ -169,9 +171,18 @@ export default function ReceptionEnquiryPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/visitors");
-      if (!res.ok) throw new Error();
-      setVisitors(await res.json());
+      const { data } = await supabase.from("visit_enquiries").select("*").order("visitDate", { ascending: false });
+      if (data) {
+        setVisitors(data.map((r: any) => ({
+          ...r,
+          visitDate: r.visitDate || r.visit_date,
+          checkInTime: r.checkInTime || r.check_in_time,
+          checkOutTime: r.checkOutTime || r.check_out_time,
+          followUpDate: r.followUpDate || r.follow_up_date,
+          followUpTime: r.followUpTime || r.follow_up_time,
+          noOfPersons: r.noOfPersons || r.no_of_persons || 1,
+        })));
+      }
     } catch {
       toast({ title: "Could not load visitors", variant: "destructive" });
     } finally {
@@ -230,18 +241,46 @@ export default function ReceptionEnquiryPage() {
     }
 
     const payload = {
-      ...form,
-      registrationDate: form.registrationDate ? new Date(form.registrationDate).toISOString() : null,
-      followUpDate: form.followUpDate ? new Date(form.followUpDate).toISOString() : null,
+      visitorName: form.visitorName,
+      phone: form.phone,
+      email: form.email || null,
+      candidateName: form.candidateName || null,
+      whatsappNumber: form.whatsappNumber || null,
+      noOfPersons: form.noOfPersons,
+      checkInTime: form.checkInTime || null,
+      checkOutTime: form.checkOutTime || null,
+      followUpDate: form.followUpDate || null,
+      followUpTime: form.followUpTime || null,
+      followUpNotes: form.followUpNotes || null,
+      source: form.source,
+      referralName: form.referralName || null,
+      section: form.section || null,
+      idType: form.idType,
+      idNumber: form.idNumber || null,
+      company: form.company || null,
+      address: form.address || null,
+      visitDate: form.visitDate,
+      visitTime: form.visitTime,
+      purpose: form.purpose,
+      personToMeet: form.personToMeet,
+      department: form.department,
+      enquiryReason: form.enquiryReason || null,
+      location: form.location || null,
+      remarks: form.remarks || null,
+      status: form.status,
+      closeNote: form.closeNote || null,
     };
 
     try {
-      const res = await fetch("/api/visitors", {
-        method: editing?.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editing?.id ? { id: editing.id, ...payload } : payload),
-      });
-      if (!res.ok) throw new Error();
+      let error;
+      if (editing?.id) {
+        const result = await (supabase.from("visit_enquiries") as any).update(payload).eq("id", editing.id).select().single();
+        error = result.error;
+      } else {
+        const result = await (supabase.from("visit_enquiries") as any).insert(payload).select().single();
+        error = result.error;
+      }
+      if (error) throw error;
       toast({ title: editing?.id ? "Visitor updated" : "Visitor registered" });
       setShowDialog(false);
       setEditing(null);
@@ -253,8 +292,8 @@ export default function ReceptionEnquiryPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const res = await fetch(`/api/visitors?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
+      const { error } = await supabase.from("visit_enquiries").delete().eq("id", id);
+      if (error) throw error;
       toast({ title: "Visitor record deleted" });
       void load();
     } catch {

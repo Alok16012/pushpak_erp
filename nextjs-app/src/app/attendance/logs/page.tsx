@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Calendar, Loader2 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 interface AttendanceLog {
   id: string;
@@ -25,13 +26,45 @@ export default function AttendanceLogsPage() {
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState("");
   const { toast } = useToast();
+  const supabase = createClient();
 
   const load = async () => {
     setLoading(true);
     try {
-      const url = filterDate ? `/api/attendance/logs?date=${filterDate}` : "/api/attendance/logs";
-      const res = await fetch(url);
-      if (res.ok) setLogs(await res.json());
+      let query = supabase
+        .from("attendance_records")
+        .select("*, student:profiles(first_name, last_name, enrollment_no), marked_by:profiles!marked_by_id(full_name), branch:branches(name)")
+        .order("date", { ascending: false });
+
+      if (filterDate) {
+        query = query.eq("date", filterDate);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const mapped = (data || []).map((row: any) => ({
+        id: row.id,
+        date: row.date,
+        status: row.status,
+        remarks: row.remarks,
+        marked_at: row.marked_at || row.date,
+        student: {
+          id: row.student?.id || "",
+          first_name: row.student?.first_name || "",
+          last_name: row.student?.last_name || "",
+          enrollment_no: row.student?.enrollment_no || "",
+        },
+        marked_by: {
+          id: row.marked_by?.id || "",
+          full_name: row.marked_by?.full_name || "",
+        },
+        branch: {
+          name: row.branch?.name || "",
+        },
+      })) as AttendanceLog[];
+
+      setLogs(mapped);
     } catch {
       toast({ title: "Could not load attendance logs", variant: "destructive" });
     } finally {
@@ -39,7 +72,7 @@ export default function AttendanceLogsPage() {
     }
   };
 
-  useEffect(() => { void load(); }, [filterDate]);
+  useEffect(() => { void load(); }, [filterDate, supabase]);
 
   // Group by date
   const grouped = logs.reduce<Record<string, AttendanceLog[]>>((acc, log) => {

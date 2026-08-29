@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 
 interface Course {
   id: string;
@@ -39,6 +40,7 @@ const columns: Column<Course>[] = [
 
 export default function CoursesPage() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -47,9 +49,8 @@ export default function CoursesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/courses");
-      if (!res.ok) throw new Error();
-      setCourses(await res.json());
+      const { data } = await supabase.from("courses").select("*, batches(id,name)").order("created_at", { ascending: false });
+      if (data) setCourses(data as Course[]);
     } catch {
       toast({ title: "Could not load courses", variant: "destructive" });
     } finally {
@@ -57,17 +58,20 @@ export default function CoursesPage() {
     }
   };
 
-  useEffect(() => { void load(); }, [toast]);
+  useEffect(() => { void load(); }, [supabase]);
 
   const save = async () => {
     if (!editing) return;
     try {
-      const res = await fetch("/api/courses", {
-        method: editing.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editing),
-      });
-      if (!res.ok) throw new Error();
+      let error;
+      if (editing.id) {
+        const result = await supabase.from("courses").update(editing).eq("id", editing.id);
+        error = result.error;
+      } else {
+        const result = await (supabase.from("courses") as any).insert(editing);
+        error = result.error;
+      }
+      if (error) throw error;
       toast({ title: editing.id ? "Course updated" : "Course created" });
       setEditing(null);
       void load();

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 
 interface Enquiry {
   id: string;
@@ -37,6 +38,7 @@ const columns: Column<Enquiry>[] = [
 
 export default function EnquiriesPage() {
   const { toast } = useToast();
+  const supabase = createClient();
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Enquiry | null>(null);
@@ -44,9 +46,8 @@ export default function EnquiriesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/enquiries");
-      if (!res.ok) throw new Error();
-      setEnquiries(await res.json());
+      const { data } = await supabase.from("enquiries").select("*").order("created_at", { ascending: false });
+      if (data) setEnquiries(data as Enquiry[]);
     } catch {
       toast({ title: "Could not load enquiries", variant: "destructive" });
     } finally {
@@ -54,17 +55,34 @@ export default function EnquiriesPage() {
     }
   };
 
-  useEffect(() => { void load(); }, [toast]);
+  useEffect(() => { void load(); }, [supabase]);
 
   const save = async () => {
     if (!editing) return;
     try {
-      const res = await fetch("/api/enquiries", {
-        method: editing.id ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editing.name, phone: editing.phone, email: editing.email, course_interest: editing.course_interest, source: editing.source, status: editing.status }),
-      });
-      if (!res.ok) throw new Error();
+      let error;
+      if (editing.id) {
+        const result = await supabase.from("enquiries").update({
+          name: editing.name,
+          phone: editing.phone,
+          email: editing.email,
+          course_interest: editing.course_interest,
+          source: editing.source,
+          status: editing.status,
+        }).eq("id", editing.id);
+        error = result.error;
+      } else {
+        const result = await (supabase.from("enquiries") as any).insert({
+          name: editing.name,
+          phone: editing.phone,
+          email: editing.email,
+          course_interest: editing.course_interest,
+          source: editing.source,
+          status: editing.status,
+        });
+        error = result.error;
+      }
+      if (error) throw error;
       toast({ title: editing.id ? "Enquiry updated" : "Enquiry created" });
       setEditing(null);
       void load();

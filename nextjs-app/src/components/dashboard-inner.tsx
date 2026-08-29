@@ -35,6 +35,7 @@ import {
   YAxis,
 } from "recharts";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 
 type DashboardData = {
   students: number;
@@ -59,12 +60,19 @@ export function DashboardInner() {
   useEffect(() => {
     const load = async () => {
       try {
-        const base =
-          process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-        const res = await fetch(`${base}/api/dashboard`, {
-          cache: "no-store",
+        const supabase = createClient();
+        const [{ count: studentCount }, { count: courseCount }] = await Promise.all([
+          supabase.from("profiles").select("*", { count: "exact", head: true }).eq("role", "STUDENT"),
+          supabase.from("courses").select("*", { count: "exact", head: true }),
+        ]);
+        setMetrics({
+          students: studentCount || 0,
+          courses: courseCount || 0,
+          feesCollected: 0,
+          outstanding: 0,
+          attendancePercentage: 0,
+          enquiriesToday: 0,
         });
-        if (res.ok) setMetrics(await res.json());
       } catch {
         // dashboard unavailable
       } finally {
