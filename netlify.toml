@@ -8,9 +8,3 @@
   NPM_FLAGS = "--no-audit --no-fund"
   NEXT_PUBLIC_SUPABASE_URL = "https://mbqkkwpiogyopfvlolgf.supabase.co"
   NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1icWtrd3Bpb2d5b3BmdmxvbGdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5NjY0NTUsImV4cCI6MjEwMjU0MjQ1NX0.Xj84IyIQZTjhWwo1dL67fGuIaQ3YhWE4j5FAW-9MfUc"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  force = true
