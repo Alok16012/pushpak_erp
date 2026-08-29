@@ -47,11 +47,11 @@ import { VIEWS, type View } from "@/lib/roles";
 
 export interface MenuItem {
   title: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<any>;
   items: {
     title: string;
     url: string;
-    icon?: React.ComponentType<{ className?: string }>;
+    icon?: React.ComponentType<any>;
   }[];
 }
 

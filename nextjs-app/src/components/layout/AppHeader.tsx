@@ -23,7 +23,8 @@ export function AppHeader() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const destinations = useMemo(() => menuForView(view).flatMap(group => group.items.map(item => ({ ...item, group: group.title }))), [view]);
+  type Destination = { title: string; url: string; group: string; icon?: React.ComponentType<any> };
+  const destinations: Destination[] = useMemo(() => menuForView(view).flatMap(group => group.items.map(item => ({ ...item, group: group.title }))), [view]);
   const results = query.trim() ? destinations.filter(item => `${item.title} ${item.group}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : destinations.slice(0, 6);
 
   useEffect(() => {
@@ -120,20 +121,24 @@ export function AppHeader() {
               <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[.16em] text-muted-foreground">
                 {query ? "Best matches" : "Popular destinations"}
               </p>
-              {results.map(item => (
+              {results.map(item => {
+                const Icon = item.icon;
+                if (!Icon) return null;
+                return (
                 <Link
                   key={item.url}
                   href={item.url}
                   onClick={() => { setSearchOpen(false); setQuery(""); }}
                   className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-muted"
                 >
-                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-muted"><item.icon className="h-4 w-4" /></span>
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-muted"><Icon className="h-4 w-4" /></span>
                   <span>
                     <span className="block text-sm font-medium">{item.title}</span>
                     <span className="text-xs text-muted-foreground">{item.group}</span>
                   </span>
                 </Link>
-              ))}
+                );
+              })}
             </div>
             <div className="hidden items-center gap-5 border-t bg-muted/40 px-4 py-2 text-[11px] text-muted-foreground sm:flex">
               <span>Up/Down Navigate</span>

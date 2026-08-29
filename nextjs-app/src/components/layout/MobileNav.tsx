@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { View } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
-const NAV: Record<View, { label: string; url: string; icon: React.ComponentType<{ className?: string }> }[]> = {
+const NAV: Record<View, { label: string; url: string; icon: React.ComponentType<any> }[]> = {
   admin: [
     { label: "Home", url: "/", icon: Home },
     { label: "Reception", url: "/reception/enquiry", icon: UserRoundPlus },

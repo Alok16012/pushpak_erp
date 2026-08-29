@@ -53,11 +53,15 @@ export function WorkspaceBar() {
       <div className="mx-auto flex max-w-[1600px] items-center gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-2 [scrollbar-width:none]">
           <span className="mr-2 hidden shrink-0 text-[10px] font-bold uppercase tracking-[.16em] text-muted-foreground lg:block">{group.title}</span>
-          {group.items.map(item => (
+          {group.items.map(item => {
+            const Icon = item.icon;
+            if (!Icon) return null;
+            return (
             <Link key={item.url} href={item.url} className={cn("shrink-0 rounded-xl px-3 py-2 text-xs font-medium transition-all hover:bg-muted", pathname === item.url ? "bg-foreground text-background shadow-sm" : "text-muted-foreground")}>
-              <item.icon className="mr-1.5 inline h-3.5 w-3.5" />{item.title}
+              <Icon className="mr-1.5 inline h-3.5 w-3.5" />{item.title}
             </Link>
-          ))}
+            );
+          })}
         </div>
         {isWorkflow && (
           <div className="shrink-0 border-l pl-2 sm:pl-3">

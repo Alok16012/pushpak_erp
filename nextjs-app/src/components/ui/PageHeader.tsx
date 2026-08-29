@@ -22,14 +22,14 @@ export function PageHeader({ title, description, breadcrumbs, actions }: PageHea
     <div className="mb-5 space-y-1">
       {breadcrumbs && breadcrumbs.length > 0 && (
         <nav className="mb-3 flex items-center gap-1 overflow-hidden text-xs text-muted-foreground sm:text-sm">
-          <Link to={VIEWS[view].home} className="hover:text-foreground transition-colors">
+          <Link href={VIEWS[view].home} className="hover:text-foreground transition-colors">
             <Home className="h-4 w-4" />
           </Link>
           {breadcrumbs.map((item, index) => (
             <div key={index} className="flex min-w-0 items-center gap-1">
               <ChevronRight className="h-4 w-4" />
               {item.href ? (
-                <Link to={item.href} className="hover:text-foreground transition-colors">
+                <Link href={item.href} className="hover:text-foreground transition-colors">
                   {item.label}
                 </Link>
               ) : (

@@ -15,8 +15,8 @@ export async function POST(request: Request) {
     let email = identifier;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(identifier)) {
-      const { data: profileData } = await supabase
-        .from("profiles")
+      const { data: profileData } = await (supabase
+        .from("profiles") as any)
         .select("email")
         .eq("username", identifier)
         .single();
@@ -36,7 +36,8 @@ export async function POST(request: Request) {
     }
 
     // Get profile
-    const { data: profile } = await supabase
+    // @ts-ignore generated types don't match actual DB columns
+    const { data: profile } = await (supabase as any)
       .from("profiles")
       .select("*")
       .eq("id", data.user.id)

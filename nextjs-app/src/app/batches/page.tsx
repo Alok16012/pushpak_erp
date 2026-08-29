@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui";
+} from "@/components/ui/index";
 import { Plus, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 

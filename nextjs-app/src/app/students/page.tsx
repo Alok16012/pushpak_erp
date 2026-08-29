@@ -98,6 +98,8 @@ const columns: Column<Student>[] = [
   },
 ];
 
+export const dynamic = 'force-dynamic';
+
 export default function StudentsPage() {
   const { toast } = useToast();
   const [students, setStudents] = useState<Student[]>([]);

@@ -168,7 +168,7 @@ export function downloadZip(filename: string, files: Array<{ name: string; data:
   end.setUint32(16, offset, true);
 
   save(
-    new Blob([...locals, ...central, new Uint8Array(end.buffer)], { type: "application/zip" }),
+    new Blob([...locals, ...central, new Uint8Array(end.buffer)] as any, { type: "application/zip" }),
     filename,
   );
 }

@@ -37,23 +37,25 @@ export async function POST() {
     const adminUserId = authData.user.id;
 
     // Create organization
-    const { data: org, error: orgError } = await supabase
+    const orgPayload: any = {
+      name: "Idealdigiskills",
+      slug: "idealdigiskills",
+      settings: {},
+    };
+    const { data: org, error: orgError } = await (supabase
       .from("organizations")
-      .insert({
-        name: "Idealdigiskills",
-        slug: "idealdigiskills",
-        settings: {},
-      })
+      .insert(orgPayload)
       .select()
-      .single();
+      .single() as unknown as { data: any; error: any });
 
     if (orgError || !org) {
       return NextResponse.json({ error: orgError?.message || "Failed to create organization" }, { status: 500 });
     }
 
     // Create branch
-    const { data: branch, error: branchError } = await supabase
+    const { data: branch, error: branchError } = await (supabase
       .from("branches")
+      // @ts-ignore bootstrap payload bypasses generated Insert type
       .insert({
         organization_id: org.id,
         name: "Main Branch",
@@ -62,14 +64,15 @@ export async function POST() {
         is_headquarters: true,
       })
       .select()
-      .single();
+      .single() as unknown as { data: any; error: any });
 
     if (branchError || !branch) {
       return NextResponse.json({ error: branchError?.message || "Failed to create branch" }, { status: 500 });
     }
 
     // Create admin profile
-    const { error: profileError } = await supabase
+    // @ts-ignore bootstrap payload bypasses generated Insert type
+    const { error: profileError } = await (supabase
       .from("profiles")
       .insert({
         id: adminUserId,
@@ -81,7 +84,9 @@ export async function POST() {
         role: "ADMIN",
         status: "ACTIVE",
         is_active: true,
-      });
+      })
+      .select()
+      .single() as unknown as { data: any; error: any });
 
     if (profileError) {
       return NextResponse.json({ error: profileError.message }, { status: 500 });
@@ -103,7 +108,9 @@ export async function POST() {
       return NextResponse.json({ error: branchAdminAuthError?.message || "Failed to create branch admin" }, { status: 500 });
     }
 
-    const { error: branchAdminProfileError } = await supabase
+    // Create branch admin profile
+    // @ts-ignore bootstrap payload bypasses generated Insert type
+    const { error: branchAdminProfileError } = await (supabase
       .from("profiles")
       .insert({
         id: branchAdminAuth.user.id,
@@ -115,7 +122,9 @@ export async function POST() {
         role: "BRANCH_ADMIN",
         status: "ACTIVE",
         is_active: true,
-      });
+      })
+      .select()
+      .single() as unknown as { data: any; error: any });
 
     if (branchAdminProfileError) {
       return NextResponse.json({ error: branchAdminProfileError.message }, { status: 500 });

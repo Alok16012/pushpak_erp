@@ -35,7 +35,7 @@ export async function GET() {
     let invoiceQuery = supabase.from("fee_invoices").select("amount, status, payments(amount)");
     if (orgId) {
       const { data: studentsForOrg } = await supabase.from("students").select("id").eq("organization_id", orgId);
-      const studentIds = (studentsForOrg ?? []).map(s => s.id);
+      const studentIds = (studentsForOrg ?? []).map((s: { id: string }) => s.id);
       if (studentIds.length) invoiceQuery = invoiceQuery.in("student_id", studentIds);
     }
     const { data: invoices } = await invoiceQuery;
@@ -56,7 +56,7 @@ export async function GET() {
     let attQuery = supabase.from("attendance_records").select("status");
     if (orgId) {
       const { data: studentsForOrg } = await supabase.from("students").select("id").eq("organization_id", orgId);
-      const studentIds = (studentsForOrg ?? []).map(s => s.id);
+      const studentIds = (studentsForOrg ?? []).map((s: { id: string }) => s.id);
       if (studentIds.length) attQuery = attQuery.in("student_id", studentIds);
     }
     attQuery = attQuery.gte("date", monthStart);

@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void getSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (_event: string, session: Session | null) => {
         if (!mounted) return;
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -91,8 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .select("email")
         .eq("username", identifier)
         .single();
-      if (profileData?.email) {
-        email = profileData.email;
+      const profileEmail = (profileData as { email?: string } | null)?.email;
+      if (profileEmail) {
+        email = profileEmail;
       }
     }
 

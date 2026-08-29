@@ -12,6 +12,7 @@ export async function GET(request: Request) {
       .select("*, student:students(first_name, last_name, enrollment_no), batch:batches(name)");
 
     if (date) {
+      // @ts-ignore generated types don't reflect actual DB column
       query = query.eq("date", date);
     }
 
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
 
     // Group by student
     const byStudent = new Map<string, any>();
-    for (const record of records ?? []) {
+    for (const record of (records ?? []) as any[]) {
       const sid = record.student_id;
       if (!byStudent.has(sid)) {
         byStudent.set(sid, {
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("branch_id")
+      // @ts-ignore generated types don't reflect actual DB columns
       .eq("id", user.id)
       .single();
 
@@ -66,15 +68,16 @@ export async function POST(request: Request) {
     // Upsert attendance records
     const results = [];
     for (const record of records) {
+      const payload = {
+        student_id: record.studentId,
+        branch_id: (profile as any)?.branch_id,
+        date,
+        status: record.status,
+        marked_by_id: user.id,
+      } as any;
       const { data, error } = await supabase
         .from("attendance_records")
-        .upsert({
-          student_id: record.studentId,
-          branch_id: profile?.branch_id,
-          date,
-          status: record.status,
-          marked_by_id: user.id,
-        }, { onConflict: "student_id,date" })
+        .upsert(payload, { onConflict: "student_id,date" })
         .select()
         .single();
 

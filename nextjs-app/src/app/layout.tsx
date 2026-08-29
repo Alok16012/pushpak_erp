@@ -6,6 +6,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-sans" });
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: "Idealdigiskills ERP",
   description: "Education management ERP",
