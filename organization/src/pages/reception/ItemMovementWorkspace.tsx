@@ -15,21 +15,25 @@ interface Movement {
   id: string;
   direction: string;
   item: string;
+  itemId: string;
+  category: string;
   party: string;
   qty: number;
   department: string;
   status: string;
   date: string;
+  dispatchDate?: string;
+  receiveDate?: string;
 }
 
 const STATUSES = ["Completed", "In transit", "Needs review", "Pending pickup"];
 /** Statuses that put a row in the "Need attention" tile. */
 const ATTENTION = ["Needs review", "Pending pickup"];
 const SEED: Movement[] = [
-  { id: "MOV-2081", direction: "Received", item: "Office stationery", party: "ABC Suppliers", qty: 100, department: "Administration", status: "Completed", date: "Today, 11:30 AM" },
-  { id: "MOV-2080", direction: "Dispatched", item: "Student certificates", party: "ABC Institute", qty: 25, department: "Examination", status: "In transit", date: "Today, 10:00 AM" },
-  { id: "MOV-2079", direction: "Received", item: "Lab chemicals", party: "Scientific Supplies Co.", qty: 15, department: "Science", status: "Needs review", date: "Today, 9:45 AM" },
-  { id: "MOV-2078", direction: "Dispatched", item: "Reference books", party: "Central Library", qty: 50, department: "Library", status: "Pending pickup", date: "Yesterday" },
+  { id: "MOV-2081", direction: "Received", item: "Office stationery", itemId: "ITM-001", category: "stationery", party: "ABC Suppliers", qty: 100, department: "Administration", status: "Completed", date: "Today, 11:30 AM", receiveDate: "2024-01-24" },
+  { id: "MOV-2080", direction: "Dispatched", item: "Student certificates", itemId: "ITM-002", category: "certificates", party: "ABC Institute", qty: 25, department: "Examination", status: "In transit", date: "Today, 10:00 AM", dispatchDate: "2024-01-24" },
+  { id: "MOV-2079", direction: "Received", item: "Lab chemicals", itemId: "ITM-003", category: "chemicals", party: "Scientific Supplies Co.", qty: 15, department: "Science", status: "Needs review", date: "Today, 9:45 AM", receiveDate: "2024-01-24" },
+  { id: "MOV-2078", direction: "Dispatched", item: "Reference books", itemId: "ITM-004", category: "books", party: "Central Library", qty: 50, department: "Library", status: "Pending pickup", date: "Yesterday", dispatchDate: "2024-01-23" },
 ];
 
 const STORAGE_KEY = "erp-item-movements";
@@ -39,6 +43,8 @@ const stages = ["Movement", "Item", "Logistics", "Review"];
 type Draft = {
   direction: string;
   item: string;
+  itemId: string;
+  category: string;
   description: string;
   qty: string;
   party: string;
@@ -47,11 +53,15 @@ type Draft = {
   courier: string;
   tracking: string;
   notes: string;
+  dispatchDate: string;
+  receiveDate: string;
 };
 
 const blankDraft: Draft = {
   direction: "",
   item: "",
+  itemId: "",
+  category: "",
   description: "",
   qty: "",
   party: "",
@@ -60,6 +70,8 @@ const blankDraft: Draft = {
   courier: "",
   tracking: "",
   notes: "",
+  dispatchDate: "",
+  receiveDate: "",
 };
 
 export default function ItemMovementWorkspace() {
@@ -120,11 +132,15 @@ export default function ItemMovementWorkspace() {
       id: `MOV-${Math.floor(Math.random() * 9000 + 1000)}`,
       direction: draft.direction || "Received",
       item: draft.item.trim(),
+      itemId: draft.itemId || "—",
+      category: draft.category || "—",
       party: draft.party || "—",
       qty: Number(draft.qty) || 0,
       department: draft.department || "General",
       status: draft.direction === "Dispatched" ? "In transit" : "Completed",
       date: `Today, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+      dispatchDate: draft.dispatchDate || undefined,
+      receiveDate: draft.receiveDate || undefined,
     };
     setMovements((list) => [entry, ...list]);
     toast({ title: "Movement recorded", description: `${entry.id} was added to the shared register.` });
@@ -211,15 +227,18 @@ export default function ItemMovementWorkspace() {
                 </div>
               )}
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[780px] text-sm">
+                <table className="w-full min-w-[980px] text-sm">
                   <thead>
                     <tr className="border-b bg-muted/35 text-left text-xs text-muted-foreground">
                       <th className="px-4 py-3 font-medium">Movement</th>
                       <th className="px-4 py-3 font-medium">Item</th>
+                      <th className="px-4 py-3 font-medium">Item ID</th>
+                      <th className="px-4 py-3 font-medium">Category</th>
+                      <th className="px-4 py-3 font-medium">Qty</th>
                       <th className="px-4 py-3 font-medium">Party</th>
                       <th className="px-4 py-3 font-medium">Department</th>
                       <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Time</th>
+                      <th className="px-4 py-3 font-medium">Date</th>
                       <th />
                     </tr>
                   </thead>
@@ -234,7 +253,12 @@ export default function ItemMovementWorkspace() {
                         </td>
                         <td className="px-4 py-3">
                           <p className="font-medium">{r.item}</p>
-                          <p className="text-xs text-muted-foreground">{r.id} - Qty {r.qty}</p>
+                          <p className="text-xs text-muted-foreground">{r.id}</p>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs">{r.itemId}</td>
+                        <td className="px-4 py-3 capitalize">{r.category}</td>
+                        <td className="px-4 py-3">
+                          <span className="font-medium">{r.qty}</span>
                         </td>
                         <td className="px-4 py-3">{r.party}</td>
                         <td className="px-4 py-3 text-muted-foreground">{r.department}</td>
@@ -313,6 +337,39 @@ export default function ItemMovementWorkspace() {
               )}
               {stage === 1 && (
                 <Step title="What is the item?" sub="Capture only the information needed to identify it.">
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Field label="Item ID">
+                      <Select value={draft.itemId} onValueChange={(v) => setDraftField("itemId", v)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select item" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ITM-001">ITM-001</SelectItem>
+                          <SelectItem value="ITM-002">ITM-002</SelectItem>
+                          <SelectItem value="ITM-003">ITM-003</SelectItem>
+                          <SelectItem value="ITM-004">ITM-004</SelectItem>
+                          <SelectItem value="ITM-005">ITM-005</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Item based Section / Category">
+                      <Select value={draft.category} onValueChange={(v) => setDraftField("category", v)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="stationery">Stationery</SelectItem>
+                          <SelectItem value="equipment">Equipment</SelectItem>
+                          <SelectItem value="electronics">Electronics</SelectItem>
+                          <SelectItem value="books">Books & Journals</SelectItem>
+                          <SelectItem value="chemicals">Chemicals / Lab</SelectItem>
+                          <SelectItem value="sports">Sports</SelectItem>
+                          <SelectItem value="certificates">Certificates</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
                   <Field label="Item name">
                     <Input value={draft.item} onChange={(e) => setDraftField("item", e.target.value)} placeholder="e.g. Student certificates" />
                   </Field>
@@ -337,6 +394,16 @@ export default function ItemMovementWorkspace() {
                   <Field label="Department">
                     <Input value={draft.department} onChange={(e) => setDraftField("department", e.target.value)} placeholder="Responsible department" />
                   </Field>
+                  {draft.direction === "Dispatched" && (
+                    <Field label="Dispatch Date">
+                      <Input type="date" value={draft.dispatchDate} onChange={(e) => setDraftField("dispatchDate", e.target.value)} />
+                    </Field>
+                  )}
+                  {draft.direction === "Received" && (
+                    <Field label="Receive Date">
+                      <Input type="date" value={draft.receiveDate} onChange={(e) => setDraftField("receiveDate", e.target.value)} />
+                    </Field>
+                  )}
                   <Field label="Courier">
                     <Input value={draft.courier} onChange={(e) => setDraftField("courier", e.target.value)} placeholder="Optional" />
                   </Field>
@@ -350,7 +417,14 @@ export default function ItemMovementWorkspace() {
                   <div className="sm:col-span-2 rounded-2xl border bg-muted/30 p-5">
                     <p className="text-xs uppercase tracking-wider text-muted-foreground">{draft.direction || "Direction not selected"}</p>
                     <p className="mt-2 text-lg font-semibold">{draft.item || "Unnamed item"} <span className="text-sm font-normal text-muted-foreground">x {draft.qty || "0"}</span></p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {draft.itemId ? `ID: ${draft.itemId}` : ""}
+                      {draft.itemId && draft.category ? " · " : ""}
+                      {draft.category ? `Category: ${draft.category}` : ""}
+                    </p>
                     <p className="mt-1 text-sm text-muted-foreground">{draft.party || "Party not added"} - {draft.department || "No department"}</p>
+                    {draft.dispatchDate && <p className="mt-1 text-xs text-muted-foreground">Dispatched: {draft.dispatchDate}</p>}
+                    {draft.receiveDate && <p className="mt-1 text-xs text-muted-foreground">Received: {draft.receiveDate}</p>}
                   </div>
                   <div className="sm:col-span-2">
                     <Field label="Notes">
