@@ -45,60 +45,137 @@ const records = [
     id: "V-1048",
     name: "Meera Joshi",
     phone: "98765 43215",
+    whatsappNumber: "98765 43215",
     purpose: "Interview",
     owner: "HR Department",
     status: "Checked in",
     date: "Today, 2:00 PM",
+    source: "Walk-in",
+    visitDate: new Date().toISOString(),
+    followUpDate: null,
+    callType: null,
   },
   {
     id: "V-1047",
     name: "Vikram Singh",
     phone: "98765 43214",
+    whatsappNumber: "",
     purpose: "Delivery",
     owner: "Administration",
     status: "Completed",
     date: "Today, 12:00 PM",
+    source: "Phone",
+    visitDate: new Date().toISOString(),
+    followUpDate: null,
+    callType: null,
   },
   {
     id: "V-1046",
     name: "Priya Sharma",
     phone: "98765 43213",
-    purpose: "Student enquiry",
+    whatsappNumber: "98765 43213",
+    purpose: "Admission Enquiry",
     owner: "Admissions",
     status: "Follow-up",
     date: "Today, 10:30 AM",
+    source: "Website",
+    visitDate: new Date().toISOString(),
+    followUpDate: new Date(Date.now() + 86400000).toISOString(),
+    callType: "Outgoing",
   },
   {
     id: "V-1045",
     name: "Rajesh Kumar",
     phone: "98765 43212",
+    whatsappNumber: "",
     purpose: "Meeting",
     owner: "Director",
     status: "Completed",
     date: "Yesterday",
+    source: "Referral",
+    visitDate: new Date(Date.now() - 86400000).toISOString(),
+    followUpDate: null,
+    callType: null,
   },
 ];
-const stages = ["Visitor", "Visit", "Verification", "Review"];
+const stages = ["Visitor", "Visit", "Verification", "Follow-up", "Review"];
+const PURPOSES = [
+  "Admission Enquiry",
+  "Fee Related",
+  "Meeting",
+  "Complaint",
+  "Delivery",
+  "Interview",
+  "Other",
+];
+const DEPARTMENTS = [
+  "Administration",
+  "Academics",
+  "Accounts",
+  "HR",
+  "IT",
+  "Library",
+];
+const ID_TYPES = ["Aadhaar", "PAN", "DL", "Voter ID", "Passport"];
+const SOURCES = [
+  "Walk-in",
+  "Phone",
+  "Website",
+  "Social Media",
+  "Referral",
+  "Advertisement",
+  "Other",
+];
+const CALL_TYPES = ["Incoming", "Outgoing"];
+
 type Draft = {
   name: string;
   phone: string;
+  whatsappNumber: string;
   email: string;
+  candidateName: string;
+  address: string;
+  registrationDate: string;
+  visitDate: string;
+  visitTime: string;
   purpose: string;
   person: string;
   department: string;
   idType: string;
   idNumber: string;
+  source: string;
+  enquiryReason: string;
+  location: string;
+  remarks: string;
+  followUpDate: string;
+  followUpTime: string;
+  followUpNotes: string;
+  callType: string;
   notes: string;
 };
 const emptyDraft: Draft = {
   name: "",
   phone: "",
+  whatsappNumber: "",
   email: "",
+  candidateName: "",
+  address: "",
+  registrationDate: new Date().toISOString().split("T")[0],
+  visitDate: new Date().toISOString().split("T")[0],
+  visitTime: new Date().toTimeString().slice(0, 5),
   purpose: "",
   person: "",
   department: "",
   idType: "",
   idNumber: "",
+  source: "",
+  enquiryReason: "",
+  location: "",
+  remarks: "",
+  followUpDate: "",
+  followUpTime: "",
+  followUpNotes: "",
+  callType: "",
   notes: "",
 };
 
@@ -203,10 +280,18 @@ export default function EnquiriesWorkspace() {
               id: item.id as string,
               name: item.visitorName as string,
               phone: item.phone as string,
+              whatsappNumber: (item.whatsapp_number as string) || "",
               purpose: (item.purpose as string).replaceAll("_", " "),
               owner: item.personToMeet as string,
-              status: "Checked in",
-              date: new Date(item.createdAt as string).toLocaleString(),
+              status: (item.status as string) || "Checked in",
+              date: item.visitDate
+                ? new Date(item.visitDate as string).toLocaleString()
+                : new Date(item.createdAt as string).toLocaleString(),
+              source: item.source as string,
+              visitDate: item.visitDate as string,
+              followUpDate: item.follow_up_date as string,
+              callType: item.call_type as string,
+              checkOut: item.check_out as string,
             })),
           );
         }
@@ -259,16 +344,35 @@ export default function EnquiriesWorkspace() {
             Meeting: "MEETING",
             Interview: "INTERVIEW",
             Delivery: "DELIVERY",
+            "Fee Related": "FEE",
+            Complaint: "COMPLAINT",
+            "Admission Enquiry": "ADMISSION",
           } as Record<string, string>
         )[draft.purpose] || "OTHER";
       const created = await createEnquiry(targetBranchId, {
             visitorName: draft.name,
             phone: draft.phone,
+            whatsappNumber: draft.whatsappNumber || undefined,
             email: draft.email || undefined,
+            candidateName: draft.candidateName || undefined,
+            address: draft.address || undefined,
+            registrationDate: draft.registrationDate ? new Date(draft.registrationDate).toISOString() : new Date().toISOString(),
+            visitDate: draft.visitDate ? new Date(draft.visitDate).toISOString() : new Date().toISOString(),
+            visitTime: draft.visitTime || undefined,
             purpose,
             personToMeet: draft.person || "Reception",
-            department: "ADMINISTRATION",
-            enquiryReason: draft.notes,
+            department: draft.department || "ADMINISTRATION",
+            idType: draft.idType || undefined,
+            idNumber: draft.idNumber || undefined,
+            source: draft.source || undefined,
+            enquiryReason: draft.enquiryReason || undefined,
+            location: draft.location || undefined,
+            remarks: draft.remarks || undefined,
+            followUpDate: draft.followUpDate ? new Date(draft.followUpDate).toISOString() : undefined,
+            followUpTime: draft.followUpTime || undefined,
+            followUpNotes: draft.followUpNotes || undefined,
+            callType: draft.callType || undefined,
+            checkIn: new Date(`${draft.visitDate || new Date().toISOString().split("T")[0]} ${draft.visitTime || "00:00"}`).toISOString(),
           });
       setLiveRecords((prev) => [
         {
@@ -412,14 +516,17 @@ export default function EnquiriesWorkspace() {
                 </div>
               )}
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[760px] text-sm">
+                <table className="w-full min-w-[960px] text-sm">
                   <thead>
                     <tr className="border-b bg-muted/35 text-left text-xs text-muted-foreground">
                       <th className="px-4 py-3 font-medium">Visitor</th>
+                      <th className="px-4 py-3 font-medium">Mob. Number</th>
+                      <th className="px-4 py-3 font-medium">WhatsApp</th>
                       <th className="px-4 py-3 font-medium">Purpose</th>
-                      <th className="px-4 py-3 font-medium">Meeting</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Time</th>
+                      <th className="px-4 py-3 font-medium">Person to Meet</th>
+                      <th className="px-4 py-3 font-medium">Source</th>
+                      <th className="px-4 py-3 font-medium">Check-in / out</th>
+                      <th className="px-4 py-3 font-medium">Follow-up</th>
                       <th />
                     </tr>
                   </thead>
@@ -432,22 +539,29 @@ export default function EnquiriesWorkspace() {
                         <td className="px-4 py-3">
                           <p className="font-medium">{r.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {r.id} · {r.phone}
+                            {r.id}
                           </p>
+                        </td>
+                        <td className="px-4 py-3">{r.phone}</td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {(r as any).whatsappNumber || "—"}
                         </td>
                         <td className="px-4 py-3">{r.purpose}</td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {r.owner}
                         </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${r.status === "Checked in" ? "bg-brand text-brand-foreground" : r.status === "Follow-up" ? "bg-amber-500/15 text-amber-600" : "bg-muted"}`}
-                          >
-                            {r.status}
-                          </span>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {(r as any).source || "—"}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
-                          {r.date}
+                          <div className="text-xs">{r.date}</div>
+                          <div className="text-xs">
+                            {(r as any).checkOut ? `→ ${new Date((r as any).checkOut).toLocaleString()}` : r.status === "Completed" ? "Checked out" : "Active"}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {(r as any).followUpDate ? new Date((r as any).followUpDate).toLocaleDateString() : "—"}
+                          {(r as any).callType ? <div className="text-[10px]">{(r as any).callType}</div> : null}
                         </td>
                         <td className="px-4">
                           <DropdownMenu>
@@ -488,7 +602,7 @@ export default function EnquiriesWorkspace() {
                     ))}
                     {!filtered.length && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                        <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
                           {loading ? "Loading visitors…" : "No visitors match these filters."}
                         </td>
                       </tr>
@@ -503,7 +617,12 @@ export default function EnquiriesWorkspace() {
                       <div className="min-w-0"><p className="font-semibold">{r.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{r.phone} · {r.purpose}</p></div>
                       <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${r.status === "Checked in" ? "bg-brand text-brand-foreground" : r.status === "Follow-up" ? "bg-amber-500/15 text-amber-600" : "bg-muted"}`}>{r.status}</span>
                     </div>
-                    <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-3 text-xs"><div><p className="text-muted-foreground">Meeting</p><p className="mt-1 font-medium">{r.owner}</p></div><div><p className="text-muted-foreground">Time</p><p className="mt-1 font-medium">{r.date}</p></div></div>
+                    <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-3 text-xs">
+                      <div><p className="text-muted-foreground">WhatsApp</p><p className="mt-1 font-medium">{(r as any).whatsappNumber || "—"}</p></div>
+                      <div><p className="text-muted-foreground">Meeting</p><p className="mt-1 font-medium">{r.owner}</p></div>
+                      <div><p className="text-muted-foreground">Source</p><p className="mt-1 font-medium">{(r as any).source || "—"}</p></div>
+                      <div><p className="text-muted-foreground">Time</p><p className="mt-1 font-medium">{r.date}</p></div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -552,66 +671,186 @@ export default function EnquiriesWorkspace() {
                   title="Who is visiting?"
                   subtitle="Basic contact information is enough to create the record."
                 >
-                  <Field label="Full name" required>
-                    <Input
-                      value={draft.name}
-                      onChange={(e) => update("name", e.target.value)}
-                      placeholder="e.g. Meera Joshi"
-                    />
-                  </Field>
-                  <Field label="Mobile number" required>
-                    <Input
-                      value={draft.phone}
-                      onChange={(e) => update("phone", e.target.value)}
-                      placeholder="10-digit number"
-                    />
-                  </Field>
-                  <Field label="Email">
-                    <Input
-                      value={draft.email}
-                      onChange={(e) => update("email", e.target.value)}
-                      placeholder="name@example.com"
-                    />
-                  </Field>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Visitor Name *" required>
+                      <Input
+                        value={draft.name}
+                        onChange={(e) => update("name", e.target.value)}
+                        placeholder="e.g. Meera Joshi"
+                      />
+                    </Field>
+                    <Field label="Mobile Number *" required>
+                      <Input
+                        value={draft.phone}
+                        onChange={(e) => update("phone", e.target.value)}
+                        placeholder="10-digit number"
+                      />
+                    </Field>
+                    <Field label="WhatsApp Number">
+                      <Input
+                        value={draft.whatsappNumber}
+                        onChange={(e) => update("whatsappNumber", e.target.value)}
+                        placeholder="WhatsApp number"
+                      />
+                    </Field>
+                    <Field label="Email">
+                      <Input
+                        value={draft.email}
+                        onChange={(e) => update("email", e.target.value)}
+                        placeholder="name@example.com"
+                      />
+                    </Field>
+                    <Field label="Person Candidate Name">
+                      <Input
+                        value={draft.candidateName}
+                        onChange={(e) => update("candidateName", e.target.value)}
+                        placeholder="Candidate name"
+                      />
+                    </Field>
+                    <Field label="Source">
+                      <Select
+                        value={draft.source}
+                        onValueChange={(v) => update("source", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select source" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SOURCES.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {s}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Registration Date">
+                      <Input
+                        type="date"
+                        value={draft.registrationDate}
+                        onChange={(e) => update("registrationDate", e.target.value)}
+                      />
+                    </Field>
+                    <Field label="ID Type">
+                      <Select
+                        value={draft.idType}
+                        onValueChange={(v) => update("idType", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select ID type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ID_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="ID Number" className="md:col-span-2">
+                      <Input
+                        value={draft.idNumber}
+                        onChange={(e) => update("idNumber", e.target.value)}
+                        placeholder="Enter ID number"
+                      />
+                    </Field>
+                    <Field label="Address" className="md:col-span-2">
+                      <Textarea
+                        value={draft.address}
+                        onChange={(e) => update("address", e.target.value)}
+                        placeholder="Full address"
+                        className="min-h-20"
+                      />
+                    </Field>
+                  </div>
                 </Stage>
               )}
               {stage === 1 && (
                 <Stage
                   title="What brings them here?"
-                  subtitle="Route the visitor to the right person without additional calls."
+                  subtitle="Route the visitor to the right person and record their enquiry details."
                 >
-                  <Field label="Purpose" required>
-                    <Select
-                      value={draft.purpose}
-                      onValueChange={(v) => update("purpose", v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select purpose" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Student enquiry">
-                          Student enquiry
-                        </SelectItem>
-                        <SelectItem value="Meeting">Meeting</SelectItem>
-                        <SelectItem value="Interview">Interview</SelectItem>
-                        <SelectItem value="Delivery">Delivery</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Person to meet">
-                    <Input
-                      value={draft.person}
-                      onChange={(e) => update("person", e.target.value)}
-                      placeholder="Name or role"
-                    />
-                  </Field>
-                  <Field label="Department">
-                    <Input
-                      value={draft.department}
-                      onChange={(e) => update("department", e.target.value)}
-                      placeholder="Admissions, HR…"
-                    />
-                  </Field>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Purpose of Visit *" required>
+                      <Select
+                        value={draft.purpose}
+                        onValueChange={(v) => update("purpose", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select purpose" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PURPOSES.map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {p}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Person to Meet *" required>
+                      <Input
+                        value={draft.person}
+                        onChange={(e) => update("person", e.target.value)}
+                        placeholder="Name or role"
+                      />
+                    </Field>
+                    <Field label="Department *" required>
+                      <Select
+                        value={draft.department}
+                        onValueChange={(v) => update("department", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DEPARTMENTS.map((d) => (
+                            <SelectItem key={d} value={d}>
+                              {d}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Visit Location">
+                      <Input
+                        value={draft.location}
+                        onChange={(e) => update("location", e.target.value)}
+                        placeholder="e.g. Reception, 2nd floor"
+                      />
+                    </Field>
+                    <Field label="Visit Date">
+                      <Input
+                        type="date"
+                        value={draft.visitDate}
+                        onChange={(e) => update("visitDate", e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Visit Time">
+                      <Input
+                        type="time"
+                        value={draft.visitTime}
+                        onChange={(e) => update("visitTime", e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Enquiry Reason">
+                      <Textarea
+                        value={draft.enquiryReason}
+                        onChange={(e) => update("enquiryReason", e.target.value)}
+                        placeholder="Describe the enquiry reason"
+                        className="min-h-20"
+                      />
+                    </Field>
+                    <Field label="Remarks">
+                      <Textarea
+                        value={draft.remarks}
+                        onChange={(e) => update("remarks", e.target.value)}
+                        placeholder="Additional remarks"
+                        className="min-h-20"
+                      />
+                    </Field>
+                  </div>
                 </Stage>
               )}
               {stage === 2 && (
@@ -647,12 +886,60 @@ export default function EnquiriesWorkspace() {
               )}
               {stage === 3 && (
                 <Stage
+                  title="Follow-up details"
+                  subtitle="Plan when and how to follow up with this visitor."
+                >
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="Follow-up Call Date">
+                      <Input
+                        type="date"
+                        value={draft.followUpDate}
+                        onChange={(e) => update("followUpDate", e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Preferred Time">
+                      <Input
+                        type="time"
+                        value={draft.followUpTime}
+                        onChange={(e) => update("followUpTime", e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Call Type">
+                      <Select
+                        value={draft.callType}
+                        onValueChange={(v) => update("callType", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select call type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CALL_TYPES.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Follow-up Notes" className="md:col-span-2">
+                      <Textarea
+                        value={draft.followUpNotes}
+                        onChange={(e) => update("followUpNotes", e.target.value)}
+                        placeholder="What should the next call cover?"
+                        className="min-h-24"
+                      />
+                    </Field>
+                  </div>
+                </Stage>
+              )}
+              {stage === 4 && (
+                <Stage
                   title="Review & register"
                   subtitle="Add context for the team, then complete check-in."
                 >
                   {!branchId && (
                     <div className="sm:col-span-2">
-                      <Field label="Branch *">
+                      <Field label="Branch *" required>
                         <Select
                           value={pickedBranchId}
                           onValueChange={setPickedBranchId}
@@ -687,14 +974,23 @@ export default function EnquiriesWorkspace() {
                       />
                     </Field>
                   </div>
-                  <div className="sm:col-span-2 rounded-2xl border bg-muted/30 p-4 text-sm">
-                    <p className="font-semibold">
-                      {draft.name || "Unnamed visitor"}
-                    </p>
-                    <p className="mt-1 text-muted-foreground">
-                      {draft.purpose || "Purpose not selected"} ·{" "}
-                      {draft.person || "Meeting person not assigned"}
-                    </p>
+                  <div className="sm:col-span-2 rounded-2xl border bg-muted/30 p-4 text-sm space-y-2">
+                    <div>
+                      <p className="font-semibold">
+                        {draft.name || "Unnamed visitor"}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">
+                        {draft.phone || "No phone"} · {draft.whatsappNumber || "No WhatsApp"}
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div><span className="text-muted-foreground">Purpose:</span> {draft.purpose || "—"}</div>
+                      <div><span className="text-muted-foreground">Meeting:</span> {draft.person || "—"}</div>
+                      <div><span className="text-muted-foreground">Department:</span> {draft.department || "—"}</div>
+                      <div><span className="text-muted-foreground">Source:</span> {draft.source || "—"}</div>
+                      <div><span className="text-muted-foreground">Visit:</span> {draft.visitDate || "—"} {draft.visitTime || ""}</div>
+                      <div><span className="text-muted-foreground">Follow-up:</span> {draft.followUpDate || "—"} {draft.callType || ""}</div>
+                    </div>
                   </div>
                 </Stage>
               )}
@@ -715,7 +1011,7 @@ export default function EnquiriesWorkspace() {
                   Back
                 </Button>
               )}
-              {stage < 3 ? (
+              {stage < 4 ? (
                 <Button onClick={() => setStage((s) => s + 1)}>
                   Continue
                   <ArrowRight />

@@ -56,6 +56,21 @@ const PERSON_MAP: Record<string, string> = {
   other: "Other Staff",
 };
 
+const SOURCE_OPTIONS = [
+  "Walk-in",
+  "Phone",
+  "Website",
+  "Social Media",
+  "Referral",
+  "Advertisement",
+  "Other",
+];
+
+const CALL_TYPE_OPTIONS = [
+  "Incoming",
+  "Outgoing",
+];
+
 export default function VisitEnquiry() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -82,6 +97,10 @@ export default function VisitEnquiry() {
   const [followUpDate, setFollowUpDate] = useState("");
   const [followUpTime, setFollowUpTime] = useState("");
   const [followUpNotes, setFollowUpNotes] = useState("");
+  const [whatsappNumber, setWhatsappNumber] = useState("");
+  const [source, setSource] = useState("");
+  const [registrationDate, setRegistrationDate] = useState(new Date().toISOString().split("T")[0]);
+  const [callType, setCallType] = useState("");
 
   useEffect(() => {
     if (!authLoading) {
@@ -114,6 +133,11 @@ export default function VisitEnquiry() {
         followUpDate: followUpDate ? new Date(followUpDate).toISOString() : null,
         followUpTime: followUpTime || null,
         followUpNotes: followUpNotes || null,
+        whatsappNumber: whatsappNumber || null,
+        source: source || null,
+        registrationDate: registrationDate ? new Date(registrationDate).toISOString() : new Date().toISOString(),
+        callType: callType || null,
+        checkIn: new Date(`${visitDate} ${visitTime}`).toISOString(),
       };
 
       await createEnquiry(branchId || "", input);
@@ -173,8 +197,12 @@ export default function VisitEnquiry() {
                     <Input id="visitorName" placeholder="Enter full name" required value={visitorName} onChange={(e) => setVisitorName(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number *</Label>
+                    <Label htmlFor="phone">Mobile Number *</Label>
                     <Input id="phone" placeholder="+91 98765 43210" required value={phone} onChange={(e) => setPhone(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="whatsappNumber">WhatsApp Number</Label>
+                    <Input id="whatsappNumber" placeholder="+91 98765 43210" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email Address</Label>
@@ -187,9 +215,9 @@ export default function VisitEnquiry() {
                         <SelectValue placeholder="Select ID type" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="aadhar">Aadhar Card</SelectItem>
-                        <SelectItem value="pan">PAN Card</SelectItem>
-                        <SelectItem value="driving">Driving License</SelectItem>
+                        <SelectItem value="aadhar">Aadhar</SelectItem>
+                        <SelectItem value="pan">PAN</SelectItem>
+                        <SelectItem value="driving">DL (Driving Licence)</SelectItem>
                         <SelectItem value="passport">Passport</SelectItem>
                         <SelectItem value="voter">Voter ID</SelectItem>
                       </SelectContent>
@@ -200,12 +228,25 @@ export default function VisitEnquiry() {
                     <Input id="idNumber" placeholder="Enter ID number" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="company">Organization/Company</Label>
-                    <Input id="company" placeholder="Enter organization name" value={company} onChange={(e) => setCompany(e.target.value)} />
+                    <Label htmlFor="company">Person Candidate Name</Label>
+                    <Input id="company" placeholder="Person candidate name" value={company} onChange={(e) => setCompany(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="source">Source</Label>
+                    <Select value={source} onValueChange={setSource}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="How did they hear about us?" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SOURCE_OPTIONS.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="address">Address</Label>
+                  <Label htmlFor="address">Student Address</Label>
                   <Textarea id="address" placeholder="Enter visitor's address" rows={2} value={address} onChange={(e) => setAddress(e.target.value)} />
                 </div>
               </CardContent>
@@ -220,6 +261,10 @@ export default function VisitEnquiry() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="registrationDate">Registration Date</Label>
+                    <Input id="registrationDate" type="date" value={registrationDate} onChange={(e) => setRegistrationDate(e.target.value)} />
+                  </div>
                   <div className="space-y-2">
                     <Label htmlFor="visitDate">Visit Date *</Label>
                     <Input id="visitDate" type="date" required value={visitDate} onChange={(e) => setVisitDate(e.target.value)} />
@@ -262,7 +307,7 @@ export default function VisitEnquiry() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="department">Department</Label>
+                    <Label htmlFor="department">Select Department</Label>
                     <Select value={department} onValueChange={setDepartment}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select department" />
@@ -276,24 +321,20 @@ export default function VisitEnquiry() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="noOfPersons">Number of Persons</Label>
-                    <Input id="noOfPersons" type="number" min="1" value={noOfPersons} onChange={(e) => setNoOfPersons(e.target.value)} />
-                  </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="enquiryReason">Enquiry Reason</Label>
-                    <Textarea id="enquiryReason" placeholder="Describe the reason for enquiry in detail..." rows={2} value={enquiryReason} onChange={(e) => setEnquiryReason(e.target.value)} />
+                    <Textarea id="enquiryReason" placeholder="Why did they visit?..." rows={2} value={enquiryReason} onChange={(e) => setEnquiryReason(e.target.value)} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="location">Visitor Location / City</Label>
+                    <Label htmlFor="location">Location / City</Label>
                     <Input id="location" placeholder="Enter city or area" value={location} onChange={(e) => setLocation(e.target.value)} />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="remarks">Remarks / Notes</Label>
-                  <Textarea id="remarks" placeholder="Any additional information about the visit..." rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+                  <Textarea id="remarks" placeholder="Any additional information..." rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
                 </div>
               </CardContent>
             </Card>
@@ -315,10 +356,23 @@ export default function VisitEnquiry() {
                     <Label htmlFor="followUpTime">Preferred Time</Label>
                     <Input id="followUpTime" type="time" value={followUpTime} onChange={(e) => setFollowUpTime(e.target.value)} />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="callType">Call Type</Label>
+                    <Select value={callType} onValueChange={setCallType}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select call type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CALL_TYPE_OPTIONS.map((ct) => (
+                          <SelectItem key={ct} value={ct}>{ct}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="followUpNotes">Follow-up Notes</Label>
-                  <Textarea id="followUpNotes" placeholder="Any notes for the follow-up call..." rows={2} value={followUpNotes} onChange={(e) => setFollowUpNotes(e.target.value)} />
+                  <Textarea id="followUpNotes" placeholder="What happened on the call / next steps..." rows={3} value={followUpNotes} onChange={(e) => setFollowUpNotes(e.target.value)} />
                 </div>
               </CardContent>
             </Card>

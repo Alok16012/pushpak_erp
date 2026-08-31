@@ -29,6 +29,7 @@ type DbVisitor = {
   branchId: string;
   visitorName: string;
   phone: string;
+  whatsappNumber: string | null;
   email: string | null;
   idType: string;
   idNumber: string | null;
@@ -42,18 +43,24 @@ type DbVisitor = {
   noOfPersons: number;
   enquiryReason: string | null;
   location: string | null;
+  source: string | null;
   remarks: string | null;
+  callType: string | null;
   followUpDate: string | null;
   followUpTime: string | null;
   followUpNotes: string | null;
   status: string;
   createdAt: string;
+  registrationDate: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
 };
 
 type Visitor = {
   id: string;
   name: string;
   phone: string;
+  whatsappNumber: string;
   email: string;
   purpose: string;
   personToMeet: string;
@@ -65,7 +72,13 @@ type Visitor = {
   idNumber: string;
   enquiryReason: string;
   location: string;
+  source: string;
+  remarks: string;
+  callType: string;
   followUpDate: string | null;
+  followUpTime: string | null;
+  followUpNotes: string | null;
+  registrationDate: string | null;
 };
 
 const PURPOSE_DISPLAY: Record<string, string> = {
@@ -82,18 +95,25 @@ const mapDbToVisitor = (db: DbVisitor): Visitor => ({
   id: db.id,
   name: db.visitorName,
   phone: db.phone,
+  whatsappNumber: db.whatsappNumber || "",
   email: db.email || "",
   purpose: PURPOSE_DISPLAY[db.purpose] || db.purpose,
   personToMeet: db.personToMeet,
   department: db.department,
   checkIn: `${db.visitDate.split("T")[0]} ${db.visitTime}`,
-  checkOut: null,
+  checkOut: db.checkOut ? new Date(db.checkOut).toISOString() : null,
   status: db.status === "CLOSED" || db.status === "CONVERTED" ? "completed" : "active",
   idType: db.idType,
   idNumber: db.idNumber || "",
   enquiryReason: db.enquiryReason || "",
   location: db.location || "",
+  source: db.source || "",
+  remarks: db.remarks || "",
+  callType: db.callType || "",
   followUpDate: db.followUpDate ? db.followUpDate.split("T")[0] : null,
+  followUpTime: db.followUpTime || null,
+  followUpNotes: db.followUpNotes || null,
+  registrationDate: db.registrationDate ? db.registrationDate.split("T")[0] : null,
 });
 
 export default function VisitorsInformation() {
@@ -136,7 +156,10 @@ export default function VisitorsInformation() {
     if (!selectedVisitor || !branchId) return;
     setIsCheckingOut(true);
     try {
-      await updateEnquiry(selectedVisitor.id, branchId, { status: "CLOSED" });
+      await updateEnquiry(selectedVisitor.id, branchId, {
+        status: "CLOSED",
+        checkOut: new Date().toISOString(),
+      });
       toast({ title: "Checked Out", description: "Visitor has been checked out." });
       setIsCheckoutDialogOpen(false);
       loadVisitors();
@@ -205,30 +228,19 @@ export default function VisitorsInformation() {
     },
     {
       key: "phone",
-      header: "Contact",
-      cell: (visitor) => (
-        <div>
-          <p className="text-sm">{visitor.phone}</p>
-          <p className="text-xs text-muted-foreground">{visitor.email}</p>
-        </div>
-      ),
+      header: "Mob. Number",
+      cell: (visitor) => <span className="text-sm">{visitor.phone}</span>,
+    },
+    {
+      key: "whatsappNumber",
+      header: "WhatsApp",
+      cell: (visitor) => <span className="text-sm">{visitor.whatsappNumber || "—"}</span>,
     },
     {
       key: "purpose",
       header: "Purpose",
       sortable: true,
       cell: (visitor) => <Badge variant="secondary">{visitor.purpose}</Badge>,
-    },
-    {
-      key: "location",
-      header: "Location",
-      sortable: true,
-      cell: (visitor) => (
-        <div className="flex items-center gap-1.5">
-          <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-sm">{visitor.location}</span>
-        </div>
-      ),
     },
     {
       key: "personToMeet",
@@ -243,7 +255,9 @@ export default function VisitorsInformation() {
         <div className="flex items-center gap-2">
           <Clock className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-sm">
-            {new Date(visitor.checkIn).toLocaleTimeString("en-US", {
+            {new Date(visitor.checkIn).toLocaleString("en-US", {
+              month: "short",
+              day: "numeric",
               hour: "2-digit",
               minute: "2-digit",
             })}
@@ -259,7 +273,9 @@ export default function VisitorsInformation() {
           <div className="flex items-center gap-2">
             <LogOut className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-sm">
-              {new Date(visitor.checkOut).toLocaleTimeString("en-US", {
+              {new Date(visitor.checkOut).toLocaleString("en-US", {
+                month: "short",
+                day: "numeric",
                 hour: "2-digit",
                 minute: "2-digit",
               })}
@@ -274,6 +290,11 @@ export default function VisitorsInformation() {
       key: "status",
       header: "Status",
       cell: (visitor) => <StatusBadge status={visitor.status} />,
+    },
+    {
+      key: "source",
+      header: "Source",
+      cell: (visitor) => <span className="text-sm">{visitor.source || "—"}</span>,
     },
     {
       key: "followUpDate",
@@ -475,28 +496,22 @@ export default function VisitorsInformation() {
                   <p className="font-medium">{selectedVisitor.enquiryReason}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Location</p>
-                  <p className="font-medium flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                    {selectedVisitor.location}
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">WhatsApp</p>
+                  <p className="font-medium">{selectedVisitor.whatsappNumber || "—"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Source</p>
+                  <p className="font-medium">{selectedVisitor.source || "—"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Registration Date</p>
+                  <p className="font-medium">
+                    {selectedVisitor.registrationDate ? new Date(selectedVisitor.registrationDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}
                   </p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Follow-up Date</p>
-                  <p className="font-medium flex items-center gap-1.5">
-                    {selectedVisitor.followUpDate ? (
-                      <>
-                        <Phone className="h-3.5 w-3.5 text-primary" />
-                        {new Date(selectedVisitor.followUpDate).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground">Not scheduled</span>
-                    )}
-                  </p>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Call Type</p>
+                  <p className="font-medium">{selectedVisitor.callType || "—"}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Person to Meet</p>
@@ -538,6 +553,36 @@ export default function VisitorsInformation() {
                       : "Not checked out"}
                   </p>
                 </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Follow-up Date</p>
+                  <p className="font-medium flex items-center gap-1.5">
+                    {selectedVisitor.followUpDate ? (
+                      <>
+                        <Phone className="h-3.5 w-3.5 text-primary" />
+                        {new Date(selectedVisitor.followUpDate).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">Not scheduled</span>
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Follow-up Time</p>
+                  <p className="font-medium">{selectedVisitor.followUpTime || "—"}</p>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Follow-up Notes</p>
+                  <p className="font-medium">{selectedVisitor.followUpNotes || "—"}</p>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Remarks</p>
+                  <p className="font-medium">{selectedVisitor.remarks || "—"}</p>
+                </div>
+              </div>
               </div>
             </div>
           )}
