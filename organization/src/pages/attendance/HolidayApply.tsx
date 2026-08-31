@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { CalendarCheck, CalendarDays, Check, Clock3, FileText, User, Users, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 type HolidayType = "public_holiday" | "casual_leave" | "sick_leave" | "earned_leave" | "other";
 
