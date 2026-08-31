@@ -99,6 +99,7 @@ import ExpenseVoucher from "./pages/expense/ExpenseVoucher";
 import Attendance from "./pages/attendance/Attendance";
 import AttendanceReport from "./pages/attendance/AttendanceReport";
 import AttendanceLogs from "./pages/attendance/AttendanceLogs";
+import HolidayApply from "./pages/attendance/HolidayApply";
 
 // User Management
 import AllUsers from "./pages/user/AllUsers";
@@ -233,6 +234,7 @@ const App = () => (
           <Route path="/attendance/mark" element={<Attendance />} />
           <Route path="/attendance/report" element={<AttendanceReport />} />
           <Route path="/attendance/logs" element={<AttendanceLogs />} />
+          <Route path="/attendance/holiday-apply" element={<HolidayApply />} />
           
           {/* User Management */}
           <Route path="/user/all" element={<AllUsers />} />

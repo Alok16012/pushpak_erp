@@ -196,6 +196,7 @@ export const menuItems: MenuItem[] = [
       { title: "Mark Attendance", url: "/attendance/mark", icon: Camera },
       { title: "Attendance Report", url: "/attendance/report", icon: FileBarChart },
       { title: "Attendance Logs", url: "/attendance/logs", icon: History },
+      { title: "Holiday Apply", url: "/attendance/holiday-apply", icon: CalendarCheck },
     ],
   },
   {
