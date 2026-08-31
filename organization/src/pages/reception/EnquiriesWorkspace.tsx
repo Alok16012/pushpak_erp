@@ -856,32 +856,34 @@ export default function EnquiriesWorkspace() {
               {stage === 2 && (
                 <Stage
                   title="Verify identity"
-                  subtitle="Keep this optional for low-risk or returning visitors."
+                  subtitle="Record the ID proof shown by the visitor — keep it optional for low-risk or returning visitors."
                 >
-                  <Field label="ID type">
-                    <Select
-                      value={draft.idType}
-                      onValueChange={(v) => update("idType", v)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select ID type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Aadhaar">Aadhaar</SelectItem>
-                        <SelectItem value="Driving licence">
-                          Driving licence
-                        </SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="ID number">
-                    <Input
-                      value={draft.idNumber}
-                      onChange={(e) => update("idNumber", e.target.value)}
-                      placeholder="Last four digits are sufficient"
-                    />
-                  </Field>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Field label="ID Type">
+                      <Select
+                        value={draft.idType}
+                        onValueChange={(v) => update("idType", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select ID type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ID_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="ID Number">
+                      <Input
+                        value={draft.idNumber}
+                        onChange={(e) => update("idNumber", e.target.value)}
+                        placeholder="Enter ID number"
+                      />
+                    </Field>
+                  </div>
                 </Stage>
               )}
               {stage === 3 && (
