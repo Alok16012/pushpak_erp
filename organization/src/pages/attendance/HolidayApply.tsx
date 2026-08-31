@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarCheck, CalendarDays, FileText, User, Users } from "lucide-react";
+import { CalendarCheck, CalendarDays, Check, Clock3, FileText, User, Users, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type HolidayType = "public_holiday" | "casual_leave" | "sick_leave" | "earned_leave" | "other";
