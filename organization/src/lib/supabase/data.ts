@@ -737,7 +737,12 @@ export async function createBranchLogin(input: {
 export async function updateBranchWithDetails(
   id: string,
   organizationId: string,
-  input: { branch: Record<string, unknown>; address?: Record<string, unknown> },
+  input: {
+    branch: Record<string, unknown>;
+    address?: Record<string, unknown>;
+    director?: Record<string, unknown>;
+    license?: Record<string, unknown>;
+  },
 ) {
   const result = await updateBranch(id, organizationId, input.branch);
   if (input.address) {
@@ -747,7 +752,38 @@ export async function updateBranchWithDetails(
       .eq("branchId", id);
     if (error) throw new Error(error.message);
   }
+  if (input.director) {
+    const { error } = await supabase
+      .from("branch_directors")
+      .update(input.director)
+      .eq("branchId", id);
+    if (error) throw new Error(error.message);
+  }
+  if (input.license) {
+    const { error } = await supabase
+      .from("branch_licenses")
+      .update(input.license)
+      .eq("branchId", id);
+    if (error) throw new Error(error.message);
+  }
   return result;
+}
+
+export async function getBranchDetails(organizationId: string, branchId: string) {
+  const { data: branch, error: branchError } = await supabase
+    .from("branches")
+    .select("*")
+    .eq("id", branchId)
+    .eq("organizationId", organizationId)
+    .is("deletedAt", null)
+    .single();
+  if (branchError) throw new Error(branchError.message);
+
+  const { data: address } = await supabase.from("branch_addresses").select("*").eq("branchId", branchId).maybeSingle();
+  const { data: director } = await supabase.from("branch_directors").select("*").eq("branchId", branchId).maybeSingle();
+  const { data: license } = await supabase.from("branch_licenses").select("*").eq("branchId", branchId).maybeSingle();
+
+  return { success: true, data: { ...branch, address, director, license } };
 }
 
 export async function deleteBranch(id: string) {
