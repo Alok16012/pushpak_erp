@@ -135,7 +135,7 @@ export default function CreateBranch() {
       address: {
         streetAddress: value("address"),
         state: titleCase(value("state")),
-        district: value("district"),
+        district: titleCase(value("district")),
         block: value("block") || null,
         city: value("city"),
         pincode: value("pincode"),
