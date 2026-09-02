@@ -672,7 +672,7 @@ export default function EnquiriesWorkspace() {
                   subtitle="Basic contact information is enough to create the record."
                 >
                   <div className="space-y-4">
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid gap-4 sm:grid-cols-3">
                       <Field label="Visitor Name *" required>
                         <Input
                           value={draft.name}
@@ -687,9 +687,6 @@ export default function EnquiriesWorkspace() {
                           placeholder="10-digit number"
                         />
                       </Field>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Email">
                         <Input
                           value={draft.email}
@@ -697,16 +694,23 @@ export default function EnquiriesWorkspace() {
                           placeholder="name@example.com"
                         />
                       </Field>
-                      <Field label="Person Candidate Name">
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <Field label="WhatsApp Number">
+                        <Input
+                          value={draft.whatsappNumber}
+                          onChange={(e) => update("whatsappNumber", e.target.value)}
+                          placeholder="WhatsApp number"
+                        />
+                      </Field>
+                      <Field label="Candidate Name">
                         <Input
                           value={draft.candidateName}
                           onChange={(e) => update("candidateName", e.target.value)}
                           placeholder="Candidate name"
                         />
                       </Field>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-3">
                       <Field label="Source">
                         <Select
                           value={draft.source}
@@ -724,6 +728,9 @@ export default function EnquiriesWorkspace() {
                           </SelectContent>
                         </Select>
                       </Field>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-3">
                       <Field label="Registration Date">
                         <Input
                           type="date"
@@ -748,21 +755,11 @@ export default function EnquiriesWorkspace() {
                           </SelectContent>
                         </Select>
                       </Field>
-                    </div>
-
-                    <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="ID Number">
                         <Input
                           value={draft.idNumber}
                           onChange={(e) => update("idNumber", e.target.value)}
                           placeholder="Enter ID number"
-                        />
-                      </Field>
-                      <Field label="WhatsApp Number">
-                        <Input
-                          value={draft.whatsappNumber}
-                          onChange={(e) => update("whatsappNumber", e.target.value)}
-                          placeholder="WhatsApp number"
                         />
                       </Field>
                     </div>
