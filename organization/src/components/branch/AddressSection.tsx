@@ -142,6 +142,8 @@ const titleCase = (value: string) =>
   value.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 export function AddressSection() {
+  // Store slugged values in state so the Select's `value` matches its
+  // SelectItem values. Convert to titleCase only for lookups.
   const [selectedState, setSelectedState] = useState("");
   const [selectedDistrict, setSelectedDistrict] = useState("");
 
@@ -181,7 +183,7 @@ export function AddressSection() {
               name="state"
               value={selectedState}
               onValueChange={(val) => {
-                setSelectedState(titleCase(val));
+                setSelectedState(val);
                 setSelectedDistrict("");
                 setBlockQuery("");
                 setCityQuery("");
@@ -209,7 +211,7 @@ export function AddressSection() {
               value={selectedDistrict}
               disabled={!stateKey || availableDistricts.length === 0}
               onValueChange={(val) => {
-                setSelectedDistrict(titleCase(val));
+                setSelectedDistrict(val);
                 setBlockQuery("");
                 setCityQuery("");
               }}
