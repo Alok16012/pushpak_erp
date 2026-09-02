@@ -671,91 +671,103 @@ export default function EnquiriesWorkspace() {
                   title="Who is visiting?"
                   subtitle="Basic contact information is enough to create the record."
                 >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Visitor Name *" required>
-                      <Input
-                        value={draft.name}
-                        onChange={(e) => update("name", e.target.value)}
-                        placeholder="e.g. Meera Joshi"
-                      />
-                    </Field>
-                    <Field label="Mobile Number *" required>
-                      <Input
-                        value={draft.phone}
-                        onChange={(e) => update("phone", e.target.value)}
-                        placeholder="10-digit number"
-                      />
-                    </Field>
-                    <Field label="WhatsApp Number">
-                      <Input
-                        value={draft.whatsappNumber}
-                        onChange={(e) => update("whatsappNumber", e.target.value)}
-                        placeholder="WhatsApp number"
-                      />
-                    </Field>
-                    <Field label="Email">
-                      <Input
-                        value={draft.email}
-                        onChange={(e) => update("email", e.target.value)}
-                        placeholder="name@example.com"
-                      />
-                    </Field>
-                    <Field label="Person Candidate Name">
-                      <Input
-                        value={draft.candidateName}
-                        onChange={(e) => update("candidateName", e.target.value)}
-                        placeholder="Candidate name"
-                      />
-                    </Field>
-                    <Field label="Source">
-                      <Select
-                        value={draft.source}
-                        onValueChange={(v) => update("source", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select source" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SOURCES.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Registration Date">
-                      <Input
-                        type="date"
-                        value={draft.registrationDate}
-                        onChange={(e) => update("registrationDate", e.target.value)}
-                      />
-                    </Field>
-                    <Field label="ID Type">
-                      <Select
-                        value={draft.idType}
-                        onValueChange={(v) => update("idType", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select ID type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ID_TYPES.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="ID Number" className="md:col-span-2">
-                      <Input
-                        value={draft.idNumber}
-                        onChange={(e) => update("idNumber", e.target.value)}
-                        placeholder="Enter ID number"
-                      />
-                    </Field>
-                    <Field label="Address" className="md:col-span-2">
+                  <div className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Visitor Name *" required>
+                        <Input
+                          value={draft.name}
+                          onChange={(e) => update("name", e.target.value)}
+                          placeholder="e.g. Meera Joshi"
+                        />
+                      </Field>
+                      <Field label="Mobile Number *" required>
+                        <Input
+                          value={draft.phone}
+                          onChange={(e) => update("phone", e.target.value)}
+                          placeholder="10-digit number"
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Email">
+                        <Input
+                          value={draft.email}
+                          onChange={(e) => update("email", e.target.value)}
+                          placeholder="name@example.com"
+                        />
+                      </Field>
+                      <Field label="Person Candidate Name">
+                        <Input
+                          value={draft.candidateName}
+                          onChange={(e) => update("candidateName", e.target.value)}
+                          placeholder="Candidate name"
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <Field label="Source">
+                        <Select
+                          value={draft.source}
+                          onValueChange={(v) => update("source", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select source" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {SOURCES.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Registration Date">
+                        <Input
+                          type="date"
+                          value={draft.registrationDate}
+                          onChange={(e) => update("registrationDate", e.target.value)}
+                        />
+                      </Field>
+                      <Field label="ID Type">
+                        <Select
+                          value={draft.idType}
+                          onValueChange={(v) => update("idType", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select ID type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ID_TYPES.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {t}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="ID Number">
+                        <Input
+                          value={draft.idNumber}
+                          onChange={(e) => update("idNumber", e.target.value)}
+                          placeholder="Enter ID number"
+                        />
+                      </Field>
+                      <Field label="WhatsApp Number">
+                        <Input
+                          value={draft.whatsappNumber}
+                          onChange={(e) => update("whatsappNumber", e.target.value)}
+                          placeholder="WhatsApp number"
+                        />
+                      </Field>
+                    </div>
+
+                    <Field label="Address">
                       <Textarea
                         value={draft.address}
                         onChange={(e) => update("address", e.target.value)}
@@ -771,69 +783,78 @@ export default function EnquiriesWorkspace() {
                   title="What brings them here?"
                   subtitle="Route the visitor to the right person and record their enquiry details."
                 >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Purpose of Visit *" required>
-                      <Select
-                        value={draft.purpose}
-                        onValueChange={(v) => update("purpose", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select purpose" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PURPOSES.map((p) => (
-                            <SelectItem key={p} value={p}>
-                              {p}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Person to Meet *" required>
-                      <Input
-                        value={draft.person}
-                        onChange={(e) => update("person", e.target.value)}
-                        placeholder="Name or role"
-                      />
-                    </Field>
-                    <Field label="Department *" required>
-                      <Select
-                        value={draft.department}
-                        onValueChange={(v) => update("department", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select department" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DEPARTMENTS.map((d) => (
-                            <SelectItem key={d} value={d}>
-                              {d}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Visit Location">
-                      <Input
-                        value={draft.location}
-                        onChange={(e) => update("location", e.target.value)}
-                        placeholder="e.g. Reception, 2nd floor"
-                      />
-                    </Field>
-                    <Field label="Visit Date">
-                      <Input
-                        type="date"
-                        value={draft.visitDate}
-                        onChange={(e) => update("visitDate", e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Visit Time">
-                      <Input
-                        type="time"
-                        value={draft.visitTime}
-                        onChange={(e) => update("visitTime", e.target.value)}
-                      />
-                    </Field>
+                  <div className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Purpose of Visit *" required>
+                        <Select
+                          value={draft.purpose}
+                          onValueChange={(v) => update("purpose", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select purpose" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PURPOSES.map((p) => (
+                              <SelectItem key={p} value={p}>
+                                {p}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Person to Meet *" required>
+                        <Input
+                          value={draft.person}
+                          onChange={(e) => update("person", e.target.value)}
+                          placeholder="Name or role"
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Department *" required>
+                        <Select
+                          value={draft.department}
+                          onValueChange={(v) => update("department", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select department" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {DEPARTMENTS.map((d) => (
+                              <SelectItem key={d} value={d}>
+                                {d}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="Visit Location">
+                        <Input
+                          value={draft.location}
+                          onChange={(e) => update("location", e.target.value)}
+                          placeholder="e.g. Reception, 2nd floor"
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Visit Date">
+                        <Input
+                          type="date"
+                          value={draft.visitDate}
+                          onChange={(e) => update("visitDate", e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Visit Time">
+                        <Input
+                          type="time"
+                          value={draft.visitTime}
+                          onChange={(e) => update("visitTime", e.target.value)}
+                        />
+                      </Field>
+                    </div>
+
                     <Field label="Enquiry Reason">
                       <Textarea
                         value={draft.enquiryReason}
@@ -842,6 +863,7 @@ export default function EnquiriesWorkspace() {
                         className="min-h-20"
                       />
                     </Field>
+
                     <Field label="Remarks">
                       <Textarea
                         value={draft.remarks}
@@ -858,31 +880,33 @@ export default function EnquiriesWorkspace() {
                   title="Verify identity"
                   subtitle="Record the ID proof shown by the visitor — keep it optional for low-risk or returning visitors."
                 >
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="ID Type">
-                      <Select
-                        value={draft.idType}
-                        onValueChange={(v) => update("idType", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select ID type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ID_TYPES.map((t) => (
-                            <SelectItem key={t} value={t}>
-                              {t}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="ID Number">
-                      <Input
-                        value={draft.idNumber}
-                        onChange={(e) => update("idNumber", e.target.value)}
-                        placeholder="Enter ID number"
-                      />
-                    </Field>
+                  <div className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="ID Type">
+                        <Select
+                          value={draft.idType}
+                          onValueChange={(v) => update("idType", v)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select ID type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ID_TYPES.map((t) => (
+                              <SelectItem key={t} value={t}>
+                                {t}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field label="ID Number">
+                        <Input
+                          value={draft.idNumber}
+                          onChange={(e) => update("idNumber", e.target.value)}
+                          placeholder="Enter ID number"
+                        />
+                      </Field>
+                    </div>
                   </div>
                 </Stage>
               )}
@@ -939,8 +963,8 @@ export default function EnquiriesWorkspace() {
                   title="Review & register"
                   subtitle="Add context for the team, then complete check-in."
                 >
-                  {!branchId && (
-                    <div className="sm:col-span-2">
+                  <div className="space-y-4">
+                    {!branchId && (
                       <Field label="Branch *" required>
                         <Select
                           value={pickedBranchId}
@@ -964,9 +988,8 @@ export default function EnquiriesWorkspace() {
                           </SelectContent>
                         </Select>
                       </Field>
-                    </div>
-                  )}
-                  <div className="sm:col-span-2">
+                    )}
+
                     <Field label="Reception notes">
                       <Textarea
                         value={draft.notes}
@@ -975,23 +998,24 @@ export default function EnquiriesWorkspace() {
                         className="min-h-28"
                       />
                     </Field>
-                  </div>
-                  <div className="sm:col-span-2 rounded-2xl border bg-muted/30 p-4 text-sm space-y-2">
-                    <div>
-                      <p className="font-semibold">
-                        {draft.name || "Unnamed visitor"}
-                      </p>
-                      <p className="mt-1 text-muted-foreground">
-                        {draft.phone || "No phone"} · {draft.whatsappNumber || "No WhatsApp"}
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div><span className="text-muted-foreground">Purpose:</span> {draft.purpose || "—"}</div>
-                      <div><span className="text-muted-foreground">Meeting:</span> {draft.person || "—"}</div>
-                      <div><span className="text-muted-foreground">Department:</span> {draft.department || "—"}</div>
-                      <div><span className="text-muted-foreground">Source:</span> {draft.source || "—"}</div>
-                      <div><span className="text-muted-foreground">Visit:</span> {draft.visitDate || "—"} {draft.visitTime || ""}</div>
-                      <div><span className="text-muted-foreground">Follow-up:</span> {draft.followUpDate || "—"} {draft.callType || ""}</div>
+
+                    <div className="rounded-2xl border bg-muted/30 p-4 text-sm space-y-2">
+                      <div>
+                        <p className="font-semibold">
+                          {draft.name || "Unnamed visitor"}
+                        </p>
+                        <p className="mt-1 text-muted-foreground">
+                          {draft.phone || "No phone"} · {draft.whatsappNumber || "No WhatsApp"}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div><span className="text-muted-foreground">Purpose:</span> {draft.purpose || "—"}</div>
+                        <div><span className="text-muted-foreground">Meeting:</span> {draft.person || "—"}</div>
+                        <div><span className="text-muted-foreground">Department:</span> {draft.department || "—"}</div>
+                        <div><span className="text-muted-foreground">Source:</span> {draft.source || "—"}</div>
+                        <div><span className="text-muted-foreground">Visit:</span> {draft.visitDate || "—"} {draft.visitTime || ""}</div>
+                        <div><span className="text-muted-foreground">Follow-up:</span> {draft.followUpDate || "—"} {draft.callType || ""}</div>
+                      </div>
                     </div>
                   </div>
                 </Stage>
@@ -1047,7 +1071,7 @@ function Stage({
         <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
       </div>
-      <div className="grid gap-5 sm:grid-cols-2">{children}</div>
+      <div className="space-y-5">{children}</div>
     </>
   );
 }
