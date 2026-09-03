@@ -25,8 +25,10 @@ import {
   Shield,
   FileText,
   Info,
+  X,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import jsPDF from "jspdf";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -186,6 +188,7 @@ export default function ViewBranch() {
   const [editing, setEditing] = useState<BranchEdit | null>(null);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Branch | null>(null);
+  const [selectedBranches, setSelectedBranches] = useState<Branch[]>([]);
 
   useEffect(() => {
     const fetchBranches = async () => {
@@ -205,23 +208,107 @@ export default function ViewBranch() {
     fetchBranches();
   }, [toast, user?.organizationId]);
 
+  // Generate a single branch's certificate HTML content
+  const getCertificateHtml = (branch: Branch) => `
+    <div style="page-break-after:always;border:6px double #1f2937;padding:48px;text-align:center;font-family:Georgia,serif">
+      <p style="letter-spacing:.3em;font-size:12px;text-transform:uppercase;color:#6b7280">Pushpak Institute</p>
+      <h1 style="margin:16px 0 4px;font-size:30px">Center Certificate</h1>
+      <p style="color:#6b7280;font-size:13px">This is to certify that the centre named below is authorised to operate</p>
+      <h2 style="margin:28px 0 4px;font-size:24px">${branch.name}</h2>
+      <p style="font-size:14px">Centre code <strong>${branch.code}</strong></p>
+      <p style="font-size:14px">${branch.city}, ${branch.state}</p>
+      <table style="margin:28px auto 0;font-size:13px;border-collapse:collapse">
+        <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Type</td><td style="padding:4px 16px;text-align:left"><strong>${branch.branchType}</strong></td></tr>
+        <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Status</td><td style="padding:4px 16px;text-align:left"><strong>${branch.status === "active" ? "Active" : "Inactive"}</strong></td></tr>
+      </table>
+      <p style="margin-top:48px;font-size:12px;color:#6b7280">Issued on ${new Date().toLocaleDateString()}</p>
+    </div>
+  `;
+
+  // Print certificate for a single branch
   const certificate = (branch: Branch) =>
     printHtml(
       `Center Certificate - ${branch.code}`,
-      `<div style="border:6px double #1f2937;padding:48px;text-align:center;font-family:Georgia,serif">
-         <p style="letter-spacing:.3em;font-size:12px;text-transform:uppercase;color:#6b7280">Pushpak Institute</p>
-         <h1 style="margin:16px 0 4px;font-size:30px">Center Certificate</h1>
-         <p style="color:#6b7280;font-size:13px">This is to certify that the centre named below is authorised to operate</p>
-         <h2 style="margin:28px 0 4px;font-size:24px">${branch.name}</h2>
-         <p style="font-size:14px">Centre code <strong>${branch.code}</strong></p>
-         <p style="font-size:14px">${branch.city}, ${branch.state}</p>
-         <table style="margin:28px auto 0;font-size:13px;border-collapse:collapse">
-           <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Type</td><td style="padding:4px 16px;text-align:left"><strong>${branch.branchType}</strong></td></tr>
-           <tr><td style="padding:4px 16px;text-align:right;color:#6b7280">Status</td><td style="padding:4px 16px;text-align:left"><strong>${branch.status === "active" ? "Active" : "Inactive"}</strong></td></tr>
-         </table>
-         <p style="margin-top:48px;font-size:12px;color:#6b7280">Issued on ${new Date().toLocaleDateString()}</p>
-       </div>`,
+      getCertificateHtml(branch),
     );
+
+  // Bulk download certificates for selected branches
+  const bulkCertificates = async (branches: Branch[]) => {
+    if (branches.length === 0) {
+      toast({ title: "No branches selected", variant: "destructive" });
+      return;
+    }
+    try {
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 15;
+
+      for (let i = 0; i < branches.length; i++) {
+        const branch = branches[i];
+        if (i > 0) pdf.addPage();
+
+        // Header
+        pdf.setFontSize(10);
+        pdf.setTextColor(107, 114, 128);
+        pdf.text("Pushpak Institute", pageWidth / 2, margin, { align: "center" });
+
+        pdf.setFontSize(26);
+        pdf.setTextColor(31, 41, 55);
+        pdf.text("Center Certificate", pageWidth / 2, margin + 12, { align: "center" });
+
+        pdf.setFontSize(11);
+        pdf.setTextColor(107, 114, 128);
+        pdf.text("This is to certify that the centre named below is authorised to operate", pageWidth / 2, margin + 20, { align: "center" });
+
+        // Branch name
+        pdf.setFontSize(20);
+        pdf.setTextColor(31, 41, 55);
+        pdf.text(branch.name, pageWidth / 2, margin + 35, { align: "center" });
+
+        // Details
+        pdf.setFontSize(12);
+        pdf.setTextColor(55, 65, 81);
+        pdf.text(`Centre code ${branch.code}`, pageWidth / 2, margin + 44, { align: "center" });
+        pdf.text(`${branch.city}, ${branch.state}`, pageWidth / 2, margin + 51, { align: "center" });
+
+        // Table
+        const tableY = margin + 62;
+        pdf.setDrawColor(200, 200, 200);
+        pdf.setLineWidth(0.3);
+
+        // Type row
+        pdf.setTextColor(107, 114, 128);
+        pdf.text("Type", pageWidth / 2 - 40, tableY, { align: "right" });
+        pdf.setTextColor(31, 41, 55);
+        pdf.setFont(undefined, "bold");
+        pdf.text(branch.branchType, pageWidth / 2 + 10, tableY, { align: "left" });
+        pdf.setFont(undefined, "normal");
+
+        // Status row
+        pdf.setTextColor(107, 114, 128);
+        pdf.text("Status", pageWidth / 2 - 40, tableY + 8, { align: "right" });
+        pdf.setTextColor(31, 41, 55);
+        pdf.setFont(undefined, "bold");
+        pdf.text(branch.status === "active" ? "Active" : "Inactive", pageWidth / 2 + 10, tableY + 8, { align: "left" });
+        pdf.setFont(undefined, "normal");
+
+        // Footer
+        pdf.setFontSize(10);
+        pdf.setTextColor(107, 114, 128);
+        pdf.text(`Issued on ${new Date().toLocaleDateString()}`, pageWidth / 2, pageHeight - margin, { align: "center" });
+      }
+
+      pdf.save(`center-certificates-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast({ title: `${branches.length} certificate${branches.length > 1 ? "s" : ""} downloaded` });
+    } catch {
+      toast({ title: "Failed to generate certificates", variant: "destructive" });
+    }
+  };
+
+  const handleSelectionChange = (ids: (string | number)[]) => {
+    setSelectedBranches(branchesData.filter((b) => ids.includes(b.id)));
+  };
 
   const handleActions = (branch: Branch) => [
     { label: "View Details", onClick: () => setDetails(branch) },
@@ -450,7 +537,25 @@ export default function ViewBranch() {
         columns={columns}
         searchPlaceholder="Search branches..."
         actions={handleActions}
+        selectable
+        onSelectionChange={handleSelectionChange}
       />
+
+      {selectedBranches.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div className="flex items-center gap-3 rounded-full border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-5 py-2.5 shadow-lg">
+            <span className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{selectedBranches.length}</span> selected
+            </span>
+            <Button size="sm" className="gap-2 rounded-full" onClick={() => bulkCertificates(selectedBranches)}>
+              Download Certificates
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 w-8 rounded-full p-0" onClick={() => setSelectedBranches([])}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
         <DialogContent>

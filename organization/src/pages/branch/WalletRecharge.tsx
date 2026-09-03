@@ -12,7 +12,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getWallet, rechargeWallet, getTransactions, getBranches } from "@/lib/supabase/data";
+import { getWalletsByOrg, getTransactionsByOrg, rechargeWallet, getBranches } from "@/lib/supabase/data";
 
 interface Institute {
   id: string;
@@ -62,14 +62,14 @@ export default function WalletRecharge() {
     async function loadWallet() {
       try {
         const orgId = user?.organizationId || null;
-        const [branchesRes, walletRes, txRes] = await Promise.all([
+        const [branchesRes, walletsRes, txsRes] = await Promise.all([
           getBranches(orgId),
-          getWallet(user?.branchId || ""),
-          getTransactions(user?.branchId || ""),
+          getWalletsByOrg(orgId),
+          getTransactionsByOrg(orgId),
         ]);
         if (!cancelled) {
           const branches = (branchesRes.data || []).filter((b: any) => b.isActive !== false);
-          const walletMap = new Map((txRes.data || []).filter((t: any) => t.status === "COMPLETED").map((t: any) => [t.branchId, t.balanceAfter]));
+          const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.branchId, Number(w.balance || 0)]));
           setInstitutes(
             branches.map((b: any) => ({
               id: b.id,
@@ -78,8 +78,7 @@ export default function WalletRecharge() {
               balance: Number(walletMap.get(b.id) ?? 0),
             }))
           );
-          setWalletData(walletRes.data);
-          setHistory(txRes.data as Recharge[] || []);
+          setHistory((txsRes.data || []).map((tx: any) => ({ ...tx, createdAt: tx.createdAt })));
         }
       } catch {
         if (!cancelled) {
@@ -93,7 +92,7 @@ export default function WalletRecharge() {
     }
     loadWallet();
     return () => { cancelled = true; };
-  }, [user?.branchId, user?.organizationId, toast]);
+  }, [user?.organizationId, toast]);
 
   const filteredInstitutes = institutes.filter(
     (inst) =>

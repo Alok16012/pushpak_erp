@@ -4,11 +4,27 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ArrowUpRight, ArrowDownLeft, IndianRupee, TrendingUp, TrendingDown, Download } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { downloadCsv, downloadHtml, printHtml } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { getTransactionsByOrg, getTransactions } from "@/lib/supabase/data";
 
 interface Transaction {
   id: string;
@@ -21,17 +37,6 @@ interface Transaction {
   balance: number;
   reference: string;
 }
-
-const transactionsData: Transaction[] = [
-  { id: "1", date: "2024-01-15", branch: "Main Campus", type: "credit", category: "Fee Collection", description: "Student fee payment - Batch A", amount: 125000, balance: 485000, reference: "TXN001234" },
-  { id: "2", date: "2024-01-15", branch: "Main Campus", type: "debit", category: "Salary", description: "Staff salary disbursement", amount: 85000, balance: 400000, reference: "TXN001235" },
-  { id: "3", date: "2024-01-14", branch: "North Campus", type: "credit", category: "Fee Collection", description: "Exam fee collection", amount: 45000, balance: 485000, reference: "TXN001236" },
-  { id: "4", date: "2024-01-14", branch: "South Campus", type: "debit", category: "Utilities", description: "Electricity bill payment", amount: 12000, balance: 53000, reference: "TXN001237" },
-  { id: "5", date: "2024-01-13", branch: "Main Campus", type: "credit", category: "Wallet Recharge", description: "Admin wallet recharge", amount: 50000, balance: 485000, reference: "TXN001238" },
-  { id: "6", date: "2024-01-13", branch: "East Campus", type: "debit", category: "Maintenance", description: "Building repair work", amount: 25000, balance: 45000, reference: "TXN001239" },
-  { id: "7", date: "2024-01-12", branch: "North Campus", type: "credit", category: "Fee Collection", description: "Late fee payment - 15 students", amount: 7500, balance: 440000, reference: "TXN001240" },
-  { id: "8", date: "2024-01-12", branch: "Main Campus", type: "debit", category: "Purchase", description: "Lab equipment purchase", amount: 35000, balance: 435000, reference: "TXN001241" },
-];
 
 const columns: Column<Transaction>[] = [
   {
@@ -81,18 +86,17 @@ const columns: Column<Transaction>[] = [
     sortable: true,
     cell: (txn) => (
       <span className={`font-medium ${txn.type === "credit" ? "text-success" : "text-destructive"}`}>
-        {txn.type === "credit" ? "+" : "-"}₹{txn.amount.toLocaleString()}
+        {(txn.type === "credit" ? "+" : "-")}₹{(txn.amount ?? 0).toLocaleString()}
       </span>
     ),
   },
   {
     key: "balance",
     header: "Balance",
-    cell: (txn) => <span className="font-medium">₹{txn.balance.toLocaleString()}</span>,
+    cell: (txn) => <span className="font-medium">₹{(txn.balance ?? 0).toLocaleString()}</span>,
   },
 ];
 
-/** The printable/downloadable receipt body for one transaction. */
 const receiptHtml = (txn: Transaction) => `
   <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto">
     <h1 style="margin:0;font-size:20px">Pushpak Institute</h1>
@@ -118,7 +122,49 @@ const receiptHtml = (txn: Transaction) => `
 
 export default function BranchTransactions() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [details, setDetails] = useState<Transaction | null>(null);
+  const [rawRows, setRawRows] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const orgId = (user as any)?.organizationId || (user as any)?.orgId || null;
+        const res = orgId ? await getTransactionsByOrg(orgId) : (user as any)?.branchId ? await getTransactions((user as any).branchId) : { success: true, data: [] };
+        if (!cancelled) setRawRows((res.data || []) as Transaction[]);
+      } catch (e: any) {
+        if (!cancelled) toast({ title: "Failed to load transactions", description: e?.message || "Unknown error", variant: "destructive" });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [(user as any)?.branchId, (user as any)?.organizationId, (user as any)?.orgId]);
+
+  const filtered = useMemo(() => {
+    if (selectedYear === "all" && selectedMonth === "all") return rawRows;
+    return rawRows.filter((txn) => {
+      const raw = (txn as any).date || (txn as any).createdAt || "";
+      const d = new Date(raw);
+      const yearMatch = selectedYear === "all" || d.getFullYear() === Number(selectedYear);
+      const monthMatch = selectedMonth === "all" || d.getMonth() + 1 === Number(selectedMonth);
+      return yearMatch && monthMatch;
+    });
+  }, [rawRows, selectedYear, selectedMonth]);
+
+  const totalCredits = filtered.filter((t) => t.type === "credit").reduce((sum, t) => sum + t.amount, 0);
+  const totalDebits = filtered.filter((t) => t.type === "debit").reduce((sum, t) => sum + t.amount, 0);
+  const monthLabel = new Date(selectedYear, selectedMonth - 1).toLocaleString("en-IN", { month: "long", year: "numeric" });
+
+  const clearFilter = () => {
+    setSelectedYear("all");
+    setSelectedMonth("all");
+  };
 
   const downloadReceipt = (txn: Transaction) => {
     downloadHtml(`receipt-${txn.reference}.html`, `Receipt ${txn.reference}`, receiptHtml(txn));
@@ -126,9 +172,10 @@ export default function BranchTransactions() {
   };
 
   const exportAll = () => {
+    const source = filtered.length ? filtered : rawRows;
     downloadCsv(
       "branch-transactions.csv",
-      transactionsData.map((txn) => ({
+      source.map((txn) => ({
         Date: txn.date,
         Branch: txn.branch,
         Type: txn.type,
@@ -139,7 +186,7 @@ export default function BranchTransactions() {
         Reference: txn.reference,
       })),
     );
-    toast({ title: "Transactions exported", description: `${transactionsData.length} rows written to CSV.` });
+    toast({ title: "Transactions exported", description: `${source.length} rows written to CSV.` });
   };
 
   const handleActions = (txn: Transaction) => [
@@ -147,9 +194,6 @@ export default function BranchTransactions() {
     { label: "Download Receipt", onClick: () => downloadReceipt(txn) },
     { label: "Print", onClick: () => printHtml(`Receipt ${txn.reference}`, receiptHtml(txn)) },
   ];
-
-  const totalCredits = transactionsData.filter(t => t.type === "credit").reduce((sum, t) => sum + t.amount, 0);
-  const totalDebits = transactionsData.filter(t => t.type === "debit").reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <AppLayout>
@@ -161,49 +205,103 @@ export default function BranchTransactions() {
           { label: "Transactions" },
         ]}
         actions={
-          <Button variant="outline" className="gap-2" onClick={exportAll}>
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
+              <Select
+                value={String(selectedMonth)}
+                onValueChange={(v) => setSelectedMonth(v)}
+              >
+                <SelectTrigger className="h-9 w-[140px]">
+                  <SelectValue placeholder="Month" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Months</SelectItem>
+                  {[
+                    { v: "1", label: "January" },
+                    { v: "2", label: "February" },
+                    { v: "3", label: "March" },
+                    { v: "4", label: "April" },
+                    { v: "5", label: "May" },
+                    { v: "6", label: "June" },
+                    { v: "7", label: "July" },
+                    { v: "8", label: "August" },
+                    { v: "9", label: "September" },
+                    { v: "10", label: "October" },
+                    { v: "11", label: "November" },
+                    { v: "12", label: "December" },
+                  ].map((m) => (
+                    <SelectItem key={m.v} value={m.v}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={String(selectedYear)}
+                onValueChange={(v) => setSelectedYear(v)}
+              >
+                <SelectTrigger className="h-9 w-[110px]">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {[2024, 2025, 2026].map((y) => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="outline" size="sm" onClick={clearFilter}>
+              Reset
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={exportAll}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          </div>
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
-        <StatsCard
-          title="Total Transactions"
-          value={transactionsData.length}
-          subtitle="This month"
-          icon={IndianRupee}
-        />
-        <StatsCard
-          title="Total Credits"
-          value={`₹${(totalCredits / 1000).toFixed(0)}K`}
-          subtitle="Incoming funds"
-          icon={TrendingUp}
-          trend={{ value: 12, isPositive: true }}
-        />
-        <StatsCard
-          title="Total Debits"
-          value={`₹${(totalDebits / 1000).toFixed(0)}K`}
-          subtitle="Outgoing funds"
-          icon={TrendingDown}
-          trend={{ value: 5, isPositive: false }}
-        />
-        <StatsCard
-          title="Net Balance"
-          value={`₹${((totalCredits - totalDebits) / 1000).toFixed(0)}K`}
-          subtitle="Credits - Debits"
-          icon={IndianRupee}
-          trend={{ value: 8, isPositive: true }}
-        />
-      </div>
+      {loading ? (
+        <div className="py-10 text-center text-muted-foreground">Loading transactions...</div>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-4 mb-6">
+            <StatsCard
+              title="Total Transactions"
+              value={filtered.length}
+              subtitle={monthLabel}
+              icon={IndianRupee}
+            />
+            <StatsCard
+              title="Total Credits"
+              value={`₹${(totalCredits / 1000).toFixed(0)}K`}
+              subtitle="Incoming funds"
+              icon={TrendingUp}
+              trend={{ value: 12, isPositive: true }}
+            />
+            <StatsCard
+              title="Total Debits"
+              value={`₹${(totalDebits / 1000).toFixed(0)}K`}
+              subtitle="Outgoing funds"
+              icon={TrendingDown}
+              trend={{ value: 5, isPositive: false }}
+            />
+            <StatsCard
+              title="Net Balance"
+              value={`₹${((totalCredits - totalDebits) / 1000).toFixed(0)}K`}
+              subtitle="Credits - Debits"
+              icon={IndianRupee}
+              trend={{ value: 8, isPositive: true }}
+            />
+          </div>
 
-      <DataTable
-        data={transactionsData}
-        columns={columns}
-        searchPlaceholder="Search transactions..."
-        actions={handleActions}
-      />
+          <DataTable
+            data={filtered}
+            columns={columns}
+            searchPlaceholder="Search transactions..."
+            actions={handleActions}
+          />
+        </>
+      )}
 
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
         <DialogContent>

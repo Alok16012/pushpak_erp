@@ -13,7 +13,7 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getNotices, createNotice, updateNotice, deleteNotice } from "@/lib/supabase/data";
+import { getNotices, createNotice, updateNotice, deleteNotice, getBranches, getBatches } from "@/lib/supabase/data";
 
 type NoticeType = "BRANCH" | "BATCH";
 type NoticePriority = "LOW" | "MEDIUM" | "HIGH";
@@ -32,7 +32,10 @@ interface Notice {
   type: NoticeType;
 }
 
-const BATCHES = ["All Batches", "Batch A - Morning", "Batch B - Evening", "Batch C - Weekend", "Batch D - Online"];
+interface Branch {
+  id: string;
+  name: string;
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 const inAMonth = () => new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
@@ -41,8 +44,8 @@ const blankDraft = (branchId: string): Notice => ({
   id: "",
   title: "",
   content: "",
-  branchId,
-  batch: BATCHES[0],
+  branchId: branchId || "",
+  batch: "",
   priority: "MEDIUM",
   publishDate: today(),
   expiryDate: inAMonth(),
@@ -69,7 +72,34 @@ export default function BranchNoticeBoard() {
   const [items, setItems] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [draft, setDraft] = useState<Notice>(blankDraft);
+  const [draft, setDraft] = useState<Notice>(() => blankDraft(""));
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [batches, setBatches] = useState<{ id: string; name: string }[]>([]);
+  const [metaLoading, setMetaLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchMeta = async () => {
+      try {
+        const orgId = (user as any)?.organizationId || (user as any)?.orgId || null;
+        const [branchRes, batchRes] = await Promise.all([
+          orgId ? getBranches(orgId) : Promise.resolve({ success: true, data: [] }),
+          user?.branchId ? getBatches(user.branchId) : Promise.resolve({ success: true, data: [] }),
+        ]);
+        setBranches((branchRes.data || []) as Branch[]);
+        setBatches(
+          (batchRes.data || []).map((b: any) => ({
+            id: b.id as string,
+            name: (b.name || b.title || `Batch ${b.id}`) as string,
+          }))
+        );
+      } catch {
+        toast({ title: "Failed to load branches/batches", variant: "destructive" });
+      } finally {
+        setMetaLoading(false);
+      }
+    };
+    fetchMeta();
+  }, [toast, user?.branchId, (user as any)?.organizationId, (user as any)?.orgId]);
 
   useEffect(() => {
     const fetchNotices = async () => {
@@ -92,7 +122,7 @@ export default function BranchNoticeBoard() {
   const batchNotices = items.filter((n) => n.type === "BATCH");
 
   const openCreate = () => {
-    setDraft(blankDraft(user?.branchId || ""));
+    setDraft(blankDraft(""));
     setIsDialogOpen(true);
   };
 
@@ -198,7 +228,7 @@ export default function BranchNoticeBoard() {
     </Card>
   );
 
-  if (loading) {
+  if (loading || metaLoading) {
     return (
       <AppLayout>
         <div className="flex items-center justify-center h-64">
@@ -238,7 +268,12 @@ export default function BranchNoticeBoard() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Notice Type</Label>
-                <Select value={draft.type} onValueChange={(val) => set("type", val as NoticeType)}>
+                <Select value={draft.type} onValueChange={(val) => {
+                  const next = val as NoticeType;
+                  set("type", next);
+                  set("branchId", "");
+                  set("batch", "");
+                }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select notice type" />
                   </SelectTrigger>
@@ -256,20 +291,51 @@ export default function BranchNoticeBoard() {
                       <SelectValue placeholder="Select branch" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={user?.branchId || ""}>Current Branch</SelectItem>
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Select value={draft.batch} onValueChange={(v) => set("batch", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select batch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {BATCHES.map((batch) => (
-                        <SelectItem key={batch} value={batch}>{batch}</SelectItem>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                ) : (
+                  <div className="grid gap-2">
+                    <Select
+                      value={draft.branchId}
+                      onValueChange={async (v) => {
+                        set("branchId", v);
+                        set("batch", "");
+                        try {
+                          const res = await getBatches(v);
+                          setBatches(
+                            (res.data || []).map((b: any) => ({
+                              id: b.id as string,
+                              name: (b.name || b.title || `Batch ${b.id}`) as string,
+                            }))
+                          );
+                        } catch {
+                          toast({ title: "Failed to load batches for branch", variant: "destructive" });
+                        }
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={draft.batch} onValueChange={(v) => set("batch", v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select batch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {batches.map((batch) => (
+                          <SelectItem key={batch.id} value={batch.name}>{batch.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
               </div>
             </div>

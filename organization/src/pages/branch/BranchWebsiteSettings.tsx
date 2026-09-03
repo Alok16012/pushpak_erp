@@ -177,8 +177,18 @@ export default function BranchWebsiteSettings() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="domain">Primary Domain</Label>
-                  <Input id="domain" value={form.domain} onChange={(e) => set("domain", e.target.value)} />
+                  <Label htmlFor="primaryDomain">Primary Domain</Label>
+                  <Input id="primaryDomain" value={form.primaryDomain} onChange={(e) => set("primaryDomain", e.target.value)} />
+                  {form.primaryDomain ? (
+                    <a
+                      href={`https://${form.primaryDomain.replace(/^https?:\/\//, "")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm text-primary underline break-all"
+                    >
+                      https://{form.primaryDomain.replace(/^https?:\/\//, "")}
+                    </a>
+                  ) : null}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="subdomain">Branch Subdomain</Label>

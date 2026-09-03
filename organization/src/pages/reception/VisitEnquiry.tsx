@@ -101,12 +101,30 @@ export default function VisitEnquiry() {
   const [source, setSource] = useState("");
   const [registrationDate, setRegistrationDate] = useState(new Date().toISOString().split("T")[0]);
   const [callType, setCallType] = useState("");
+  const [companions, setCompanions] = useState<{ id: string; name: string; phone: string; relation: string }[]>([]);
 
   useEffect(() => {
     if (!authLoading) {
       setBranchReady(true);
     }
   }, [authLoading]);
+
+  const addCompanion = () => {
+    setCompanions((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), name: "", phone: "", relation: "" },
+    ]);
+  };
+
+  const updateCompanion = (id: string, key: string, value: string) => {
+    setCompanions((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, [key]: value } : c)),
+    );
+  };
+
+  const removeCompanion = (id: string) => {
+    setCompanions((prev) => prev.filter((c) => c.id !== id));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -248,6 +266,66 @@ export default function VisitEnquiry() {
                 <div className="space-y-2">
                   <Label htmlFor="address">Student Address</Label>
                   <Textarea id="address" placeholder="Enter visitor's address" rows={2} value={address} onChange={(e) => setAddress(e.target.value)} />
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-semibold">Who is visiting?</Label>
+                    <Button type="button" size="sm" variant="outline" className="gap-2" onClick={addCompanion} disabled={companions.length >= 3}>
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Add Visitor
+                    </Button>
+                  </div>
+
+                  {/* Visitor 1 - main visitor */}
+                  <div className="rounded-lg border bg-muted/30 p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">1</span>
+                      <span className="text-sm font-medium">Visitor 1 (Primary)</span>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="v1-name" className="text-xs">Visitor Name *</Label>
+                        <Input id="v1-name" value={visitorName} onChange={(e) => setVisitorName(e.target.value)} placeholder="Full name" required />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="v1-phone" className="text-xs">Mobile Number *</Label>
+                        <Input id="v1-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Mobile number" required />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="v1-relation" className="text-xs">Relation</Label>
+                        <Input id="v1-relation" value="" disabled placeholder="Primary visitor" className="opacity-70" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {companions.map((c, idx) => (
+                    <div key={c.id} className="rounded-lg border bg-muted/30 p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">{idx + 2}</span>
+                          <span className="text-sm font-medium">Visitor {idx + 2}</span>
+                        </div>
+                        <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => removeCompanion(c.id)}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`c-${c.id}-name`} className="text-xs">Visitor Name</Label>
+                          <Input id={`c-${c.id}-name`} value={c.name} onChange={(e) => updateCompanion(c.id, "name", e.target.value)} placeholder="Full name" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`c-${c.id}-phone`} className="text-xs">Mobile Number</Label>
+                          <Input id={`c-${c.id}-phone`} value={c.phone} onChange={(e) => updateCompanion(c.id, "phone", e.target.value)} placeholder="Mobile number" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`c-${c.id}-relation`} className="text-xs">Relation</Label>
+                          <Input id={`c-${c.id}-relation`} value={c.relation} onChange={(e) => updateCompanion(c.id, "relation", e.target.value)} placeholder="e.g. Spouse, Colleague" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>

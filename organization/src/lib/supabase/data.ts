@@ -880,6 +880,34 @@ export async function getTransactions(branchId: string | null) {
   return { success: true, data: data || [] };
 }
 
+export async function getWalletsByOrg(organizationId: string | null) {
+  if (!organizationId) return { success: true, data: [] };
+  const { data, error } = await supabase
+    .from("branch_wallets")
+    .select("*")
+    .in("branchId", (await getBranchIdsByOrg(organizationId)) || []);
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+export async function getTransactionsByOrg(organizationId: string | null) {
+  if (!organizationId) return { success: true, data: [] };
+  const { data, error } = await supabase
+    .from("branch_transactions")
+    .select("*")
+    .in("branchId", (await getBranchIdsByOrg(organizationId)) || [])
+    .order("createdAt", { ascending: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+async function getBranchIdsByOrg(organizationId: string | null): Promise<string[]> {
+  if (!organizationId) return [];
+  const { data, error } = await supabase.from("branches").select("id").eq("organizationId", organizationId);
+  if (error) throw new Error(error.message);
+  return ((data || []) as any[]).map((b) => b.id);
+}
+
 export async function rechargeWallet(branchId: string | null, input: { amount: number; paymentMethod: string; description?: string; reference?: string }) {
   if (!branchId) return { success: false, error: "Missing branch" };
   const amount = Number(input.amount);
