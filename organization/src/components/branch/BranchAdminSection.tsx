@@ -11,6 +11,9 @@ const settings = [
   { name: "onlineEnrollment", label: "Online Enrollment", hint: "Accept online admissions", on: true },
   { name: "smsNotifications", label: "SMS Notifications", hint: "Send SMS alerts", on: false },
   { name: "emailNotifications", label: "Email Notifications", hint: "Send email updates", on: true },
+  { name: "onlineFeePayment", label: "Online Fee Payment", hint: "Enable online fee collection", on: false },
+  { name: "studentPortal", label: "Student Portal", hint: "Access to student dashboard", on: false },
+  { name: "parentPortal", label: "Parent Portal", hint: "Access to parent dashboard", on: false },
 ];
 
 export function BranchAdminSection() {

@@ -153,6 +153,9 @@ interface BranchEdit {
   onlineEnrollment: boolean;
   smsNotifications: boolean;
   emailNotifications: boolean;
+  onlineFeePayment: boolean;
+  studentPortal: boolean;
+  parentPortal: boolean;
   // address
   streetAddress: string;
   state: string;
@@ -341,6 +344,9 @@ export default function ViewBranch() {
           onlineEnrollment: (d.onlineEnrollment as boolean) ?? false,
           smsNotifications: (d.smsNotifications as boolean) ?? false,
           emailNotifications: (d.emailNotifications as boolean) ?? true,
+          onlineFeePayment: (d.onlineFeePayment as boolean) ?? false,
+          studentPortal: (d.studentPortal as boolean) ?? false,
+          parentPortal: (d.parentPortal as boolean) ?? false,
           streetAddress: (addr.streetAddress as string) || "",
           state: (addr.state as string) || "",
           district: (addr.district as string) || "",
@@ -402,6 +408,9 @@ export default function ViewBranch() {
           onlineEnrollment: editing.onlineEnrollment,
           smsNotifications: editing.smsNotifications,
           emailNotifications: editing.emailNotifications,
+          onlineFeePayment: editing.onlineFeePayment,
+          studentPortal: editing.studentPortal,
+          parentPortal: editing.parentPortal,
         },
         address: {
           streetAddress: editing.streetAddress,
@@ -612,6 +621,9 @@ export default function ViewBranch() {
                   onlineEnrollment: (d.onlineEnrollment as boolean) ?? false,
                   smsNotifications: (d.smsNotifications as boolean) ?? false,
                   emailNotifications: (d.emailNotifications as boolean) ?? true,
+                  onlineFeePayment: (d.onlineFeePayment as boolean) ?? false,
+                  studentPortal: (d.studentPortal as boolean) ?? false,
+                  parentPortal: (d.parentPortal as boolean) ?? false,
                   streetAddress: (addr.streetAddress as string) || "",
                   state: (addr.state as string) || "",
                   district: (addr.district as string) || "",
@@ -887,6 +899,27 @@ export default function ViewBranch() {
                       <p className="text-xs text-muted-foreground">Send email updates</p>
                     </div>
                     <Switch id="edit-emailNotifications" checked={editing.emailNotifications} onCheckedChange={(checked) => setEditing({ ...editing, emailNotifications: checked })} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <Label htmlFor="edit-onlineFeePayment" className="cursor-pointer">Online Fee Payment</Label>
+                      <p className="text-xs text-muted-foreground">Enable online fee collection</p>
+                    </div>
+                    <Switch id="edit-onlineFeePayment" checked={editing.onlineFeePayment} onCheckedChange={(checked) => setEditing({ ...editing, onlineFeePayment: checked })} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <Label htmlFor="edit-studentPortal" className="cursor-pointer">Student Portal</Label>
+                      <p className="text-xs text-muted-foreground">Access to student dashboard</p>
+                    </div>
+                    <Switch id="edit-studentPortal" checked={editing.studentPortal} onCheckedChange={(checked) => setEditing({ ...editing, studentPortal: checked })} />
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <Label htmlFor="edit-parentPortal" className="cursor-pointer">Parent Portal</Label>
+                      <p className="text-xs text-muted-foreground">Access to parent dashboard</p>
+                    </div>
+                    <Switch id="edit-parentPortal" checked={editing.parentPortal} onCheckedChange={(checked) => setEditing({ ...editing, parentPortal: checked })} />
                   </div>
                 </div>
               </div>

@@ -131,6 +131,9 @@ export default function CreateBranch() {
         onlineEnrollment: Boolean(data.get("onlineEnrollment")),
         smsNotifications: Boolean(data.get("smsNotifications")),
         emailNotifications: Boolean(data.get("emailNotifications")),
+        onlineFeePayment: Boolean(data.get("onlineFeePayment")),
+        studentPortal: Boolean(data.get("studentPortal")),
+        parentPortal: Boolean(data.get("parentPortal")),
       },
       address: {
         streetAddress: value("address"),
