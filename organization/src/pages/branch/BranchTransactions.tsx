@@ -108,8 +108,8 @@ const receiptHtml = (txn: Transaction) => `
         ["Category", txn.category],
         ["Description", txn.description],
         ["Type", txn.type === "credit" ? "Credit" : "Debit"],
-        ["Amount", `${txn.type === "credit" ? "+" : "−"}₹${txn.amount.toLocaleString()}`],
-        ["Balance after", `₹${txn.balance.toLocaleString()}`],
+        ["Amount", `${txn.type === "credit" ? "+" : "−"}₹${(txn.amount ?? 0).toLocaleString()}`],
+        ["Balance after", `₹${(txn.balance ?? 0).toLocaleString()}`],
       ]
         .map(
           ([label, value]) =>

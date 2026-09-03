@@ -18,6 +18,7 @@ import {
   GraduationCap,
   IndianRupee,
   CalendarClock,
+  Monitor,
   Plus,
   MapPin,
   Phone,
