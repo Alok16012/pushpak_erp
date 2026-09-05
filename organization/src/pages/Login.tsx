@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabase/client";
 import { VIEWS, viewForRole, type View } from "@/lib/roles";
 import { Button } from "@/components/ui/button";import { Input } from "@/components/ui/input";import { Label } from "@/components/ui/label";import { AlertCircle, ArrowRight, LockKeyhole, Loader2 } from "lucide-react";
@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/button";import { Input } from "@/compone
 type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
 
 export default function Login(){
+  const location=useLocation();
+  // Set by ProtectedRoute when it turns an unauthenticated visit away, so a
+  // reload of a deep page returns there instead of dropping onto the dashboard.
+  const from=(location.state as {from?:{pathname:string;search:string}}|null)?.from;
   const [user,setUser]=useState<User|null>(null);
   const [view,setView]=useState<View>("admin");
   const [identifier,setIdentifier]=useState("");
@@ -34,7 +38,10 @@ export default function Login(){
   if(user){
     const view=viewForRole(user.role);
     const home=view==="student"?"/me":"/";
-    return <Navigate to={home} replace/>;
+    // Students always land in their own portal; a remembered admin/franchise
+    // path wins over the generic dashboard.
+    const target=view==="student"?home:(from?`${from.pathname}${from.search||""}`:home);
+    return <Navigate to={target} replace/>;
   }
 
   const submit=async(e:React.FormEvent)=>{e.preventDefault();setBusy(true);setError("");try{

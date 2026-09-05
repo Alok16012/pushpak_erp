@@ -155,10 +155,43 @@ export async function getStudent(id: string, branchId: string | null) {
   return { success: true, data };
 }
 
-export async function createStudent(branchId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("students").insert({ ...input, branchId }).select("*").single();
+/**
+ * Application numbers read `APP-<year>-<0001>`. `students.applicationNo` carries
+ * a global unique index, so the counter is global rather than per branch, and is
+ * derived from the highest number already issued this year - PostgREST gives us
+ * no sequence to draw from. Two admissions saved in the same instant would
+ * collide; the unique index rejects the second one and `createStudent` retries.
+ */
+export async function nextApplicationNo() {
+  const prefix = `APP-${new Date().getFullYear()}-`;
+  const { data, error } = await supabase
+    .from("students")
+    .select("applicationNo")
+    .like("applicationNo", `${prefix}%`)
+    .order("applicationNo", { ascending: false })
+    .limit(1);
   if (error) throw new Error(error.message);
-  return { success: true, data };
+  const last = (data?.[0]?.applicationNo as string | undefined) ?? "";
+  const counter = Number(last.slice(prefix.length)) || 0;
+  return `${prefix}${String(counter + 1).padStart(4, "0")}`;
+}
+
+export async function createStudent(branchId: string, input: Record<string, unknown>) {
+  // A caller that already carries its own number keeps it; everyone else gets
+  // one issued here, so no admission route can save a student without one.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const applicationNo = (input.applicationNo as string) || (await nextApplicationNo());
+    const { data, error } = await supabase
+      .from("students")
+      .insert({ ...input, applicationNo, branchId })
+      .select("*")
+      .single();
+    if (!error) return { success: true, data };
+    // 23505 is a unique violation - another admission took the number first.
+    const raced = error.code === "23505" && !input.applicationNo;
+    if (!raced || attempt === 2) throw new Error(error.message);
+  }
+  throw new Error("Could not allocate an application number");
 }
 
 export async function updateStudent(id: string, branchId: string, input: Record<string, unknown>) {
@@ -190,6 +223,21 @@ export async function getStudentPortal(id: string, branchId: string) {
    COURSES & BATCHES
    ============================ */
 
+/**
+ * The `courses` table stores a duration as value + unit, but the screens work
+ * in whole months. Expose both so neither side has to know about the other.
+ */
+const MONTHS_PER_UNIT: Record<string, number> = { DAYS: 1 / 30, WEEKS: 0.25, MONTHS: 1, YEARS: 12 };
+
+function mapCourse(row: Record<string, unknown>) {
+  const value = Number(row.durationValue) || 0;
+  const unit = String(row.durationUnit || "MONTHS").toUpperCase();
+  return {
+    ...row,
+    durationMonths: Math.max(1, Math.round(value * (MONTHS_PER_UNIT[unit] ?? 1))),
+  };
+}
+
 export async function getCourses(organizationId: string | null) {
   let query = supabase
     .from("courses")
@@ -199,13 +247,52 @@ export async function getCourses(organizationId: string | null) {
   if (organizationId) query = query.eq("organizationId", organizationId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+  return { success: true, data: (data || []).map(mapCourse) };
 }
 
 export async function createCourse(organizationId: string | null, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("courses").insert({ ...input, organizationId }).select("*").single();
+  const { durationMonths, ...rest } = input;
+  const payload: Record<string, unknown> = { ...rest, organizationId };
+  // Callers speak months; the column pair is what actually exists.
+  if (payload.durationValue === undefined) {
+    payload.durationValue = Number(durationMonths) || 1;
+    payload.durationUnit = "MONTHS";
+  }
+  const { data, error } = await supabase.from("courses").insert(payload).select("*").single();
   if (error) throw new Error(error.message);
-  return { success: true, data };
+  return { success: true, data: mapCourse(data as Record<string, unknown>) };
+}
+
+export async function updateCourse(id: string, input: Record<string, unknown>) {
+  const { durationMonths, ...rest } = input;
+  const payload: Record<string, unknown> = { ...rest };
+  if (durationMonths !== undefined && payload.durationValue === undefined) {
+    payload.durationValue = Number(durationMonths) || 1;
+    payload.durationUnit = "MONTHS";
+  }
+  const { data, error } = await supabase.from("courses").update(payload).eq("id", id).select("*").single();
+  if (error) throw new Error(error.message);
+  return { success: true, data: mapCourse(data as Record<string, unknown>) };
+}
+
+/** Soft delete, matching the `deletedAt is null` filter used when reading. */
+export async function deleteCourse(id: string) {
+  const { error } = await supabase.from("courses").update({ deletedAt: new Date().toISOString() }).eq("id", id);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+/** Added by `supabase/schema/add-batch-fee-fields.sql`; may not be deployed. */
+const BATCH_OPTIONAL_COLUMNS = ["feeDiscount", "remark"];
+
+/** The column is `maxSeats`; the screens say `maxStudents`. Expose both. */
+function mapBatch(row: Record<string, unknown>) {
+  return {
+    ...row,
+    maxStudents: row.maxSeats === null || row.maxSeats === undefined ? undefined : Number(row.maxSeats),
+    feeDiscount: row.feeDiscount === undefined ? 0 : Number(row.feeDiscount) || 0,
+    remark: (row.remark as string) ?? "",
+  };
 }
 
 export async function getBatches(branchId: string | null) {
@@ -216,13 +303,54 @@ export async function getBatches(branchId: string | null) {
   if (branchId) query = query.eq("branchId", branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+  const rows = (data || []).map(mapBatch);
+  return { success: true, data: await withEnrolmentCounts(rows) };
 }
 
-export async function createBatch(branchId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("batches").insert({ ...input, branchId }).select("*").single();
+/** Batches for every branch in an organisation. */
+export async function getBatchesByOrg(organizationId: string | null) {
+  if (!organizationId) return { success: true, data: [] };
+  const branchIds = await getBranchIdsByOrg(organizationId);
+  if (branchIds.length === 0) return { success: true, data: [] };
+  const { data, error } = await supabase
+    .from("batches")
+    .select("*")
+    .in("branchId", branchIds)
+    .order("startDate", { ascending: false });
   if (error) throw new Error(error.message);
-  return { success: true, data };
+  const rows = (data || []).map(mapBatch);
+  return { success: true, data: await withEnrolmentCounts(rows) };
+}
+
+/** `batches` has no seat counter, so derive it from the students table. */
+async function withEnrolmentCounts(rows: Record<string, unknown>[]) {
+  const ids = rows.map((r) => r.id as string).filter(Boolean);
+  if (ids.length === 0) return rows.map((r) => ({ ...r, currentStudents: 0 }));
+  const { data, error } = await supabase.from("students").select("batchId").in("batchId", ids);
+  if (error) return rows.map((r) => ({ ...r, currentStudents: 0 }));
+  const counts = new Map<string, number>();
+  for (const row of data || []) {
+    const key = (row as { batchId?: string }).batchId;
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return rows.map((r) => ({ ...r, currentStudents: counts.get(r.id as string) || 0 }));
+}
+
+export async function createBatch(branchId: string | null, input: Record<string, unknown>) {
+  if (!branchId) throw new Error("Select a branch for this batch");
+  const { maxStudents, ...rest } = input;
+  const payload: Record<string, unknown> = { ...rest, branchId };
+  if (payload.maxSeats === undefined && maxStudents !== undefined) {
+    payload.maxSeats = maxStudents === null || maxStudents === "" ? null : Number(maxStudents);
+  }
+  let { data, error } = await supabase.from("batches").insert(payload).select("*").single();
+  if (error && (error.code === "PGRST204" || BATCH_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c)))) {
+    const trimmed = { ...payload };
+    for (const c of BATCH_OPTIONAL_COLUMNS) delete trimmed[c];
+    ({ data, error } = await supabase.from("batches").insert(trimmed).select("*").single());
+  }
+  if (error) throw new Error(error.message);
+  return { success: true, data: mapBatch(data as Record<string, unknown>) };
 }
 
 export async function getBatchTimings(branchId: string, filters?: { batchId?: string; courseId?: string }) {
@@ -564,14 +692,61 @@ export async function getNotices(branchId: string | null) {
   return { success: true, data: data || [] };
 }
 
+/**
+ * Columns added by a later migration. If the deployment hasn't run
+ * `supabase/schema/add-notice-meeting-fields.sql` yet, PostgREST rejects the
+ * whole write with PGRST204; drop them and save the rest rather than losing
+ * the notice.
+ */
+const NOTICE_OPTIONAL_COLUMNS = ["meetingTime", "meetingLink"];
+
+const isUnknownColumn = (error: { code?: string; message?: string } | null) =>
+  error?.code === "PGRST204" ||
+  NOTICE_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c));
+
+/** Blank strings break date/uuid columns, and an empty id defeats the default. */
+function cleanNoticePayload(input: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (key === "id" && !value) continue;
+    if (key === "createdAt" || key === "updatedAt") continue;
+    out[key] = value === "" ? null : value;
+  }
+  return out;
+}
+
+const withoutOptionalNoticeColumns = (input: Record<string, unknown>) => {
+  const out = { ...input };
+  for (const c of NOTICE_OPTIONAL_COLUMNS) delete out[c];
+  return out;
+};
+
 export async function createNotice(input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("branch_notices").insert(input).select("*").single();
+  const payload = cleanNoticePayload(input);
+  let { data, error } = await supabase.from("branch_notices").insert(payload).select("*").single();
+  if (error && isUnknownColumn(error)) {
+    ({ data, error } = await supabase
+      .from("branch_notices")
+      .insert(withoutOptionalNoticeColumns(payload))
+      .select("*")
+      .single());
+  }
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
 
 export async function updateNotice(id: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("branch_notices").update(input).eq("id", id).select("*").single();
+  const payload = cleanNoticePayload(input);
+  delete payload.id;
+  let { data, error } = await supabase.from("branch_notices").update(payload).eq("id", id).select("*").single();
+  if (error && isUnknownColumn(error)) {
+    ({ data, error } = await supabase
+      .from("branch_notices")
+      .update(withoutOptionalNoticeColumns(payload))
+      .eq("id", id)
+      .select("*")
+      .single());
+  }
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -621,7 +796,7 @@ export async function getBranchesWithStats(organizationId: string | null) {
     supabase.from("branch_addresses").select("branchId, city, state").in("branchId", ids),
     supabase.from("branch_licenses").select("branchId, expiryDate").in("branchId", ids),
     supabase.from("students").select("id, branchId").in("branchId", ids).is("deletedAt", null),
-    supabase.from("fee_invoices").select("branchId, paidAmount").in("branchId", ids),
+    supabase.from("fee_invoices").select("branchId, totalAmount, paidAmount").in("branchId", ids),
   ]);
 
   const addressFor = new Map<string, { city?: string; state?: string }>();
@@ -633,10 +808,17 @@ export async function getBranchesWithStats(organizationId: string | null) {
     const key = row.branchId as string;
     studentsFor.set(key, (studentsFor.get(key) || 0) + 1);
   }
+  // Revenue is what has actually been received; pending is the unpaid balance
+  // still outstanding on those invoices. A credit balance is clamped to zero so
+  // one over-paid invoice cannot mask real dues elsewhere in the branch.
   const revenueFor = new Map<string, number>();
+  const pendingFor = new Map<string, number>();
   for (const row of invoices.data || []) {
     const key = row.branchId as string;
-    revenueFor.set(key, (revenueFor.get(key) || 0) + (Number(row.paidAmount) || 0));
+    const paid = Number(row.paidAmount) || 0;
+    const total = Number(row.totalAmount) || 0;
+    revenueFor.set(key, (revenueFor.get(key) || 0) + paid);
+    pendingFor.set(key, (pendingFor.get(key) || 0) + Math.max(total - paid, 0));
   }
 
   return {
@@ -651,6 +833,7 @@ export async function getBranchesWithStats(organizationId: string | null) {
         students: studentsFor.get(id) || 0,
         staff: Number(b.numFaculty) || 0,
         revenue: revenueFor.get(id) || 0,
+        pendingRevenue: pendingFor.get(id) || 0,
         status: b.isActive ? "active" : "inactive",
       };
     }),
@@ -873,11 +1056,35 @@ export async function getWallet(branchId: string | null) {
   return { success: true, data: data || null };
 }
 
+/**
+ * `branch_transactions` stores `createdAt`, `balanceAfter` and an uppercase
+ * enum type, while the transactions table renders `date`, `branch`, `balance`
+ * and a lowercase type. Without this mapping those columns render empty.
+ */
+const TRANSACTION_SELECT = "*, branch:branches(name)";
+
+function mapTransaction(row: Record<string, unknown>) {
+  const branch = row.branch as { name?: string } | null;
+  const created = (row.createdAt as string) || "";
+  const at = created ? new Date(created) : null;
+  return {
+    ...row,
+    branch: branch?.name || "—",
+    date: at && !Number.isNaN(at.getTime()) ? at.toISOString().slice(0, 10) : "—",
+    createdAt: created,
+    type: String(row.type || "").toUpperCase() === "DEBIT" ? "debit" : "credit",
+    amount: Number(row.amount) || 0,
+    balance: Number(row.balanceAfter) || 0,
+    description: (row.description as string) || (row.category as string) || "—",
+    reference: (row.reference as string) || (row.id as string),
+  };
+}
+
 export async function getTransactions(branchId: string | null) {
   if (!branchId) return { success: true, data: [] };
-  const { data, error } = await supabase.from("branch_transactions").select("*").eq("branchId", branchId).order("createdAt", { ascending: false });
+  const { data, error } = await supabase.from("branch_transactions").select(TRANSACTION_SELECT).eq("branchId", branchId).order("createdAt", { ascending: false });
   if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+  return { success: true, data: (data || []).map(mapTransaction) };
 }
 
 export async function getWalletsByOrg(organizationId: string | null) {
@@ -894,11 +1101,11 @@ export async function getTransactionsByOrg(organizationId: string | null) {
   if (!organizationId) return { success: true, data: [] };
   const { data, error } = await supabase
     .from("branch_transactions")
-    .select("*")
+    .select(TRANSACTION_SELECT)
     .in("branchId", (await getBranchIdsByOrg(organizationId)) || [])
     .order("createdAt", { ascending: false });
   if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+  return { success: true, data: (data || []).map(mapTransaction) };
 }
 
 async function getBranchIdsByOrg(organizationId: string | null): Promise<string[]> {

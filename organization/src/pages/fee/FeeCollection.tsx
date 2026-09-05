@@ -23,7 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CreditCard, Receipt, AlertCircle, CheckCircle, Plus, Printer } from "lucide-react";
+import { CreditCard, Receipt, AlertCircle, CheckCircle, Plus, Printer, Download } from "lucide-react";
+import { downloadCsv } from "@/lib/export";
 import { getInvoices, createInvoice as createInvoiceFn, addPayment, getStudents } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -257,6 +258,24 @@ export default function FeeCollection() {
   const paidCount = records.filter((r) => r.status === "paid").length;
   const dueCount = records.filter((r) => r.status === "due").length;
 
+  const exportRecords = () => {
+    downloadCsv(
+      "fee-collection.csv",
+      records.map((r) => ({
+        Student: r.studentName,
+        RollNo: r.rollNo,
+        Course: r.course,
+        FeeType: r.feeType,
+        TotalAmount: r.totalAmount,
+        PaidAmount: r.paidAmount,
+        DueAmount: r.dueAmount,
+        DueDate: r.dueDate,
+        Status: r.status,
+      })),
+    );
+    toast({ title: "Fee records exported", description: `${records.length} rows written to CSV.` });
+  };
+
   const handleCollectFee = (record: FeeRecord) => {
     setSelectedRecord(record);
     setAmount(String(record.dueAmount));
@@ -313,10 +332,16 @@ export default function FeeCollection() {
           { label: "Fee Collection" },
         ]}
         actions={
-          <Button className="gap-2" onClick={() => setIsCreateDialogOpen(true)}>
-            <Plus className="h-4 w-4" />
-            New Collection
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" className="gap-2" onClick={exportRecords} disabled={records.length === 0}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <Button className="gap-2" onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
+              New Collection
+            </Button>
+          </div>
         }
       />
 

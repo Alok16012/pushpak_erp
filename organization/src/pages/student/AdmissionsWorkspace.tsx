@@ -12,7 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, ArrowRight, Check, Save } from "lucide-react";
-import { getStudents, getCourses, getBatches, createStudent } from "@/lib/supabase/data";
+import { getStudents, getCourses, getBatches, createStudent, getBranches } from "@/lib/supabase/data";
+import { INDIAN_STATES } from "@/data/indianStates";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 type Draft = {
@@ -28,6 +29,7 @@ type Draft = {
   pincode: string;
   fatherName: string;
   motherName: string;
+  branchId: string;
   courseId: string;
   batchId: string;
 };
@@ -44,6 +46,7 @@ const blank: Draft = {
   pincode: "",
   fatherName: "",
   motherName: "",
+  branchId: "",
   courseId: "",
   batchId: "",
 };
@@ -70,31 +73,97 @@ export default function AdmissionsWorkspace() {
   const [batches, setBatches] = useState<
     Array<{ id: string; name: string; courseId: string }>
   >([]);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [saving, setSaving] = useState(false);
+  // Branch-scoped accounts admit into their own branch and never see the picker.
+  const targetBranchId = branchId || draft.branchId;
   const set = (k: keyof Draft, v: string) =>
     setDraft((p) => ({ ...p, [k]: v }));
   useEffect(() => {
     localStorage.setItem("admission-draft", JSON.stringify(draft));
   }, [draft]);
+  // `getCourses`/`getBatches` resolve to `{ success, data }`. Assigning the
+  // envelope straight into state left `courses.map` undefined and blanked the
+  // whole page as soon as the academic step rendered - unwrap `data`, and never
+  // let a rejected query escape as an unhandled promise.
   useEffect(() => {
-    getCourses(organizationId).then(setCourses);
-    getBatches(branchId).then(setBatches);
-  }, []);
+    getCourses(organizationId)
+      .then((r) => setCourses(r.data as Array<{ id: string; name: string }>))
+      .catch(() => setCourses([]));
+    if (!branchId) {
+      getBranches(organizationId)
+        .then((r) => setBranches(r.data as Array<{ id: string; name: string }>))
+        .catch(() => setBranches([]));
+    }
+  }, [organizationId, branchId]);
+
+  // Batches belong to a branch, so they reload whenever the target branch moves.
+  useEffect(() => {
+    if (!targetBranchId) {
+      setBatches([]);
+      return;
+    }
+    getBatches(targetBranchId)
+      .then((r) => setBatches(r.data as Array<{ id: string; name: string; courseId: string }>))
+      .catch(() => setBatches([]));
+  }, [targetBranchId]);
   const progress = Math.round(
     (Object.values(draft).filter(Boolean).length / Object.keys(draft).length) *
       100,
   );
   const submit = async () => {
+    // Every one of these is NOT NULL on `students`; letting the insert fail
+    // instead returns an opaque Postgres error the applicant cannot act on.
+    const missing = (
+      [
+        ["firstName", "First name"],
+        ["lastName", "Last name"],
+        ["dateOfBirth", "Date of birth"],
+        ["gender", "Gender"],
+        ["phone", "Mobile"],
+        ["streetAddress", "Street address"],
+        ["city", "City"],
+        ["state", "State"],
+        ["pincode", "Pincode"],
+      ] as Array<[keyof Draft, string]>
+    )
+      .filter(([key]) => !draft[key])
+      .map(([, label]) => label);
+    if (missing.length) {
+      toast({
+        title: "Admission is incomplete",
+        description: `Still needed: ${missing.join(", ")}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!targetBranchId) {
+      toast({
+        title: "Choose a branch",
+        description: "An admission has to be filed against a branch.",
+        variant: "destructive",
+      });
+      setStep(2);
+      return;
+    }
+    setSaving(true);
     try {
-      await createStudent(branchId, {
+      const { data } = await createStudent(targetBranchId, {
         ...draft,
+        branchId: undefined,
+        // The column is a timestamp; a bare `yyyy-mm-dd` is rejected.
+        dateOfBirth: new Date(draft.dateOfBirth).toISOString(),
         email: draft.email || undefined,
         courseId: draft.courseId || undefined,
         batchId: draft.batchId || undefined,
         admissionStatus: "APPROVED",
       });
+      const applicationNo = (data as { applicationNo?: string } | null)?.applicationNo;
       toast({
         title: "Admission completed",
-        description: "Student profile and application number were created.",
+        description: applicationNo
+          ? `Application number ${applicationNo} was issued.`
+          : "Student profile was created.",
       });
       setDraft(blank);
       setStep(0);
@@ -105,6 +174,8 @@ export default function AdmissionsWorkspace() {
         description: e instanceof Error ? e.message : "Please review fields",
         variant: "destructive",
       });
+    } finally {
+      setSaving(false);
     }
   };
   return (
@@ -223,21 +294,53 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="State">
-                  <Input
-                    value={draft.state}
-                    onChange={(e) => set("state", e.target.value)}
-                  />
+                  <Select value={draft.state} onValueChange={(v) => set("state", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select state" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INDIAN_STATES.map((state) => (
+                        <SelectItem key={state} value={state}>
+                          {state}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </Field>
                 <Field l="Pincode">
                   <Input
+                    inputMode="numeric"
+                    maxLength={6}
                     value={draft.pincode}
-                    onChange={(e) => set("pincode", e.target.value)}
+                    onChange={(e) => set("pincode", e.target.value.replace(/\D/g, ""))}
                   />
                 </Field>
               </>
             )}
             {step === 2 && (
               <>
+                {!branchId && (
+                  <Field l="Branch">
+                    <Select
+                      value={draft.branchId}
+                      onValueChange={(v) => {
+                        set("branchId", v);
+                        set("batchId", "");
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>
+                            {b.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                )}
                 <Field l="Course">
                   <Select
                     value={draft.courseId}
@@ -261,10 +364,13 @@ export default function AdmissionsWorkspace() {
                 <Field l="Batch">
                   <Select
                     value={draft.batchId}
+                    disabled={!targetBranchId}
                     onValueChange={(v) => set("batchId", v)}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Choose batch" />
+                      <SelectValue
+                        placeholder={targetBranchId ? "Choose batch" : "Choose a branch first"}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {batches
@@ -326,9 +432,9 @@ export default function AdmissionsWorkspace() {
                 <ArrowRight />
               </Button>
             ) : (
-              <Button onClick={submit}>
+              <Button onClick={submit} disabled={saving}>
                 <Check />
-                Complete admission
+                {saving ? "Saving..." : "Complete admission"}
               </Button>
             )}
           </div>

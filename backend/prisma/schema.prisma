@@ -331,6 +331,10 @@ model BranchNotice {
   publishDate     DateTime       @default(now())
   expiryDate      DateTime?
 
+  // Optional online-meeting details attached to a notice.
+  meetingTime     DateTime?
+  meetingLink     String?
+
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 

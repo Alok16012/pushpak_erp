@@ -11,11 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, MessageSquare, UserPlus, Clock, CheckCircle, Phone } from "lucide-react";
+import { Plus, MessageSquare, UserPlus, Clock, CheckCircle, Phone, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getEnquiries, createEnquiry, updateEnquiry } from "@/lib/supabase/data";
+import { downloadCsv } from "@/lib/export";
 
 interface Enquiry {
   id: string;
@@ -234,6 +235,31 @@ export default function BranchEnquiry() {
     },
   ];
 
+  const exportEnquiries = () => {
+    if (enquiries.length === 0) {
+      toast({ title: "Nothing to export", description: "No enquiries loaded yet." });
+      return;
+    }
+    downloadCsv(
+      "branch-enquiries.csv",
+      enquiries.map((e) => ({
+        Visitor: e.visitorName,
+        Phone: e.phone,
+        Email: e.email ?? "",
+        Purpose: e.purpose,
+        PersonToMeet: e.personToMeet,
+        Department: e.department,
+        Reason: e.enquiryReason ?? "",
+        Remarks: e.remarks ?? "",
+        FollowUpDate: e.followUpDate ?? "",
+        VisitDate: e.visitDate,
+        VisitTime: e.visitTime,
+        Status: e.status,
+      })),
+    );
+    toast({ title: "Enquiries exported", description: `${enquiries.length} rows written to CSV.` });
+  };
+
   return (
     <AppLayout>
       <PageHeader
@@ -244,10 +270,16 @@ export default function BranchEnquiry() {
           { label: "Branch Enquiry" },
         ]}
         actions={
-          <Button className="gap-2" onClick={() => { setForm(BLANK); setIsDialogOpen(true); }}>
-            <Plus className="h-4 w-4" />
-            New Enquiry
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-2" onClick={exportEnquiries}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <Button className="gap-2" onClick={() => { setForm(BLANK); setIsDialogOpen(true); }}>
+              <Plus className="h-4 w-4" />
+              New Enquiry
+            </Button>
+          </div>
         }
       />
 

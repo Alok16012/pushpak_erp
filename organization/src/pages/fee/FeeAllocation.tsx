@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DataTable, Column } from "@/components/ui/DataTable";
-import { Users, IndianRupee, CheckCircle, Link2, AlertCircle } from "lucide-react";
+import { Users, IndianRupee, CheckCircle, Link2, AlertCircle, Download } from "lucide-react";
+import { downloadCsv } from "@/lib/export";
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -376,6 +377,30 @@ export default function FeeAllocation() {
   const pendingCount = allocations.length - allocatedRows.length;
   const totalAllocated = allocatedRows.reduce((sum, s) => sum + netFee(s), 0);
 
+  // Exports what the filters currently show, not the whole table.
+  const exportAllocations = () => {
+    if (visible.length === 0) {
+      toast({ title: "Nothing to export", description: "No students match these filters." });
+      return;
+    }
+    downloadCsv(
+      "fee-allocation.csv",
+      visible.map((a) => ({
+        Student: a.name,
+        StudentId: a.studentId,
+        Course: a.course,
+        Batch: a.batch,
+        FeeGroup: a.feeGroup,
+        TotalFee: a.totalFee,
+        Discount: a.discount ?? 0,
+        DiscountNote: a.discountNote ?? "",
+        DueDate: a.dueDate,
+        Allocated: a.allocated ? "yes" : "no",
+      })),
+    );
+    toast({ title: "Allocations exported", description: `${visible.length} rows written to CSV.` });
+  };
+
   return (
     <AppLayout>
       <PageHeader
@@ -385,6 +410,12 @@ export default function FeeAllocation() {
           { label: "Fee Management", href: "/fee/collection" },
           { label: "Fee Allocation" },
         ]}
+        actions={
+          <Button variant="outline" className="gap-2" onClick={exportAllocations}>
+            <Download className="h-4 w-4" />
+            Export
+          </Button>
+        }
       />
 
       <div className="grid gap-4 md:grid-cols-4 mb-6">

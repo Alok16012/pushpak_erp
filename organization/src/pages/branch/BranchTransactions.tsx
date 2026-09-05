@@ -159,7 +159,13 @@ export default function BranchTransactions() {
 
   const totalCredits = filtered.filter((t) => t.type === "credit").reduce((sum, t) => sum + t.amount, 0);
   const totalDebits = filtered.filter((t) => t.type === "debit").reduce((sum, t) => sum + t.amount, 0);
-  const monthLabel = new Date(selectedYear, selectedMonth - 1).toLocaleString("en-IN", { month: "long", year: "numeric" });
+  // Both filters default to "all", which `new Date()` turns into Invalid Date.
+  const monthLabel = useMemo(() => {
+    if (selectedYear === "all" && selectedMonth === "all") return "All time";
+    if (selectedMonth === "all") return selectedYear;
+    const month = new Date(2000, Number(selectedMonth) - 1).toLocaleString("en-IN", { month: "long" });
+    return selectedYear === "all" ? month : `${month} ${selectedYear}`;
+  }, [selectedYear, selectedMonth]);
 
   const clearFilter = () => {
     setSelectedYear("all");

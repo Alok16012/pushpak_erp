@@ -13,6 +13,7 @@ import { BranchAdminSection } from "@/components/branch/BranchAdminSection";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { createBranchWithDetails, createBranchLogin, getBranches } from "@/lib/supabase/data";
+import { canonicalState } from "@/data/indianStates";
 
 interface Branch {
   id: string;
@@ -40,7 +41,7 @@ const REQUIRED: Array<[string, string]> = [
   ["adminPassword", "Admin Password"],
 ];
 
-/** Select values arrive slugged ("uttar-pradesh"); the tables store them as text. */
+/** Legacy free-text entries may still be slugged or lowercase. */
 const titleCase = (value: string) =>
   value.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -137,8 +138,8 @@ export default function CreateBranch() {
       },
       address: {
         streetAddress: value("address"),
-        state: titleCase(value("state")),
-        district: titleCase(value("district")),
+        state: canonicalState(value("state")),
+        district: value("district"),
         block: value("block") || null,
         city: value("city"),
         pincode: value("pincode"),

@@ -27,14 +27,18 @@ import {
   FileText,
   Info,
   X,
+  Wallet,
+  Download,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import jsPDF from "jspdf";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getBranchesWithStats, updateBranchWithDetails, getBranchDetails, deleteBranch } from "@/lib/supabase/data";
-import { printHtml } from "@/lib/export";
+import { printHtml, downloadCsv } from "@/lib/export";
+import { INDIAN_STATES, canonicalState, districtsFor } from "@/data/indianStates";
+import { lookupPincode, geocode } from "@/lib/postal";
 
 /**
  * The register row: the branch columns plus the bits gathered from its
@@ -50,6 +54,7 @@ interface Branch {
   students: number;
   staff: number;
   revenue: number;
+  pendingRevenue: number;
   expiryDate: string;
   status: "active" | "inactive";
 }
@@ -103,6 +108,19 @@ const columns: Column<Branch>[] = [
     header: "Revenue",
     sortable: true,
     cell: (branch) => <span className="font-medium text-success">Rs.{((branch.revenue ?? 0) / 100000).toFixed(1)}L</span>,
+  },
+  {
+    key: "pendingRevenue",
+    header: "Pending",
+    sortable: true,
+    cell: (branch) => {
+      const pending = branch.pendingRevenue ?? 0;
+      return (
+        <span className={pending > 0 ? "font-medium text-destructive" : "font-medium text-muted-foreground"}>
+          Rs.{(pending / 100000).toFixed(1)}L
+        </span>
+      );
+    },
   },
   {
      key: "expiryDate",
@@ -190,6 +208,62 @@ export default function ViewBranch() {
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<Branch | null>(null);
   const [editing, setEditing] = useState<BranchEdit | null>(null);
+  // Last PIN we resolved, so re-renders of `editing` don't re-trigger a lookup.
+  const resolvedPin = useRef("");
+  const editingPin = String(editing?.pincode ?? "");
+
+  // Whatever district is on the record stays selectable even when the bundled
+  // table doesn't carry it — India Post reports renamed and newly carved-out
+  // districts that the local list lags behind on.
+  const editingState = editing?.state ?? "";
+  const editingDistrict = editing?.district ?? "";
+  const districtOptions = useMemo(() => {
+    const base = districtsFor(editingState);
+    const current = editingDistrict.trim();
+    if (!current || base.some((d) => d.toLowerCase() === current.toLowerCase())) {
+      return base;
+    }
+    return [...base, current].sort((a, b) => a.localeCompare(b));
+  }, [editingState, editingDistrict]);
+
+  // Typing a complete PIN fills state / district / block / city / coordinates,
+  // exactly like the Create Branch form. Silent no-op if the lookup fails.
+  useEffect(() => {
+    if (!/^\d{6}$/.test(editingPin) || resolvedPin.current === editingPin) return;
+    resolvedPin.current = editingPin;
+    let cancelled = false;
+    (async () => {
+      const rows = await lookupPincode(editingPin);
+      if (cancelled || rows.length === 0) return;
+      const [first] = rows;
+      const canonical = canonicalState(first.state);
+      const state = INDIAN_STATES.includes(canonical) ? canonical : "";
+      const reported = first.district.trim();
+      const district =
+        districtsFor(state).find((d) => d.toLowerCase() === reported.toLowerCase()) ??
+        reported;
+      const blocks = Array.from(new Set(rows.map((r) => r.block).filter(Boolean)));
+      const point = await geocode(
+        `${first.pincode}, ${first.district}, ${first.state}, India`
+      );
+      if (cancelled) return;
+      setEditing((prev) => {
+        if (!prev || String(prev.pincode) !== editingPin) return prev;
+        return {
+          ...prev,
+          state: state || prev.state,
+          district: district || prev.district,
+          block: blocks.length === 1 ? blocks[0] : prev.block,
+          city: rows.length === 1 ? rows[0].name : prev.city,
+          latitude: point ? Number(point.lat) : prev.latitude,
+          longitude: point ? Number(point.lon) : prev.longitude,
+        };
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editingPin]);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Branch | null>(null);
   const [selectedBranches, setSelectedBranches] = useState<Branch[]>([]);
@@ -348,7 +422,7 @@ export default function ViewBranch() {
           studentPortal: (d.studentPortal as boolean) ?? false,
           parentPortal: (d.parentPortal as boolean) ?? false,
           streetAddress: (addr.streetAddress as string) || "",
-          state: (addr.state as string) || "",
+          state: canonicalState((addr.state as string) || ""),
           district: (addr.district as string) || "",
           block: (addr.block as string) || "",
           city: (addr.city as string) || "",
@@ -483,6 +557,26 @@ export default function ViewBranch() {
   const totalStudents = branchesData.reduce((sum, b) => sum + (b.students ?? 0), 0);
   const totalStaff = branchesData.reduce((sum, b) => sum + (b.staff ?? 0), 0);
   const totalRevenue = branchesData.reduce((sum, b) => sum + (b.revenue ?? 0), 0);
+  const totalPending = branchesData.reduce((sum, b) => sum + (b.pendingRevenue ?? 0), 0);
+
+  const exportBranches = () => {
+    downloadCsv(
+      "branches.csv",
+      branchesData.map((b) => ({
+        Code: b.code,
+        Name: b.name,
+        City: (b as unknown as { city?: string }).city ?? "",
+        State: (b as unknown as { state?: string }).state ?? "",
+        Students: b.students ?? 0,
+        Staff: b.staff ?? 0,
+        RevenueReceived: b.revenue ?? 0,
+        RevenuePending: b.pendingRevenue ?? 0,
+        RevenueTotal: (b.revenue ?? 0) + (b.pendingRevenue ?? 0),
+        Status: b.status ?? "",
+      })),
+    );
+    toast({ title: "Branches exported", description: `${branchesData.length} rows written to CSV.` });
+  };
   const activeBranches = branchesData.filter(b => b.status === "active").length;
 
   if (loading) {
@@ -505,14 +599,20 @@ export default function ViewBranch() {
           { label: "View Branches" },
         ]}
         actions={
-          <Button className="gap-2" onClick={() => navigate("/branch/create")}>
-            <Plus className="h-4 w-4" />
-            Add Branch
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" className="gap-2" onClick={exportBranches} disabled={branchesData.length === 0}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <Button className="gap-2" onClick={() => navigate("/branch/create")}>
+              <Plus className="h-4 w-4" />
+              Add Branch
+            </Button>
+          </div>
         }
       />
 
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 mb-6">
         <StatsCard
           title="Total Branches"
           value={branchesData.length}
@@ -534,11 +634,23 @@ export default function ViewBranch() {
           icon={Users}
         />
         <StatsCard
-          title="Total Revenue"
+          title="Revenue Received"
           value={`Rs.${(totalRevenue / 100000).toFixed(1)}L`}
-          subtitle="This month"
+          subtitle="Collected across all branches"
           icon={IndianRupee}
           trend={{ value: 8, isPositive: true }}
+        />
+        <StatsCard
+          title="Pending Revenue"
+          value={`Rs.${(totalPending / 100000).toFixed(1)}L`}
+          subtitle="Still to be collected"
+          icon={Wallet}
+        />
+        <StatsCard
+          title="Total Revenue"
+          value={`Rs.${((totalRevenue + totalPending) / 100000).toFixed(1)}L`}
+          subtitle="Received plus pending"
+          icon={IndianRupee}
         />
       </div>
 
@@ -580,7 +692,9 @@ export default function ViewBranch() {
                 ["Location", [details.city, details.state].filter(Boolean).join(", ") || "—"],
                 ["Students", (details.students ?? 0).toLocaleString()],
                 ["Staff", String(details.staff ?? 0)],
-                ["Revenue", `Rs.${((details.revenue ?? 0) / 100000).toFixed(1)}L`],
+                ["Revenue received", `Rs.${((details.revenue ?? 0) / 100000).toFixed(1)}L`],
+                ["Revenue pending", `Rs.${((details.pendingRevenue ?? 0) / 100000).toFixed(1)}L`],
+                ["Revenue total", `Rs.${(((details.revenue ?? 0) + (details.pendingRevenue ?? 0)) / 100000).toFixed(1)}L`],
                 ["Status", details.status === "active" ? "Active" : "Inactive"],
               ].map(([label, value]) => (
                 <div key={label}>
@@ -625,7 +739,7 @@ export default function ViewBranch() {
                   studentPortal: (d.studentPortal as boolean) ?? false,
                   parentPortal: (d.parentPortal as boolean) ?? false,
                   streetAddress: (addr.streetAddress as string) || "",
-                  state: (addr.state as string) || "",
+                  state: canonicalState((addr.state as string) || ""),
                   district: (addr.district as string) || "",
                   block: (addr.block as string) || "",
                   city: (addr.city as string) || "",
@@ -759,11 +873,42 @@ export default function ViewBranch() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-state">State</Label>
-                    <Input id="edit-state" value={editing.state} onChange={(e) => setEditing({ ...editing, state: e.target.value })} />
+                    <Select
+                      value={editing.state}
+                      onValueChange={(value) => setEditing({ ...editing, state: value, district: "" })}
+                    >
+                      <SelectTrigger id="edit-state"><SelectValue placeholder="Select state" /></SelectTrigger>
+                      <SelectContent>
+                        {INDIAN_STATES.map((state) => (
+                          <SelectItem key={state} value={state}>{state}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-district">District</Label>
-                    <Input id="edit-district" value={editing.district} onChange={(e) => setEditing({ ...editing, district: e.target.value })} />
+                    {/* Districts are only mapped for some states; fall back to
+                        free text so the rest stay editable. */}
+                    {districtOptions.length > 0 ? (
+                      <Select
+                        value={editing.district}
+                        onValueChange={(value) => setEditing({ ...editing, district: value })}
+                      >
+                        <SelectTrigger id="edit-district"><SelectValue placeholder="Select district" /></SelectTrigger>
+                        <SelectContent>
+                          {districtOptions.map((district) => (
+                            <SelectItem key={district} value={district}>{district}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        id="edit-district"
+                        value={editing.district}
+                        placeholder={editing.state ? "Enter district" : "Select state first"}
+                        onChange={(e) => setEditing({ ...editing, district: e.target.value })}
+                      />
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-block">Block</Label>
@@ -775,7 +920,7 @@ export default function ViewBranch() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-pincode">Pincode</Label>
-                    <Input id="edit-pincode" value={editing.pincode} onChange={(e) => setEditing({ ...editing, pincode: e.target.value })} />
+                    <Input id="edit-pincode" inputMode="numeric" maxLength={6} placeholder="6-digit PIN" value={editing.pincode} onChange={(e) => setEditing({ ...editing, pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-latitude">Latitude</Label>

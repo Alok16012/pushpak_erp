@@ -10,6 +10,7 @@ import { useTheme } from "next-themes";
 import { menuForView } from "@/lib/navigation";
 import { VIEWS } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
+import { getNotices } from "@/lib/supabase/data";
 
 export function AppHeader() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -17,9 +18,20 @@ export function AppHeader() {
   const onDashboard = useLocation().pathname === VIEWS[view].home;
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [notices, setNotices] = useState<Array<{ id: string; title: string; publishDate?: string }>>([]);
   // Search only ever offers pages this authorisation can actually open.
   const destinations = useMemo(() => menuForView(view).flatMap(group => group.items.map(item => ({ ...item, group: group.title }))), [view]);
   const results = query.trim() ? destinations.filter(item => `${item.title} ${item.group}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : destinations.slice(0, 6);
+
+  // The bell used to be inert with a permanent unread dot; it now opens the
+  // notices this user can actually see.
+  useEffect(() => {
+    let cancelled = false;
+    getNotices(user?.branchId || null)
+      .then((r) => { if (!cancelled) setNotices((r.data || []).slice(0, 6)); })
+      .catch(() => { if (!cancelled) setNotices([]); });
+    return () => { cancelled = true; };
+  }, [user?.branchId]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -46,7 +58,28 @@ export function AppHeader() {
         {!onDashboard && view !== "student" && <Button asChild size="sm" variant="outline" className="hidden sm:flex"><Link to="/student/admission-form"><Plus />New admission</Link></Button>}
         <Button variant="ghost" size="icon" className="md:hidden" aria-label="Search" onClick={()=>setSearchOpen(true)}><Search/></Button>
         <Button variant="ghost" size="icon" aria-label={resolvedTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"} onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>{resolvedTheme === "dark" ? <Sun /> : <Moon />}</Button>
-        <Button variant="ghost" size="icon" className="relative" aria-label="Notifications, unread"><Bell /><span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand ring-2 ring-background" /></Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="relative" aria-label={notices.length ? `Notifications, ${notices.length} unread` : "Notifications"}>
+              <Bell />
+              {notices.length > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-brand ring-2 ring-background" />}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-80">
+            <DropdownMenuLabel>Notices</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {notices.length === 0 && <DropdownMenuItem disabled>No notices right now</DropdownMenuItem>}
+            {notices.map(n => (
+              <DropdownMenuItem key={n.id} asChild>
+                <Link to="/branch/notice-board" className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-medium">{n.title}</span>
+                  {n.publishDate && <span className="text-xs text-muted-foreground">{new Date(n.publishDate).toLocaleDateString()}</span>}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+            {notices.length > 0 && <><DropdownMenuSeparator /><DropdownMenuItem asChild><Link to="/branch/notice-board">View all notices</Link></DropdownMenuItem></>}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="h-10 rounded-full p-1"><Avatar className="h-8 w-8"><AvatarFallback className="bg-foreground text-background text-xs">{user?.name.split(" ").map(p=>p[0]).join("").slice(0,2)||"ID"}</AvatarFallback></Avatar></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel><span className="block">{user?.name}</span><span className="text-xs font-normal text-muted-foreground">{user?.role.replaceAll("_"," ")}</span></DropdownMenuLabel><DropdownMenuSeparator/>{view==="student"&&<DropdownMenuItem asChild><Link to="/me/profile"><User className="mr-2 h-4 w-4"/>My profile</Link></DropdownMenuItem>}{view==="admin"&&<DropdownMenuItem asChild><Link to="/settings/general"><User className="mr-2 h-4 w-4"/>Organisation settings</Link></DropdownMenuItem>}{view==="franchise"&&<DropdownMenuItem asChild><Link to="/branch/website-settings"><User className="mr-2 h-4 w-4"/>Branch settings</Link></DropdownMenuItem>}<DropdownMenuSeparator/><DropdownMenuItem className="text-destructive" onClick={()=>void logout()}>Log out</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
       </div>
 

@@ -4,31 +4,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MapPin } from "lucide-react";
-import { useState, useMemo } from "react";
-
-const states = [
-  "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh",
-  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka",
-  "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram",
-  "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu",
-  "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
-  "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
-  "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
-];
-
-const districtsByState: Record<string, string[]> = {
-  "Andhra Pradesh": ["Anantapur","Chittoor","East Godavari","Guntur","Krishna","Kurnool","Nellore","Prakasam","Srikakulam","Visakhapatnam","Vizianagaram","West Godavari","YSR Kadapa"],
-  "Bihar": ["Araria","Arwal","Aurangabad","Banka","Begusarai","Bhagalpur","Bhojpur","Buxar","Darbhanga","East Champaran","Gaya","Gopalganj","Jamui","Jehanabad","Kaimur","Katihar","Khagaria","Kishanganj","Lakhisarai","Madhepura","Madhubani","Munger","Muzaffarpur","Nalanda","Nawada","Patna","Purnia","Rohtas","Saharsa","Samastipur","Saran","Sheikhpura","Sheohar","Sitamarhi","Siwan","Supaul","Vaishali","West Champaran"],
-  "Delhi": ["Central Delhi","East Delhi","New Delhi","North Delhi","North East Delhi","North West Delhi","Shahdara","South Delhi","South East Delhi","South West Delhi","West Delhi"],
-  "Gujarat": ["Ahmedabad","Amreli","Anand","Aravalli","Banaskantha","Bharuch","Bhavnagar","Botad","Chhota Udepur","Dahod","Dang","Devbhoomi Dwarka","Gandhinagar","Gir Somnath","Jamnagar","Junagadh","Kheda","Kutch","Mahisagar","Mehsana","Morbi","Narmada","Navsari","Panchmahal","Patan","Porbandar","Rajkot","Sabarkantha","Surat","Surendranagar","Tapi","Vadodara","Valsad"],
-  "Karnataka": ["Bagalkot","Bangalore Rural","Bangalore Urban","Belgaum","Bellary","Bidar","Chamarajanagar","Chikballapur","Chikkamagaluru","Chitradurga","Dakshina Kannada","Davanagere","Dharwad","Gadag","Gulbarga","Hassan","Haveri","Kodagu","Kolar","Koppal","Mandya","Mysore","Raichur","Ramanagara","Shimoga","Tumkur","Udupi","Uttara Kannada","Vijayapura","Yadgir"],
-  "Maharashtra": ["Ahmednagar","Akola","Amravati","Aurangabad","Beed","Bhandara","Buldhana","Chandrapur","Dhule","Gadchiroli","Gondia","Hingoli","Jalgaon","Jalna","Kolhapur","Latur","Mumbai City","Mumbai Suburban","Nagpur","Nanded","Nandurbar","Nashik","Osmanabad","Palghar","Parbhani","Pune","Raigad","Ratnagiri","Sangli","Satara","Sindhudurg","Solapur","Thane","Wardha","Washim","Yavatmal"],
-  "Punjab": ["Amritsar","Barnala","Bathinda","Faridkot","Fatehgarh Sahib","Fazilka","Ferozepur","Gurdaspur","Hoshiarpur","Jalandhar","Kapurthala","Ludhiana","Mansa","Moga","Muktsar","Nawanshahr","Pathankot","Patiala","Rupnagar","Sahibzada Ajit Singh Nagar","Sangrur","Tarn Taran"],
-  "Rajasthan": ["Ajmer","Alwar","Banswara","Baran","Barmer","Bharatpur","Bhilwara","Bikaner","Bundi","Chittorgarh","Churu","Dausa","Dholpur","Dungarpur","Hanumangarh","Jaipur","Jaisalmer","Jalore","Jhalawar","Jhunjhunu","Jodhpur","Karauli","Kota","Nagaur","Pali","Pratapgarh","Rajsamand","Sawai Madhopur","Sikar","Sirohi","Sri Ganganagar","Tonk","Udaipur"],
-  "Tamil Nadu": ["Ariyalur","Coimbatore","Cuddalore","Dharmapuri","Dindigul","Erode","Kanchipuram","Kanyakumari","Karur","Krishnagiri","Madurai","Nagapattinam","Namakkal","Nilgiris","Perambalur","Pudukkottai","Ramanathapuram","Salem","Sivaganga","Thanjavur","Theni","Thoothukudi","Tiruchirappalli","Tirunelveli","Tiruppur","Tiruvallur","Tiruvannamalai","Tiruvarur","Vellore","Viluppuram","Virudhunagar"],
-  "Uttar Pradesh": ["Agra","Aligarh","Allahabad","Ambedkar Nagar","Amethi","Amroha","Auraiya","Azamgarh","Baghpat","Bahraich","Ballia","Balrampur","Banda","Barabanki","Bareilly","Basti","Bhadohi","Bijnor","Budaun","Bulandshahr","Chandauli","Chitrakoot","Deoria","Etah","Etawah","Farrukhabad","Fatehpur","Firozabad","Gautam Buddha Nagar","Ghaziabad","Ghazipur","Gonda","Gorakhpur","Hamirpur","Hapur","Hardoi","Hathras","Jalaun","Jaunpur","Jhansi","Kannauj","Kanpur Dehat","Kanpur Nagar","Kasganj","Kaushambi","Kushinagar","Lakhimpur Kheri","Lalitpur","Lucknow","Maharajganj","Mahoba","Mainpuri","Mathura","Mau","Meerut","Mirzapur","Moradabad","Muzaffarnagar","Pilibhit","Pratapgarh","Raebareli","Rampur","Saharanpur","Sant Kabir Nagar","Sant Ravidas Nagar","Shahjahanpur","Shamli","Shrawasti","Siddharthnagar","Sitapur","Sonbhadra","Sultanpur","Unnao","Varanasi"],
-  "West Bengal": ["Alipurduar","Bankura","Birbhum","Cooch Behar","Dakshin Dinajpur","Darjeeling","Hooghly","Howrah","Jalpaiguri","Jhargram","Kalimpong","Kolkata","Maldah","Murshidabad","Nadia","North 24 Parganas","Paschim Bardhaman","Paschim Medinipur","Purba Bardhaman","Purba Medinipur","Purulia","South 24 Parganas","Uttar Dinajpur"],
-};
+import { useState, useMemo, useEffect } from "react";
+import { INDIAN_STATES, DISTRICTS_BY_STATE, canonicalState } from "@/data/indianStates";
+import { lookupPincode, geocode, uniqueSorted, type PostalPlace } from "@/lib/postal";
 
 // Practical block/town/city mapping keyed by district slug.
 const placesByDistrict: Record<string, { blocks: string[]; cities: string[] }> = {
@@ -143,30 +121,97 @@ const placesByDistrict: Record<string, { blocks: string[]; cities: string[] }> =
   "Pune": { blocks: ["Pune City","Pune Rural","Baramati","Daund","Indapur","Maval","Mulshi","Purandhar","Velhe","Bhor","Junnar","Akole","Sangamner","Kopargaon","Rahata","Shrirampur","Nevasa","Shevgaon","Pathardi","Parner","Khed","Shirur","Ambegaon","Haveli"], cities: ["Pune","Pimpri-Chinchwad","Lonavala","Talegaon","Saswad","Daund","Shirur","Baramati","Indapur","Junnar","Nevasa","Khed","Ambegaon","Purandhar","Velhe","Bhor","Maval","Mulshi","Kopargaon","Rahata","Shrirampur","Shevgaon","Pathardi","Parner","Haveli"] },
 };
 
-const titleCase = (value: string) =>
-  value.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
 export function AddressSection() {
-  // Store slugged values in state so the Select's `value` matches its
-  // SelectItem values. Convert to titleCase only for lookups.
-  const [selectedState, setSelectedState] = useState("");
-  const [selectedDistrict, setSelectedDistrict] = useState("");
+  // Select values are the plain names, so they round-trip into the lookup
+  // tables unchanged. Slugging broke on names containing "and"
+  // ("Jammu and Kashmir" -> "Jammu And Kashmir", which matches no key).
+  const [stateKey, setStateKey] = useState("");
+  const [districtKey, setDistrictKey] = useState("");
 
-  const stateKey = titleCase(selectedState);
-  const availableDistricts = useMemo(
-    () => (stateKey ? (districtsByState[stateKey] || []) : []),
-    [stateKey]
-  );
+  // A district the PIN lookup reported that the bundled table does not carry
+  // (renamed or newly carved-out districts). India Post is authoritative for
+  // the address being entered, so it joins the options rather than being lost.
+  const [extraDistrict, setExtraDistrict] = useState("");
 
-  const districtKey = titleCase(selectedDistrict);
-  const places = useMemo(
-    () => (districtKey ? (placesByDistrict[districtKey] || { blocks: [], cities: [] }) : { blocks: [], cities: [] }),
-    [districtKey]
-  );
+  const availableDistricts = useMemo(() => {
+    const base = stateKey ? DISTRICTS_BY_STATE[stateKey] || [] : [];
+    if (!extraDistrict || base.some((d) => d.toLowerCase() === extraDistrict.toLowerCase())) {
+      return base;
+    }
+    return [...base, extraDistrict].sort((a, b) => a.localeCompare(b));
+  }, [stateKey, extraDistrict]);
+
   const [blockQuery, setBlockQuery] = useState("");
   const [cityQuery, setCityQuery] = useState("");
   const [showBlockList, setShowBlockList] = useState(false);
   const [showCityList, setShowCityList] = useState(false);
+  const [pincode, setPincode] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [postal, setPostal] = useState<PostalPlace[]>([]);
+  const [pinStatus, setPinStatus] = useState<"idle" | "loading" | "found" | "missing">("idle");
+
+  // A PIN code resolves the whole tail of the address, so prefer its data and
+  // fall back to the bundled table when the lookup found nothing.
+  const places = useMemo(() => {
+    if (postal.length > 0) {
+      return {
+        blocks: uniqueSorted(postal.map((p) => p.block)),
+        cities: uniqueSorted(postal.map((p) => p.name)),
+      };
+    }
+    return districtKey
+      ? placesByDistrict[districtKey] || { blocks: [], cities: [] }
+      : { blocks: [], cities: [] };
+  }, [postal, districtKey]);
+
+  // Debounced: fill state / district / block / city / coordinates from the PIN.
+  useEffect(() => {
+    if (!/^\d{6}$/.test(pincode)) {
+      setPostal([]);
+      setPinStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setPinStatus("loading");
+    const timer = setTimeout(async () => {
+      const rows = await lookupPincode(pincode);
+      if (cancelled) return;
+      setPostal(rows);
+      setPinStatus(rows.length > 0 ? "found" : "missing");
+      if (rows.length === 0) return;
+
+      const [first] = rows;
+      const state = canonicalState(first.state);
+      if (INDIAN_STATES.includes(state)) setStateKey(state);
+      const reported = first.district.trim();
+      const district = (DISTRICTS_BY_STATE[state] || []).find(
+        (d) => d.toLowerCase() === reported.toLowerCase()
+      );
+      if (district) {
+        setDistrictKey(district);
+      } else if (reported) {
+        setExtraDistrict(reported);
+        setDistrictKey(reported);
+      }
+
+      const blocks = uniqueSorted(rows.map((r) => r.block));
+      if (blocks.length === 1) setBlockQuery(blocks[0]);
+      if (rows.length === 1) setCityQuery(rows[0].name);
+
+      const point = await geocode(
+        `${first.pincode}, ${first.district}, ${first.state}, India`
+      );
+      if (!cancelled && point) {
+        setLatitude(point.lat);
+        setLongitude(point.lon);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pincode]);
 
   return (
     <Card>
@@ -186,10 +231,11 @@ export function AddressSection() {
             <Label htmlFor="state">State *</Label>
             <Select
               name="state"
-              value={selectedState}
+              value={stateKey}
               onValueChange={(val) => {
-                setSelectedState(val);
-                setSelectedDistrict("");
+                setStateKey(val);
+                setDistrictKey("");
+                setExtraDistrict("");
                 setBlockQuery("");
                 setCityQuery("");
               }}
@@ -198,14 +244,11 @@ export function AddressSection() {
                 <SelectValue placeholder="Select state" />
               </SelectTrigger>
               <SelectContent>
-                {states.map((state) => {
-                  const val = state.toLowerCase().replace(/\s/g, "-");
-                  return (
-                    <SelectItem key={state} value={val}>
-                      {state}
-                    </SelectItem>
-                  );
-                })}
+                {INDIAN_STATES.map((state) => (
+                  <SelectItem key={state} value={state}>
+                    {state}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -213,10 +256,10 @@ export function AddressSection() {
             <Label htmlFor="district">District *</Label>
             <Select
               name="district"
-              value={selectedDistrict}
+              value={districtKey}
               disabled={!stateKey || availableDistricts.length === 0}
               onValueChange={(val) => {
-                setSelectedDistrict(val);
+                setDistrictKey(val);
                 setBlockQuery("");
                 setCityQuery("");
               }}
@@ -227,14 +270,11 @@ export function AddressSection() {
                 />
               </SelectTrigger>
               <SelectContent>
-                {availableDistricts.map((district) => {
-                  const val = district.toLowerCase().replace(/\s/g, "-");
-                  return (
-                    <SelectItem key={district} value={val}>
-                      {district}
-                    </SelectItem>
-                  );
-                })}
+                {availableDistricts.map((district) => (
+                  <SelectItem key={district} value={district}>
+                    {district}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -245,8 +285,9 @@ export function AddressSection() {
           <Input
             id="block"
             name="block"
-            placeholder={districtKey ? "Type to search block" : "Select district first"}
-            disabled={!districtKey}
+            placeholder={
+              places.blocks.length > 0 ? "Type to search block" : "Enter block"
+            }
             value={blockQuery}
             onChange={(e) => {
               setBlockQuery(e.target.value);
@@ -282,8 +323,9 @@ export function AddressSection() {
           <Input
             id="city"
             name="city"
-            placeholder={districtKey ? "Type to search city" : "Select district first"}
-            disabled={!districtKey}
+            placeholder={
+              places.cities.length > 0 ? "Type to search city" : "Enter city"
+            }
             value={cityQuery}
             onChange={(e) => {
               setCityQuery(e.target.value);
@@ -316,15 +358,47 @@ export function AddressSection() {
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="pincode">Pincode *</Label>
-            <Input id="pincode" name="pincode" placeholder="Pincode" />
+            <Input
+              id="pincode"
+              name="pincode"
+              placeholder="6-digit PIN"
+              inputMode="numeric"
+              maxLength={6}
+              value={pincode}
+              onChange={(e) => setPincode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              autoComplete="off"
+            />
+            <p className="text-xs text-muted-foreground">
+              {pinStatus === "loading" && "Looking up PIN code..."}
+              {pinStatus === "found" &&
+                "State, district, block, city and coordinates filled from this PIN."}
+              {pinStatus === "missing" && "PIN code not found — fill the rest manually."}
+              {pinStatus === "idle" && "Enter a PIN to auto-fill the fields above."}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="latitude">Latitude</Label>
-            <Input id="latitude" name="latitude" type="number" step="any" placeholder="e.g., 28.6139" />
+            <Input
+              id="latitude"
+              name="latitude"
+              type="number"
+              step="any"
+              placeholder="e.g., 28.6139"
+              value={latitude}
+              onChange={(e) => setLatitude(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="longitude">Longitude</Label>
-            <Input id="longitude" name="longitude" type="number" step="any" placeholder="e.g., 77.2090" />
+            <Input
+              id="longitude"
+              name="longitude"
+              type="number"
+              step="any"
+              placeholder="e.g., 77.2090"
+              value={longitude}
+              onChange={(e) => setLongitude(e.target.value)}
+            />
           </div>
         </div>
         <div className="space-y-2">

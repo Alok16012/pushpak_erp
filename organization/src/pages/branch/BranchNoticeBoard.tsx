@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Bell, Calendar, Pin, PinOff, Trash2, Edit, Eye, Users } from "lucide-react";
+import { Plus, Bell, Calendar, Pin, PinOff, Trash2, Edit, Eye, Users, Clock, Video } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -30,6 +30,9 @@ interface Notice {
   isPinned: boolean;
   views: number;
   type: NoticeType;
+  /** `datetime-local` value, e.g. "2026-09-10T15:30". Empty when no meeting. */
+  meetingTime?: string;
+  meetingLink?: string;
 }
 
 interface Branch {
@@ -52,7 +55,24 @@ const blankDraft = (branchId: string): Notice => ({
   isPinned: false,
   views: 0,
   type: "BRANCH",
+  meetingTime: "",
+  meetingLink: "",
 });
+
+/** ISO timestamp -> the `YYYY-MM-DDTHH:mm` a datetime-local input expects. */
+const toLocalInput = (value?: string) => {
+  if (!value) return "";
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+};
+
+const formatMeeting = (value?: string) => {
+  if (!value) return "";
+  const at = new Date(value);
+  return Number.isNaN(at.getTime()) ? "" : at.toLocaleString();
+};
 
 const priorityVariant = (priority: string) =>
   priority === "HIGH" ? "destructive" : priority === "MEDIUM" ? "default" : "secondary";
@@ -127,7 +147,11 @@ export default function BranchNoticeBoard() {
   };
 
   const openEdit = (notice: Notice) => {
-    setDraft(notice);
+    setDraft({
+      ...notice,
+      meetingTime: toLocalInput(notice.meetingTime),
+      meetingLink: notice.meetingLink || "",
+    });
     setIsDialogOpen(true);
   };
 
@@ -136,13 +160,27 @@ export default function BranchNoticeBoard() {
       toast({ title: "Missing details", description: "Title and content are both required.", variant: "destructive" });
       return;
     }
+    const link = (draft.meetingLink || "").trim();
+    if (link && !/^https?:\/\//i.test(link)) {
+      toast({
+        title: "Invalid meeting link",
+        description: "The meeting link must start with http:// or https://",
+        variant: "destructive",
+      });
+      return;
+    }
+    const payload = {
+      ...draft,
+      meetingLink: link || null,
+      meetingTime: draft.meetingTime ? new Date(draft.meetingTime).toISOString() : null,
+    };
     try {
       if (draft.id) {
-        await updateNotice(draft.id, draft as unknown as Record<string, unknown>);
+        await updateNotice(draft.id, payload as unknown as Record<string, unknown>);
         setItems((list) => list.map((n) => (n.id === draft.id ? draft : n)));
         toast({ title: "Notice updated", description: draft.title });
       } else {
-        const created = await createNotice(draft as unknown as Record<string, unknown>);
+        const created = await createNotice(payload as unknown as Record<string, unknown>);
         setItems((list) => [created.data as unknown as Notice, ...list]);
         toast({ title: "Notice published", description: draft.title });
       }
@@ -190,6 +228,24 @@ export default function BranchNoticeBoard() {
       </CardHeader>
       <CardContent>
         <p className="text-muted-foreground mb-4">{notice.content}</p>
+        {(notice.meetingTime || notice.meetingLink) && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+            {notice.meetingTime && (
+              <span className="flex items-center gap-1">
+                <Clock className="h-4 w-4" />
+                {formatMeeting(notice.meetingTime)}
+              </span>
+            )}
+            {notice.meetingLink && (
+              <Button asChild variant="outline" size="sm" className="gap-1">
+                <a href={notice.meetingLink} target="_blank" rel="noreferrer">
+                  <Video className="h-4 w-4" />
+                  Join meeting
+                </a>
+              </Button>
+            )}
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
@@ -364,6 +420,29 @@ export default function BranchNoticeBoard() {
               <div className="space-y-2">
                 <Label>Expiry Date</Label>
                 <Input type="date" value={draft.expiryDate} onChange={(e) => set("expiryDate", e.target.value)} />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="meetingTime">Meeting Time</Label>
+                <Input
+                  id="meetingTime"
+                  type="datetime-local"
+                  value={draft.meetingTime || ""}
+                  onChange={(e) => set("meetingTime", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Optional — leave blank if there is no meeting.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="meetingLink">Meeting Link</Label>
+                <Input
+                  id="meetingLink"
+                  type="url"
+                  placeholder="https://meet.google.com/..."
+                  value={draft.meetingLink || ""}
+                  onChange={(e) => set("meetingLink", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Shown as a Join button on the notice.</p>
               </div>
             </div>
             <div className="flex justify-end gap-3 pt-4">
