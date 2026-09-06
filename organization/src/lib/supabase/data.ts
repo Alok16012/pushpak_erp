@@ -1,4 +1,5 @@
 import { supabase, supabaseUrl } from "./client";
+import { KNOWN_COURSE_CATEGORIES } from "../courseCategories";
 import {
   createInvoiceRow,
   listInvoices,
@@ -266,6 +267,20 @@ export async function getCourses(organizationId: string | null) {
   return { success: true, data: (data || []).map(mapCourse) };
 }
 
+/**
+ * `courses.category` is still the `CourseCategory` enum on databases where
+ * `course-category-free-text.sql` has not been run, and Postgres rejects
+ * anything outside its seven members with 22P02. The raw message names the
+ * type, not the field, so translate it.
+ */
+function describeCategoryRejection(error: { code?: string; message?: string }): string {
+  if (error.code !== "22P02" || !/CourseCategory/.test(error.message || "")) {
+    return error.message || "Could not save the course";
+  }
+  const typed = error.message?.match(/: "([^"]*)"/)?.[1] ?? "";
+  return `"${typed}" is not one of the categories this database accepts yet. Run supabase/schema/course-category-free-text.sql to allow typed categories, or pick one of: ${KNOWN_COURSE_CATEGORIES.join(", ")}.`;
+}
+
 export async function createCourse(organizationId: string | null, input: Record<string, unknown>) {
   const { durationMonths, ...rest } = input;
   const payload: Record<string, unknown> = { ...rest, organizationId };
@@ -275,7 +290,7 @@ export async function createCourse(organizationId: string | null, input: Record<
     payload.durationUnit = "MONTHS";
   }
   const { data, error } = await supabase.from("courses").insert(payload).select("*").single();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(describeCategoryRejection(error));
   return { success: true, data: mapCourse(data as Record<string, unknown>) };
 }
 
@@ -287,7 +302,7 @@ export async function updateCourse(id: string, input: Record<string, unknown>) {
     payload.durationUnit = "MONTHS";
   }
   const { data, error } = await supabase.from("courses").update(payload).eq("id", id).select("*").single();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(describeCategoryRejection(error));
   return { success: true, data: mapCourse(data as Record<string, unknown>) };
 }
 

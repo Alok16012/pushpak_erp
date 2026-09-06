@@ -29,6 +29,7 @@ import { Plus, BookOpen, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { getCourses, updateCourse, deleteCourse, getBatchesByOrg } from "@/lib/supabase/data";
+import { courseCategoryLabel, courseCategoryOptions } from "@/lib/courseCategories";
 import { downloadCsv } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 
@@ -361,9 +362,17 @@ export default function ViewCourses() {
                   <Label htmlFor="edit-course-category">Category</Label>
                   <Input
                     id="edit-course-category"
+                    list="course-category-options"
                     value={editing.category}
                     onChange={(e) => setEditing({ ...editing, category: e.target.value })}
                   />
+                  <datalist id="course-category-options">
+                    {courseCategoryOptions(courses.map((c) => c.category)).map((value) => (
+                      <option key={value} value={value}>
+                        {courseCategoryLabel(value)}
+                      </option>
+                    ))}
+                  </datalist>
                 </div>
               </div>
               <div className="space-y-2">

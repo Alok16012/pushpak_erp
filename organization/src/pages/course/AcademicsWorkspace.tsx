@@ -18,6 +18,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile } from "@/lib/export";
 import {
+  CUSTOM_CATEGORY,
+  courseCategoryLabel,
+  courseCategoryOptions,
+} from "@/lib/courseCategories";
+import {
   getCourses,
   createCourse,
   getBatches,
@@ -120,11 +125,30 @@ export default function AcademicsWorkspace() {
 
   const remarkWords = useMemo(() => countWords(d.remark || ""), [d.remark]);
 
+  // The seven enum members plus whatever the existing courses already use, so a
+  // category typed earlier is picked, not retyped.
+  const categoryOptions = useMemo(
+    () => courseCategoryOptions(courses.map((c) => c.category)),
+    [courses],
+  );
+
+  /**
+   * The Select holds the sentinel while a custom category is being typed, so
+   * `d.category` is not the value to save - this is.
+   */
+  const chosenCategory = () =>
+    (d.category === CUSTOM_CATEGORY ? d.categoryCustom || "" : d.category || "").trim();
+
   const validate = () => {
     const missing: string[] = [];
     if (!d.name?.trim()) missing.push("Name");
     if (!d.code?.trim()) missing.push("Code");
     if (form === "course" && !d.durationMonths) missing.push("Duration");
+    // Without this the sentinel resolves to nothing and the course would be
+    // quietly filed under COMPUTER instead of the category being typed.
+    if (form === "course" && d.category === CUSTOM_CATEGORY && !d.categoryCustom?.trim()) {
+      missing.push("Category");
+    }
     if (form === "batch") {
       if (!d.courseId) missing.push("Course");
       if (!targetBranchId) missing.push("Branch");
@@ -161,7 +185,7 @@ export default function AcademicsWorkspace() {
         await createCourse(orgId, {
           name: d.name.trim(),
           code: d.code.trim().toUpperCase(),
-          category: d.category || "COMPUTER",
+          category: chosenCategory() || "COMPUTER",
           description: d.description || "",
           durationMonths: Number(d.durationMonths) || 1,
           baseFee: Number(d.baseFee) || 0,
@@ -362,16 +386,31 @@ export default function AcademicsWorkspace() {
               {form === "course" ? (
                 <>
                   <Field l="Category">
-                    <Select value={d.category || ""} onValueChange={(v) => setD((p) => ({ ...p, category: v }))}>
+                    <Select
+                      value={d.category || ""}
+                      onValueChange={(v) => setD((p) => ({ ...p, category: v }))}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Category" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="COMPUTER">Computer</SelectItem>
-                        <SelectItem value="SKILL_DEVELOPMENT">Skill development</SelectItem>
-                        <SelectItem value="VOCATIONAL">Vocational</SelectItem>
+                        {categoryOptions.map((value) => (
+                          <SelectItem key={value} value={value}>
+                            {courseCategoryLabel(value)}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value={CUSTOM_CATEGORY}>Other (type your own)…</SelectItem>
                       </SelectContent>
                     </Select>
+                    {d.category === CUSTOM_CATEGORY && (
+                      <Input
+                        className="mt-2"
+                        autoFocus
+                        placeholder="Type the category"
+                        value={d.categoryCustom || ""}
+                        onChange={(e) => setD((p) => ({ ...p, categoryCustom: e.target.value }))}
+                      />
+                    )}
                   </Field>
                   <Field l="Duration (months) *">
                     <Input
