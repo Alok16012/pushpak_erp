@@ -1092,6 +1092,58 @@ const isMissingBranchColumn = (error: { code?: string; message?: string } | null
   error?.code === "PGRST204" &&
   BRANCH_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c));
 
+/**
+ * Unique constraints on `branches`, mapped to the field a person filled in and
+ * the payload key that carries it.
+ */
+const BRANCH_UNIQUE_CONSTRAINTS: Record<string, { label: string; column: string }> = {
+  branches_email_key: { label: "email address", column: "email" },
+  branches_code_key: { label: "branch code", column: "code" },
+  branches_phone_key: { label: "phone number", column: "phone" },
+};
+
+/**
+ * Explain a unique violation instead of forwarding Postgres's own wording.
+ *
+ * This matters more here than it looks. `deleteBranch` is a *soft* delete - it
+ * stamps `deletedAt` and leaves the row in place - and `getBranches` hides
+ * those rows. The unique index does not: it still covers them. So deleting a
+ * branch and creating it again with the same email fails against a row that is
+ * nowhere on screen, and the raw error ("duplicate key value violates unique
+ * constraint branches_email_key") gives no hint that this is what happened.
+ *
+ * So say who holds the value, and whether they are deleted.
+ */
+async function describeBranchConflict(
+  error: { code?: string; message?: string },
+  payload: Record<string, unknown>,
+): Promise<string | null> {
+  if (error.code !== "23505") return null;
+  const name = error.message?.match(/unique constraint "([^"]+)"/)?.[1] ?? "";
+  const conflict = BRANCH_UNIQUE_CONSTRAINTS[name];
+  if (!conflict) return null;
+
+  const value = payload[conflict.column];
+  const base = `A branch is already registered with this ${conflict.label}`;
+  if (typeof value !== "string" || !value) return `${base}.`;
+
+  // Deliberately no `deletedAt` filter - the row that blocks the insert is
+  // usually one that has been deleted and is therefore invisible everywhere else.
+  const { data } = await supabase
+    .from("branches")
+    .select("name, code, deletedAt")
+    .eq(conflict.column, value)
+    .limit(1);
+  const holder = data?.[0];
+  if (!holder) {
+    return `${base} (${value}). It belongs to a branch outside this workspace, so use a different ${conflict.label}.`;
+  }
+  const who = `${holder.name}${holder.code ? ` (${holder.code})` : ""}`;
+  return holder.deletedAt
+    ? `${base} (${value}): "${who}", which was deleted on ${String(holder.deletedAt).slice(0, 10)}. Deleted branches keep their ${conflict.label}, so either restore that branch or use a different one here.`
+    : `${base} (${value}): "${who}". Use a different ${conflict.label}.`;
+}
+
 async function insertBranchRow(payload: Record<string, unknown>) {
   const attempt = (body: Record<string, unknown>) =>
     supabase.from("branches").insert(body).select("*").single();
@@ -1100,7 +1152,9 @@ async function insertBranchRow(payload: Record<string, unknown>) {
   if (error && isMissingBranchColumn(error)) {
     ({ data, error } = await attempt(withoutOptionalBranchColumns(payload)));
   }
-  if (error) throw new Error(error.message);
+  if (error) {
+    throw new Error((await describeBranchConflict(error, payload)) || error.message);
+  }
   return data;
 }
 
@@ -1201,7 +1255,17 @@ export async function createBranchWithDetails(
       if (licenseError) throw new Error(licenseError.message);
     }
   } catch (err) {
-    await supabase.from("branches").delete().eq("id", branchId);
+    // Undo the branch row, otherwise its unique code and email block the next
+    // attempt against a row the register does not show. If the cleanup itself
+    // fails, say so - silently swallowing it is what leaves the orphan behind
+    // that then reports a baffling duplicate-key error on the retry.
+    const { error: cleanupError } = await supabase.from("branches").delete().eq("id", branchId);
+    const reason = err instanceof Error ? err.message : "Could not save the branch details";
+    if (cleanupError) {
+      throw new Error(
+        `${reason}. The partly-created branch could not be removed either (${cleanupError.message}), so its code and email are still taken - delete branch ${branchId} in Supabase before retrying.`,
+      );
+    }
     throw err;
   }
 
