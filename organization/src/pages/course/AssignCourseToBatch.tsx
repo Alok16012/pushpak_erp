@@ -23,7 +23,7 @@ import { BookOpen, Users, Link2, CheckCircle } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { getCourses, getBatches } from "@/lib/supabase/data";
+import { getCourses, getBatches, getInstructorNames, updateBatch } from "@/lib/supabase/data";
 import { newId } from "@/hooks/use-local-collection";
 
 interface CourseAssignment {
@@ -45,6 +45,8 @@ interface Course {
 interface Batch {
   id: string;
   name: string;
+  /** Whoever already teaches it, so re-assigning does not start from blank. */
+  instructor?: string;
   /** `batches` stores the course as a foreign key, not a name. */
   courseId?: string | null;
 }
@@ -53,8 +55,6 @@ const availableSubjects = [
   "Data Structures", "Algorithms", "Database Systems", "Web Development",
   "Operating Systems", "Computer Networks", "Software Engineering", "Machine Learning"
 ];
-
-const INSTRUCTOR_POOL = ["Dr. Smith", "Prof. Johnson", "Dr. Patel", "Dr. Sharma", "Prof. Gupta", "Prof. Kumar"];
 
 const columns: Column<CourseAssignment>[] = [
   {
@@ -135,6 +135,9 @@ export default function AssignCourseToBatch() {
   const [selectedBatch, setSelectedBatch] = useState("");
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [newSubject, setNewSubject] = useState("");
+  const [teacherList, setTeacherList] = useState<string[]>([]);
+  const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
+  const [newTeacher, setNewTeacher] = useState("");
   const [details, setDetails] = useState<CourseAssignment | null>(null);
   const [editing, setEditing] = useState<CourseAssignment | null>(null);
   const [pendingRemove, setPendingRemove] = useState<CourseAssignment | null>(null);
@@ -143,13 +146,15 @@ export default function AssignCourseToBatch() {
     let cancelled = false;
     async function loadReferenceData() {
       try {
-        const [coursesRes, batchesRes] = await Promise.all([
+        const [coursesRes, batchesRes, teacherRes] = await Promise.all([
           getCourses(orgId),
           getBatches(branchId),
+          getInstructorNames(branchId),
         ]);
         if (!cancelled) {
           setCourses(coursesRes.data as Course[]);
           setBatches(batchesRes.data as Batch[]);
+          setTeacherList(teacherRes.data);
         }
       } catch (err) {
         if (!cancelled) {
@@ -218,15 +223,39 @@ export default function AssignCourseToBatch() {
     toast({ title: "Subject created", description: `${name} was added and selected.` });
   };
 
+  const toggleTeacher = (name: string) => {
+    setSelectedTeachers((prev) =>
+      prev.includes(name) ? prev.filter((t) => t !== name) : [...prev, name]
+    );
+  };
+
+  /** There is no staff table to pick from, so the roll is built by typing. */
+  const addTeacher = () => {
+    const name = newTeacher.trim();
+    if (!name) {
+      toast({ title: "Type a teacher's name first", variant: "destructive" });
+      return;
+    }
+    if (teacherList.some((t) => t.toLowerCase() === name.toLowerCase())) {
+      toast({ title: "That teacher is already listed", description: name, variant: "destructive" });
+      return;
+    }
+    setTeacherList((prev) => [...prev, name]);
+    setSelectedTeachers((prev) => [...prev, name]);
+    setNewTeacher("");
+  };
+
   const resetForm = () => {
     setSelectedBranch("");
     setSelectedCourse("");
     setSelectedBatch("");
     setSelectedSubjects([]);
     setNewSubject("");
+    setSelectedTeachers([]);
+    setNewTeacher("");
   };
 
-  const assign = () => {
+  const assign = async () => {
     const course = courses.find((c) => c.id === selectedCourse);
     const batch = batches.find((b) => b.id === selectedBatch);
     if (!selectedBranch) {
@@ -241,10 +270,29 @@ export default function AssignCourseToBatch() {
       toast({ title: "Select at least one subject", variant: "destructive" });
       return;
     }
+    if (!selectedTeachers.length) {
+      toast({ title: "Select at least one teacher", variant: "destructive" });
+      return;
+    }
     if (assignments.some((a) => a.courseCode === course.code && a.batch === batch.name)) {
       toast({
         title: "Already assigned",
         description: `${course.name} is already linked to ${batch.name}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // The teacher is the one part of an assignment with somewhere to live:
+    // `batches.instructor`. The rest of this screen is still in memory only.
+    const teachers = [...selectedTeachers];
+    try {
+      await updateBatch(batch.id, { instructor: teachers.join(", ") });
+      setBatches((prev) => prev.map((b) => (b.id === batch.id ? { ...b, instructor: teachers.join(", ") } : b)));
+    } catch (err) {
+      toast({
+        title: "Could not save the teacher on this batch",
+        description: err instanceof Error ? err.message : undefined,
         variant: "destructive",
       });
       return;
@@ -255,12 +303,12 @@ export default function AssignCourseToBatch() {
       courseCode: course.code,
       batch: batch.name,
       subjects: [...selectedSubjects],
-      instructors: [INSTRUCTOR_POOL[assignments.length % INSTRUCTOR_POOL.length]],
+      instructors: teachers,
       status: "pending",
     });
     toast({
       title: "Course assigned",
-      description: `${course.name} → ${batch.name} with ${selectedSubjects.length} subject(s).`,
+      description: `${course.name} → ${batch.name}, taught by ${teachers.join(", ")}.`,
     });
     resetForm();
   };
@@ -390,6 +438,49 @@ export default function AssignCourseToBatch() {
                 ))}
               </div>
             )}
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label>Select Teachers</Label>
+                <div className="flex gap-2 max-w-xs">
+                  <Input
+                    placeholder="New teacher name"
+                    value={newTeacher}
+                    onChange={(e) => setNewTeacher(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTeacher();
+                      }
+                    }}
+                    className="h-8"
+                  />
+                  <Button size="sm" variant="outline" onClick={addTeacher} className="h-8">
+                    Add Teacher
+                  </Button>
+                </div>
+              </div>
+              {teacherList.length === 0 ? (
+                <p className="text-sm text-muted-foreground border rounded-lg p-4">
+                  No teachers recorded yet. Type a name above to add the first one.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 border rounded-lg">
+                  {teacherList.map((teacher) => (
+                    <div key={teacher} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`teacher-${teacher}`}
+                        checked={selectedTeachers.includes(teacher)}
+                        onCheckedChange={() => toggleTeacher(teacher)}
+                      />
+                      <label htmlFor={`teacher-${teacher}`} className="text-sm cursor-pointer line-clamp-1">
+                        {teacher}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="outline" onClick={resetForm}>Cancel</Button>

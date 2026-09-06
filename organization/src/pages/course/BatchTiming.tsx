@@ -19,6 +19,8 @@ interface Batch {
   name: string;
   code: string;
   courseId: string;
+  /** Set on the Course to Batch form, not here. */
+  instructor?: string;
 }
 
 interface TimingSlot {
@@ -53,7 +55,6 @@ const timeSlots = [
 ];
 
 const SUBJECTS = ["Data Structures", "Algorithms", "Database Systems", "Web Development", "Operating Systems", "Computer Networks", "Project Work"];
-const INSTRUCTORS = ["Dr. Smith", "Prof. Johnson", "Dr. Patel", "Prof. Kumar"];
 const ROOMS = ["Lab 101", "Lab 102", "Lab 103", "Lab 104", "Room 201", "Room 202", "Room 203"];
 
 const blankSlot = (batchId: string): Omit<TimingSlot, "id"> => ({
@@ -62,7 +63,6 @@ const blankSlot = (batchId: string): Omit<TimingSlot, "id"> => ({
   startTime: "09:00",
   endTime: "10:30",
   subject: SUBJECTS[0],
-  instructor: INSTRUCTORS[0],
   roomNo: ROOMS[0],
 });
 
@@ -165,7 +165,6 @@ export default function BatchTiming() {
             endTime: draft.endTime,
             roomNo: draft.roomNo || null,
             subject: draft.subject || null,
-            instructor: draft.instructor || null,
           });
         setSlots((list) => list.map((s) => (s.id === editingSlot.id ? res.data : s)));
         toast({ title: "Slot updated", description: `${draft.subject} on ${DAY_LABELS[draft.day]}.` });
@@ -177,7 +176,6 @@ export default function BatchTiming() {
             endTime: draft.endTime,
             roomNo: draft.roomNo || undefined,
             subject: draft.subject || undefined,
-            instructor: draft.instructor || undefined,
           });
         setSlots((list) => [...list, res.data]);
         toast({ title: "Slot added", description: `${draft.subject} on ${DAY_LABELS[draft.day]} at ${draft.startTime}.` });
@@ -211,7 +209,7 @@ export default function BatchTiming() {
         startTime: r.startTime,
         endTime: r.endTime,
         subject: r.subject || "",
-        instructor: r.instructor || "",
+        instructor: r.instructor || currentBatch?.instructor || "",
         roomNo: r.roomNo || "",
       })),
       ["day", "startTime", "endTime", "subject", "instructor", "roomNo"],
@@ -284,20 +282,7 @@ export default function BatchTiming() {
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Instructor</Label>
-                <Select value={draft.instructor} onValueChange={(v) => set("instructor", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select instructor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INSTRUCTORS.map((name) => (
-                      <SelectItem key={name} value={name}>{name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <Label>Room/Lab</Label>
                 <Select value={draft.roomNo} onValueChange={(v) => set("roomNo", v)}>
                   <SelectTrigger>
@@ -382,7 +367,9 @@ export default function BatchTiming() {
                           {timing ? (
                             <div className="bg-primary/10 rounded-lg p-2 relative group">
                               <p className="font-medium text-sm text-primary">{timing.subject || "Class"}</p>
-                              <p className="text-xs text-muted-foreground">{timing.instructor}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {timing.instructor || currentBatch?.instructor || ""}
+                              </p>
                               <Badge variant="outline" className="mt-1 text-xs">{timing.roomNo || "TBD"}</Badge>
                               <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
                                 <Button variant="ghost" size="icon" className="h-6 w-6" title="Edit slot" onClick={() => openEdit(timing)}>

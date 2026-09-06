@@ -314,7 +314,7 @@ export async function deleteCourse(id: string) {
 }
 
 /** Added by `supabase/schema/add-batch-fee-fields.sql`; may not be deployed. */
-const BATCH_OPTIONAL_COLUMNS = ["feeDiscount", "remark"];
+const BATCH_OPTIONAL_COLUMNS = ["feeDiscount", "remark", "instructor"];
 
 /** The column is `maxSeats`; the screens say `maxStudents`. Expose both. */
 function mapBatch(row: Record<string, unknown>): Record<string, any> {
@@ -323,6 +323,7 @@ function mapBatch(row: Record<string, unknown>): Record<string, any> {
     maxStudents: row.maxSeats === null || row.maxSeats === undefined ? undefined : Number(row.maxSeats),
     feeDiscount: row.feeDiscount === undefined ? 0 : Number(row.feeDiscount) || 0,
     remark: (row.remark as string) ?? "",
+    instructor: (row.instructor as string) ?? "",
   };
 }
 
@@ -382,6 +383,50 @@ export async function createBatch(branchId: string | null, input: Record<string,
   }
   if (error) throw new Error(error.message);
   return { success: true, data: mapBatch(data as Record<string, unknown>) };
+}
+
+export async function updateBatch(id: string, input: Record<string, unknown>) {
+  const { maxStudents, ...rest } = input;
+  const payload: Record<string, unknown> = { ...rest };
+  if (payload.maxSeats === undefined && maxStudents !== undefined) {
+    payload.maxSeats = maxStudents === null || maxStudents === "" ? null : Number(maxStudents);
+  }
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("batches").update(body).eq("id", id).select("*").single();
+
+  let { data, error } = await attempt(payload);
+  if (error && (error.code === "PGRST204" || BATCH_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c)))) {
+    const trimmed = { ...payload };
+    for (const c of BATCH_OPTIONAL_COLUMNS) delete trimmed[c];
+    ({ data, error } = await attempt(trimmed));
+  }
+  if (error) throw new Error(error.message);
+  return { success: true, data: mapBatch(data as Record<string, unknown>) };
+}
+
+/**
+ * Teacher names already in use, for the picker on the assign form.
+ *
+ * There is no staff table - `profiles` holds logins, not teaching staff - so
+ * the list is whatever has been recorded before: the teacher on a batch, plus
+ * the instructor on any older timing slot from when that was set per slot.
+ * Typing a new name is what adds to it.
+ */
+export async function getInstructorNames(branchId: string | null) {
+  const [batchRes, timingRes] = await Promise.all([
+    branchId
+      ? supabase.from("batches").select("instructor").eq("branchId", branchId)
+      : supabase.from("batches").select("instructor"),
+    supabase.from("batch_timings").select("instructor"),
+  ]);
+  const names = new Set<string>();
+  for (const row of [...(batchRes.data || []), ...(timingRes.data || [])]) {
+    for (const part of String((row as any).instructor || "").split(",")) {
+      const name = part.trim();
+      if (name) names.add(name);
+    }
+  }
+  return { success: true, data: [...names].sort((a, b) => a.localeCompare(b)) };
 }
 
 export async function getBatchTimings(branchId: string, filters?: { batchId?: string; courseId?: string }) {
