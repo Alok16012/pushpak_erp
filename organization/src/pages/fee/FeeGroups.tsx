@@ -159,13 +159,22 @@ export default function FeeGroups() {
     return () => { cancelled = true; };
   }, []);
 
-  const persistGroups = (next: FeeGroup[]) => {
-    setGroups(next);
-    try { localStorage.setItem(FEE_GROUPS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  // Every caller passes an updater function, so these have to resolve it before
+  // writing: `JSON.stringify(fn)` is `undefined`, which stored the literal string
+  // "undefined" and made the next `JSON.parse` throw - fee groups never persisted.
+  const persistGroups = (next: FeeGroup[] | ((prev: FeeGroup[]) => FeeGroup[])) => {
+    setGroups((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      try { localStorage.setItem(FEE_GROUPS_KEY, JSON.stringify(value)); } catch { /* quota */ }
+      return value;
+    });
   };
-  const persistFeeTypes = (next: FeeType[]) => {
-    setAllFeeTypes(next);
-    try { localStorage.setItem(FEE_TYPES_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  const persistFeeTypes = (next: FeeType[] | ((prev: FeeType[]) => FeeType[])) => {
+    setAllFeeTypes((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      try { localStorage.setItem(FEE_TYPES_KEY, JSON.stringify(value)); } catch { /* quota */ }
+      return value;
+    });
   };
 
   /** Only live fee types can go into a new package. */

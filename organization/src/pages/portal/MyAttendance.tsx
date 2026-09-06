@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, Flag } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { getStudentAttendance, submitPortalRequest } from "@/lib/supabase/data";
+import { getPortalRequests, getStudentAttendance, submitPortalRequest } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { attendanceSummary, type AttendanceDay } from "@/data/student-portal";
@@ -32,7 +32,7 @@ interface PortalRequestResponse {
   userId: string;
   organizationId: string;
   branchId: string;
-  details: { detail: string; studentId?: string };
+  after: { detail: string; studentId?: string };
   createdAt: string;
 }
 
@@ -82,27 +82,33 @@ export default function MyAttendance() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    // Both of these used to be REST calls against an API server that is not part
+    // of this deployment, so the page never loaded anything.
     Promise.all([
       getStudentAttendance(studentId, branchId),
-      api<PortalRequestResponse[]>("/core/portal/requests"),
+      getPortalRequests(studentId, branchId),
     ])
-      .then(([daysData, requestsData]) => {
+      .then(([daysResult, requestsResult]) => {
         if (cancelled) return;
-        const mapped = daysData.map((record) => ({
-          id: record.id,
-          date: record.date,
-          subject: "",
-          status: toFrontendStatus(record.status),
-        }));
-        setDays(mapped);
-        const mappedRequests: PortalRequest[] = requestsData.map((req) => ({
-          id: req.id,
-          kind: req.action,
-          detail: req.details.detail,
-          raisedAt: req.createdAt,
-          status: "open",
-        }));
-        setRequests(mappedRequests);
+        const records = (daysResult.data || []) as AttendanceRecord[];
+        setDays(
+          records.map((record) => ({
+            id: record.id,
+            date: record.date,
+            subject: "",
+            status: toFrontendStatus(record.status),
+          })),
+        );
+        const requestRows = (requestsResult.data || []) as unknown as PortalRequestResponse[];
+        setRequests(
+          requestRows.map((req) => ({
+            id: req.id,
+            kind: req.action,
+            detail: req.after?.detail ?? "",
+            raisedAt: req.createdAt,
+            status: "open" as const,
+          })),
+        );
       })
       .catch((err) => {
         if (cancelled) return;
@@ -111,7 +117,7 @@ export default function MyAttendance() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, studentId, branchId]);
 
   const months = useMemo(() => [...new Set(days.map((day) => monthKey(day.date)))].sort().reverse(), [days]);
   const rows = days

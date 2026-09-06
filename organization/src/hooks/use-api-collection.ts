@@ -33,7 +33,7 @@ export function useApiCollection<T extends WithId>(
       const { data, error: err } = await query;
 
       if (err) throw new Error(err.message);
-      setItems((data as T[]) ?? []);
+      setItems((data as unknown as T[]) ?? []);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to load data";
       setError(msg);
@@ -80,7 +80,7 @@ export function useApiCollection<T extends WithId>(
       try {
         const { error: err } = await supabase
           .from(table)
-          .update(patch)
+          .update(patch as Record<string, unknown>)
           .eq("id", id);
 
         if (err) throw new Error(err.message);

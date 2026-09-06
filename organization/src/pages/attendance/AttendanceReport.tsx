@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
@@ -7,21 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, Eye, Download, Calendar, Clock, CheckCircle, XCircle } from "lucide-react";
+import { Search, Download } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { downloadCsv } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAllAttendanceRecords } from "@/lib/supabase/data";
+import { safeDateLabel, safePercent } from "@/lib/supabase/examAttendance";
 
 interface AttendanceRecord {
   id: string;
@@ -30,11 +23,8 @@ interface AttendanceRecord {
   enrollmentNo: string;
   date: string;
   status: "PRESENT" | "ABSENT" | "LATE" | "HALF_DAY" | "LEAVE";
-  checkInTime?: string;
-  checkOutTime?: string;
+  remarks?: string;
 }
-
-type PhotoView = { record: AttendanceRecord; mode: "in" | "out" };
 
 export default function AttendanceReport() {
   const { user } = useAuth();
@@ -44,7 +34,7 @@ export default function AttendanceReport() {
   const [searchTerm, setSearchTerm] = useState("");
   const [tab, setTab] = useState("today");
   const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [detail, setDetail] = useState<PhotoView | null>(null);
+  const [detail, setDetail] = useState<AttendanceRecord | null>(null);
 
   const day = (ago: number) => format(subDays(new Date(), ago), "yyyy-MM-dd");
 
@@ -73,8 +63,7 @@ export default function AttendanceReport() {
             enrollmentNo: s?.enrollmentNo || "",
             date: r.date,
             status: r.status,
-            checkInTime: r.checkInTime,
-            checkOutTime: r.checkOutTime,
+            remarks: r.remarks || "",
           };
         });
         setRecords(mapped);
@@ -99,16 +88,8 @@ export default function AttendanceReport() {
   const totalAbsent = dayRecords.filter(r => r.status === "ABSENT").length;
   const totalLate = dayRecords.filter(r => r.status === "LATE").length;
   const totalHalfDay = dayRecords.filter(r => r.status === "HALF_DAY").length;
-  const totalEmployees = dayRecords.length;
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "PRESENT": return <CheckCircle className="h-4 w-4 text-green-600" />;
-      case "ABSENT": return <XCircle className="h-4 w-4 text-red-600" />;
-      case "LATE": return <Clock className="h-4 w-4 text-amber-600" />;
-      default: return <Clock className="h-4 w-4 text-muted-foreground" />;
-    }
-  };
+  // "Attended" counts late and half-day arrivals; only a true absence is missing.
+  const attendedPercent = safePercent(dayRecords.length - totalAbsent, dayRecords.length);
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -118,7 +99,7 @@ export default function AttendanceReport() {
       HALF_DAY: "outline",
       LEAVE: "outline",
     };
-    return <Badge variant={variants[status] || "outline"}>{status.replace(/_/g, " ")}</Badge>;
+    return <Badge variant={variants[status] || "outline"}>{(status || "—").replace(/_/g, " ")}</Badge>;
   };
 
   const exportReport = () => {
@@ -134,8 +115,7 @@ export default function AttendanceReport() {
         EnrollmentNo: record.enrollmentNo,
         Date: record.date,
         Status: record.status,
-        CheckIn: record.checkInTime || "-",
-        CheckOut: record.checkOutTime || "-",
+        Remarks: record.remarks || "-",
       })),
     );
     toast({ title: "Report exported", description: `${dayRecords.length} rows downloaded.` });
@@ -172,6 +152,7 @@ export default function AttendanceReport() {
             absent={totalAbsent}
             late={totalLate}
             halfDay={totalHalfDay}
+            attended={attendedPercent}
           />
         </TabsContent>
 
@@ -182,6 +163,7 @@ export default function AttendanceReport() {
             absent={totalAbsent}
             late={totalLate}
             halfDay={totalHalfDay}
+            attended={attendedPercent}
           />
         </TabsContent>
 
@@ -205,6 +187,7 @@ export default function AttendanceReport() {
             absent={totalAbsent}
             late={totalLate}
             halfDay={totalHalfDay}
+            attended={attendedPercent}
           />
         </TabsContent>
       </Tabs>
@@ -213,7 +196,7 @@ export default function AttendanceReport() {
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <CardTitle>
-              Attendance for {format(new Date(selectedDate), "dd MMM yyyy")}
+              Attendance for {selectedDate ? safeDateLabel(selectedDate, "en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "— pick a date"}
             </CardTitle>
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -248,25 +231,44 @@ export default function AttendanceReport() {
                   cell: (record: AttendanceRecord) => getStatusBadge(record.status),
                 },
                 {
-                  key: "checkInTime",
-                  header: "Check In",
-                  cell: (record: AttendanceRecord) => record.checkInTime ? (
-                    <span className="text-sm">{format(new Date(record.checkInTime), "hh:mm a")}</span>
-                  ) : <span className="text-xs text-muted-foreground">—</span>,
+                  key: "date",
+                  header: "Date",
+                  cell: (record: AttendanceRecord) => (
+                    <span className="text-sm">{safeDateLabel(record.date, "en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                  ),
                 },
                 {
-                  key: "checkOutTime",
-                  header: "Check Out",
-                  cell: (record: AttendanceRecord) => record.checkOutTime ? (
-                    <span className="text-sm">{format(new Date(record.checkOutTime), "hh:mm a")}</span>
-                  ) : <span className="text-xs text-muted-foreground">—</span>,
+                  key: "remarks",
+                  header: "Remarks",
+                  cell: (record: AttendanceRecord) => (
+                    <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{record.remarks || "—"}</span>
+                  ),
                 },
               ]}
               data={dayRecords.filter(r =>
-                `${r.studentName} ${r.enrollmentNo}`.toLowerCase().includes(searchTerm.toLowerCase())
+                `${r.studentName || ""} ${r.enrollmentNo || ""}`.toLowerCase().includes(searchTerm.toLowerCase())
               )}
               searchable={false}
               emptyMessage="No attendance records for this date"
+              actions={(record) => [
+                { label: "View details", onClick: () => setDetail(record) },
+                {
+                  label: "Export this row",
+                  onClick: () => {
+                    downloadCsv(`attendance-${record.studentId}-${record.date}.csv`, [
+                      {
+                        StudentId: record.studentId,
+                        StudentName: record.studentName,
+                        EnrollmentNo: record.enrollmentNo,
+                        Date: record.date,
+                        Status: record.status,
+                        Remarks: record.remarks || "-",
+                      },
+                    ]);
+                    toast({ title: "Row exported" });
+                  },
+                },
+              ]}
             />
           )}
         </CardContent>
@@ -279,17 +281,17 @@ export default function AttendanceReport() {
               <DialogHeader>
                 <DialogTitle>Attendance Details</DialogTitle>
                 <DialogDescription>
-                  {detail.record.studentName} • {format(new Date(detail.record.date), "dd MMM yyyy")}
+                  {detail.studentName} • {safeDateLabel(detail.date, "en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3">
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                   {[
-                    ["Student ID", detail.record.studentId],
-                    ["Enrollment", detail.record.enrollmentNo || "—"],
-                    ["Status", detail.record.status.replace(/_/g, " ")],
-                    ["Check In", detail.record.checkInTime ? format(new Date(detail.record.checkInTime), "dd MMM yyyy, hh:mm a") : "—"],
-                    ["Check Out", detail.record.checkOutTime ? format(new Date(detail.record.checkOutTime), "dd MMM yyyy, hh:mm a") : "—"],
+                    ["Student ID", detail.studentId],
+                    ["Enrollment", detail.enrollmentNo || "—"],
+                    ["Date", safeDateLabel(detail.date, "en-IN", { day: "2-digit", month: "short", year: "numeric" })],
+                    ["Status", (detail.status || "").replace(/_/g, " ")],
+                    ["Remarks", detail.remarks || "—"],
                   ].map(([label, value]) => (
                     <div key={String(label)}>
                       <dt className="text-xs text-muted-foreground">{String(label)}</dt>
@@ -306,9 +308,9 @@ export default function AttendanceReport() {
   );
 }
 
-function SummaryCards({ total, present, absent, late, halfDay }: { total: number; present: number; absent: number; late: number; halfDay: number }) {
+function SummaryCards({ total, present, absent, late, halfDay, attended }: { total: number; present: number; absent: number; late: number; halfDay: number; attended: number }) {
   return (
-    <div className="grid gap-4 md:grid-cols-5 mb-6">
+    <div className="grid gap-4 md:grid-cols-6 mb-6">
       <Card>
         <CardContent className="p-4">
           <p className="text-xs text-muted-foreground">Total</p>
@@ -337,6 +339,12 @@ function SummaryCards({ total, present, absent, late, halfDay }: { total: number
         <CardContent className="p-4">
           <p className="text-xs text-muted-foreground">Half Day</p>
           <p className="mt-1 text-2xl font-semibold text-orange-600">{halfDay}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="p-4">
+          <p className="text-xs text-muted-foreground">Attended</p>
+          <p className="mt-1 text-2xl font-semibold">{total ? `${attended}%` : "—"}</p>
         </CardContent>
       </Card>
     </div>

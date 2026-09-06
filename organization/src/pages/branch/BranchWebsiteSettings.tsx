@@ -14,6 +14,15 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getBranchSettings, updateBranchSettings } from "@/lib/supabase/data";
 
+/**
+ * Every field the form edits, not just the seven that used to be here - the rest
+ * started life as `undefined`, which makes their inputs uncontrolled on first
+ * render and made `set` untypeable against this object.
+ *
+ * Only the first block exists on `branch_settings` today; the rest need
+ * supabase/schema/add-website-settings-fields.sql. `updateBranchSettings` drops
+ * whatever the table does not have yet rather than failing the save.
+ */
 const DEFAULTS = {
   siteName: "",
   tagline: "",
@@ -22,6 +31,29 @@ const DEFAULTS = {
   primaryDomain: "",
   subdomain: "",
   enableSsl: true,
+
+  logo: "",
+  favicon: "",
+  banner: "",
+  bannerTitle: "",
+  bannerSubtitle: "",
+  wwwRedirect: true,
+  email: "",
+  phone: "",
+  address: "",
+  onlineAdmissions: true,
+  onlineFees: true,
+  studentPortal: true,
+  parentPortal: false,
+  registrationDate: "",
+  expiryDate: "",
+  renewalDate: "",
+  facebook: "",
+  twitter: "",
+  instagram: "",
+  linkedin: "",
+  youtube: "",
+  whatsapp: "",
 };
 
 const STORAGE_KEY = "erp-website-settings";
@@ -39,15 +71,19 @@ export default function BranchWebsiteSettings() {
         if (!cancelled && result.data) {
           setForm({ ...DEFAULTS, ...result.data });
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          toast({ title: "Failed to load settings", variant: "destructive" });
+          toast({
+            title: "Failed to load settings",
+            description: error instanceof Error ? error.message : undefined,
+            variant: "destructive",
+          });
         }
       }
     }
     loadSettings();
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, user?.branchId]);
 
   const persist = (next: Record<string, any>) => {
     setForm(next);
@@ -74,18 +110,27 @@ export default function BranchWebsiteSettings() {
       return;
     }
     try {
-      await updateBranchSettings(user?.branchId || "", {
-        siteName: form.siteName,
-        tagline: form.tagline,
-        seoDescription: form.seoDescription,
-        seoKeywords: form.seoKeywords,
-        primaryDomain: form.primaryDomain,
-        subdomain: form.subdomain,
-        enableSsl: form.enableSsl,
-      });
+      // Send the whole form. This used to send only seven fields, so contact
+      // details, social links, banner copy, the portal toggles and the domain
+      // dates were edited and then silently discarded on every save.
+      const payload = Object.fromEntries(
+        Object.keys(DEFAULTS).map((key) => [key, form[key] ?? (DEFAULTS as Record<string, unknown>)[key]]),
+      );
+      const result = await updateBranchSettings(user?.branchId || "", payload);
+      if (result.droppedColumns?.length) {
+        toast({
+          title: "Some fields could not be saved",
+          description: `${result.droppedColumns.join(", ")} - run supabase/schema/add-website-settings-fields.sql.`,
+          variant: "destructive",
+        });
+      }
       toast({ title: "Website settings saved", description: `${form.siteName} updated.` });
-    } catch {
-      toast({ title: "Failed to save settings", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to save settings",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -161,11 +206,11 @@ export default function BranchWebsiteSettings() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="description">Meta Description</Label>
-                  <Textarea id="description" rows={3} value={form.description} onChange={(e) => set("description", e.target.value)} />
+                  <Textarea id="description" rows={3} value={form.seoDescription} onChange={(e) => set("seoDescription", e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="keywords">Meta Keywords</Label>
-                  <Input id="keywords" value={form.keywords} onChange={(e) => set("keywords", e.target.value)} />
+                  <Input id="keywords" value={form.seoKeywords} onChange={(e) => set("seoKeywords", e.target.value)} />
                 </div>
               </CardContent>
             </Card>
@@ -202,7 +247,7 @@ export default function BranchWebsiteSettings() {
                     <Label>SSL Certificate</Label>
                     <p className="text-xs text-muted-foreground">Enable HTTPS for your website</p>
                   </div>
-                  <Switch checked={form.ssl} onCheckedChange={(v) => set("ssl", v)} />
+                  <Switch checked={form.enableSsl} onCheckedChange={(v) => set("enableSsl", v)} />
                 </div>
                 <div className="flex items-center justify-between">
                   <div>

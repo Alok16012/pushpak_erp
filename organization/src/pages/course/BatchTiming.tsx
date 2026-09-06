@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { getBatches, getBatchTimings, createBatchTiming, updateBatchTiming, deleteBatchTiming } from "@/lib/supabase/data";
+import { downloadCsv } from "@/lib/export";
 
 interface Batch {
   id: string;
@@ -74,19 +75,23 @@ export default function BatchTiming() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState("");
   const [editingSlot, setEditingSlot] = useState<TimingSlot | null>(null);
-  const [draft, setDraft] = useState<Omit<TimingSlot, "id">>(() => blankSlot("", ""));
+  const [draft, setDraft] = useState<Omit<TimingSlot, "id">>(() => blankSlot(""));
 
   const loadBatches = useCallback(async () => {
     try {
       const res = await getBatches(user?.branchId || "");
-      const activeBatches = res.data.filter((b) => b.isActive !== false);
+      const activeBatches = res.data.filter((b) => b.isActive !== false) as Batch[];
       setBatches(activeBatches);
       if (!selectedBatchId && activeBatches.length > 0) {
         setSelectedBatchId(activeBatches[0].id);
         setDraft((d) => blankSlot(activeBatches[0].id));
       }
-    } catch {
-      toast({ title: "Failed to load batches", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to load batches",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
   }, [selectedBatchId, toast]);
 
@@ -96,8 +101,12 @@ export default function BatchTiming() {
     try {
       const res = await getBatchTimings(user?.branchId || "", { batchId });
       setSlots(res.data);
-    } catch {
-      toast({ title: "Failed to load timetable", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to load timetable",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,96 +10,129 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Check, Download, Save, Search } from "lucide-react";
 import {
-  Check,
-  Clock3,
-  Download,
-  RotateCcw,
-  Save,
-  Search,
-  Users,
-  X,
-} from "lucide-react";
-import { getAttendance, markAttendance } from "@/lib/supabase/data";
+  listAttendance,
+  listBatches,
+  listStudents,
+  saveAttendance,
+  safeDateLabel,
+  type LookupRow,
+  type StudentRow,
+} from "@/lib/supabase/examAttendance";
+import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+
 type Status = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
-type Student = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  enrollmentNo?: string;
-  courseId?: string;
-  batchId?: string;
-  attendance: Array<{ status: Status; remarks?: string }>;
-};
+
+const STATUSES: Status[] = ["PRESENT", "ABSENT", "LATE", "EXCUSED"];
+
 const statusStyle: Record<Status, string> = {
   PRESENT: "bg-emerald-500 text-white",
   ABSENT: "bg-red-500 text-white",
   LATE: "bg-amber-400 text-black",
   EXCUSED: "bg-violet-500 text-white",
 };
+
+const asStatus = (value: string | null | undefined): Status =>
+  STATUSES.includes(value as Status) ? (value as Status) : "PRESENT";
+
 export default function Attendance() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const branchId = user?.branchId || null;
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [students, setStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState<StudentRow[]>([]);
+  const [batchRows, setBatchRows] = useState<LookupRow[]>([]);
   const [marks, setMarks] = useState<Record<string, Status>>({});
   const [query, setQuery] = useState("");
   const [batch, setBatch] = useState("all");
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const load = () => {
-    const branchId = user?.branchId || "";
-    return getAttendance(branchId, date)
-      .then((data) => {
-        setStudents(data);
-        setMarks(
-          Object.fromEntries(
-            data.map((s) => [s.id, "PRESENT"]),
-          ),
-        );
-      })
-      .catch((e) =>
-        toast({
-          title: "Attendance unavailable",
-          description: e.message,
-          variant: "destructive",
-        }),
-      );
-  };
+
+  const load = useCallback(async () => {
+    if (!date) return;
+    setLoading(true);
+    try {
+      // The register needs the roll AND whatever has already been marked for the
+      // day, so an existing register re-opens with its saved statuses.
+      const [studentRows, batchList, existing] = await Promise.all([
+        listStudents(branchId),
+        listBatches(branchId),
+        listAttendance(branchId, date),
+      ]);
+      setStudents(studentRows);
+      setBatchRows(batchList);
+      const saved = new Map(existing.map((row) => [row.studentId, asStatus(row.status)]));
+      setMarks(Object.fromEntries(studentRows.map((s) => [s.id, saved.get(s.id) ?? "PRESENT"])));
+    } catch (e) {
+      toast({
+        title: "Attendance unavailable",
+        description: e instanceof Error ? e.message : "Try again",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [branchId, date, toast]);
+
   useEffect(() => {
     void load();
-  }, [date]);
-  const batches = useMemo(
-    () =>
-      Array.from(
-        new Map(
-          students.filter((s) => s.batchId).map((s) => [s.batchId!, s.batchId]),
-        ).values(),
-      ),
-    [students],
-  );
+  }, [load]);
+
+  const batchName = useMemo(() => {
+    const map = new Map(batchRows.map((b) => [b.id, b.name]));
+    return (id?: string | null) => (id ? map.get(id) || id : "Unassigned");
+  }, [batchRows]);
+
+  /** Only batches that actually have students on the roll are worth offering. */
+  const batchOptions = useMemo(() => {
+    const used = new Set(students.map((s) => s.batchId).filter(Boolean) as string[]);
+    return batchRows.filter((b) => used.has(b.id));
+  }, [batchRows, students]);
+
   const visible = students.filter(
     (s) =>
       (batch === "all" || s.batchId === batch) &&
-      `${s.firstName} ${s.lastName} ${s.enrollmentNo || ""}`
+      `${s.firstName || ""} ${s.lastName || ""} ${s.enrollmentNo || ""}`
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  const counts = (Object.values(marks) as Status[]).reduce<
-    Record<string, number>
-  >((a, s) => ((a[s] = (a[s] || 0) + 1), a), {});
+
+  const counts = visible.reduce<Record<string, number>>((acc, s) => {
+    const status = marks[s.id] || "PRESENT";
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+
   const save = async () => {
+    if (!visible.length) {
+      toast({ title: "Nothing to save", description: "No students match this selection." });
+      return;
+    }
+    if (!branchId) {
+      toast({
+        title: "No branch selected",
+        description: "Your account is not attached to a branch, so the register cannot be filed.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
     try {
-      const branchId = user?.branchId || "";
-      await markAttendance(branchId, date, visible.map((s) => ({
-        studentId: s.id,
-        status: marks[s.id],
-      })));
+      const result = await saveAttendance(
+        branchId,
+        date,
+        visible.map((s) => ({
+          studentId: s.id,
+          status: marks[s.id] || "PRESENT",
+          batchId: s.batchId,
+        })),
+      );
       toast({
         title: "Attendance saved",
-        description: `${visible.length} student records updated for ${new Date(date).toLocaleDateString()}.`,
+        description: `${result.inserted + result.updated} student record(s) filed for ${safeDateLabel(date)}.`,
       });
     } catch (e) {
       toast({
@@ -111,28 +144,26 @@ export default function Attendance() {
       setSaving(false);
     }
   };
+
   const exportCsv = () => {
-    const csv = [
-      "Date,Enrollment,Student,Batch,Status",
-      ...visible.map((s) =>
-        [
-          date,
-          s.enrollmentNo || "",
-          `${s.firstName} ${s.lastName}`,
-          s.batchId || "",
-          marks[s.id],
-        ]
-          .map((v) => `"${v}"`)
-          .join(","),
-      ),
-    ].join("\n");
-    const u = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = u;
-    a.download = `attendance-${date}.csv`;
-    a.click();
-    URL.revokeObjectURL(u);
+    if (!visible.length) {
+      toast({ title: "Nothing to export", description: "No students match this selection." });
+      return;
+    }
+    downloadCsv(
+      `attendance-${date}.csv`,
+      visible.map((s) => ({
+        date,
+        enrollmentNo: s.enrollmentNo || "",
+        student: `${s.firstName || ""} ${s.lastName || ""}`.trim(),
+        batch: batchName(s.batchId),
+        status: marks[s.id] || "PRESENT",
+      })),
+      ["date", "enrollmentNo", "student", "batch", "status"],
+    );
+    toast({ title: "Register exported", description: `${visible.length} row(s) downloaded.` });
   };
+
   return (
     <AppLayout>
       <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
@@ -148,11 +179,11 @@ export default function Attendance() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={exportCsv}>
+          <Button variant="outline" onClick={exportCsv} disabled={!visible.length}>
             <Download />
             Export
           </Button>
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={save} disabled={saving || loading || !visible.length}>
             <Save />
             {saving ? "Saving…" : "Save register"}
           </Button>
@@ -187,7 +218,7 @@ export default function Attendance() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All batches</SelectItem>
-                {batches.map((b) => (
+                {batchOptions.map((b) => (
                   <SelectItem key={b.id} value={b.id}>
                     {b.name}
                   </SelectItem>
@@ -205,10 +236,12 @@ export default function Attendance() {
             </div>
             <Button
               variant="outline"
+              disabled={!visible.length}
               onClick={() =>
-                setMarks(
-                  Object.fromEntries(visible.map((s) => [s.id, "PRESENT"])),
-                )
+                setMarks((m) => ({
+                  ...m,
+                  ...Object.fromEntries(visible.map((s) => [s.id, "PRESENT" as Status])),
+                }))
               }
             >
               <Check />
@@ -230,27 +263,25 @@ export default function Attendance() {
                   </p>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Batch: {s.batchId || "Unassigned"} · Course: {s.courseId || "Unassigned"}
+                  Batch: {batchName(s.batchId)}
                 </p>
                 <div className="grid grid-cols-4 gap-1 rounded-xl bg-muted p-1">
-                  {(["PRESENT", "ABSENT", "LATE", "EXCUSED"] as Status[]).map(
-                    (st) => (
-                      <button
-                        key={st}
-                        onClick={() => setMarks((m) => ({ ...m, [s.id]: st }))}
-                        className={`rounded-lg px-2 py-2 text-[10px] font-bold transition-all ${marks[s.id] === st ? statusStyle[st] + " shadow-sm" : "text-muted-foreground hover:bg-card"}`}
-                      >
-                        {st[0] + st.slice(1).toLowerCase()}
-                      </button>
-                    ),
-                  )}
+                  {STATUSES.map((st) => (
+                    <button
+                      key={st}
+                      onClick={() => setMarks((m) => ({ ...m, [s.id]: st }))}
+                      className={`rounded-lg px-2 py-2 text-[10px] font-bold transition-all ${marks[s.id] === st ? statusStyle[st] + " shadow-sm" : "text-muted-foreground hover:bg-card"}`}
+                    >
+                      {st[0] + st.slice(1).toLowerCase()}
+                    </button>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
           {!visible.length && (
             <div className="p-12 text-center text-sm text-muted-foreground">
-              No students match this selection.
+              {loading ? "Loading the register…" : "No students match this selection."}
             </div>
           )}
         </CardContent>

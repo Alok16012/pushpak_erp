@@ -143,14 +143,15 @@ export async function getStudents(branchId: string | null, page = 1, limit = 20,
 }
 
 export async function getStudent(id: string, branchId: string | null) {
+  // `.single()` returns a builder with no `.eq`, so every branch-scoped filter
+  // has to be applied before it or the call throws "query.eq is not a function".
   let query = supabase
     .from("students")
     .select("*")
     .eq("id", id)
-    .is("deletedAt", null)
-    .single();
+    .is("deletedAt", null);
   if (branchId) query = query.eq("branchId", branchId);
-  const { data, error } = await query;
+  const { data, error } = await query.single();
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -207,14 +208,15 @@ export async function deleteStudent(id: string, branchId: string) {
 }
 
 export async function getStudentPortal(id: string, branchId: string) {
+  // `.single()` returns a builder with no `.eq`, so every branch-scoped filter
+  // has to be applied before it or the call throws "query.eq is not a function".
   let query = supabase
     .from("students")
     .select("*")
     .eq("id", id)
-    .is("deletedAt", null)
-    .single();
+    .is("deletedAt", null);
   if (branchId) query = query.eq("branchId", branchId);
-  const { data, error } = await query;
+  const { data, error } = await query.single();
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -229,7 +231,7 @@ export async function getStudentPortal(id: string, branchId: string) {
  */
 const MONTHS_PER_UNIT: Record<string, number> = { DAYS: 1 / 30, WEEKS: 0.25, MONTHS: 1, YEARS: 12 };
 
-function mapCourse(row: Record<string, unknown>) {
+function mapCourse(row: Record<string, unknown>): Record<string, any> {
   const value = Number(row.durationValue) || 0;
   const unit = String(row.durationUnit || "MONTHS").toUpperCase();
   return {
@@ -286,7 +288,7 @@ export async function deleteCourse(id: string) {
 const BATCH_OPTIONAL_COLUMNS = ["feeDiscount", "remark"];
 
 /** The column is `maxSeats`; the screens say `maxStudents`. Expose both. */
-function mapBatch(row: Record<string, unknown>) {
+function mapBatch(row: Record<string, unknown>): Record<string, any> {
   return {
     ...row,
     maxStudents: row.maxSeats === null || row.maxSeats === undefined ? undefined : Number(row.maxSeats),
@@ -323,7 +325,7 @@ export async function getBatchesByOrg(organizationId: string | null) {
 }
 
 /** `batches` has no seat counter, so derive it from the students table. */
-async function withEnrolmentCounts(rows: Record<string, unknown>[]) {
+async function withEnrolmentCounts(rows: Record<string, unknown>[]): Promise<Record<string, any>[]> {
   const ids = rows.map((r) => r.id as string).filter(Boolean);
   if (ids.length === 0) return rows.map((r) => ({ ...r, currentStudents: 0 }));
   const { data, error } = await supabase.from("students").select("batchId").in("batchId", ids);
@@ -362,14 +364,134 @@ export async function getBatchTimings(branchId: string, filters?: { batchId?: st
   return { success: true, data: result };
 }
 
+/**
+ * There is no `live_classes` table - a "live class" is one weekly `batch_timings`
+ * slot, resolved against its batch and course and projected onto the next
+ * calendar date that day falls on. `status` is therefore derived from the clock,
+ * not stored: nothing in the schema can mark a single occurrence cancelled.
+ */
+const TIMING_DAY_INDEX: Record<string, number> = {
+  SUNDAY: 0, MONDAY: 1, TUESDAY: 2, WEDNESDAY: 3, THURSDAY: 4, FRIDAY: 5, SATURDAY: 6,
+};
+
+function nextDateForDay(day: string, now: Date) {
+  const target = TIMING_DAY_INDEX[String(day).toUpperCase()];
+  const date = new Date(now);
+  if (target !== undefined) {
+    date.setDate(date.getDate() + ((target - date.getDay() + 7) % 7));
+  }
+  return date;
+}
+
+const minutesOfDay = (time: string) => {
+  const [h, m] = String(time || "0:0").split(":");
+  return Number(h) * 60 + Number(m || 0);
+};
+
+export async function getLiveClasses(branchId: string | null) {
+  const timings = (await getBatchTimings(branchId as string)).data as Record<string, any>[];
+  const batchIds = [...new Set(timings.map((t) => t.batchId).filter(Boolean))];
+  const batchById = new Map<string, Record<string, any>>();
+  const courseById = new Map<string, Record<string, any>>();
+
+  if (batchIds.length) {
+    const { data: batchRows, error: batchError } = await supabase
+      .from("batches")
+      .select("*")
+      .in("id", batchIds);
+    if (batchError) throw new Error(batchError.message);
+    (batchRows || []).forEach((b: Record<string, any>) => batchById.set(b.id, b));
+
+    const courseIds = [...new Set((batchRows || []).map((b: Record<string, any>) => b.courseId).filter(Boolean))];
+    if (courseIds.length) {
+      const { data: courseRows, error: courseError } = await supabase
+        .from("courses")
+        .select("id, name")
+        .in("id", courseIds);
+      if (courseError) throw new Error(courseError.message);
+      (courseRows || []).forEach((c: Record<string, any>) => courseById.set(c.id, c));
+    }
+  }
+
+  const now = new Date();
+  const todayIndex = now.getDay();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const data = timings.map((slot) => {
+    const batch = batchById.get(slot.batchId) || {};
+    const course = courseById.get(batch.courseId) || {};
+    const date = nextDateForDay(slot.day, now);
+    const start = minutesOfDay(slot.startTime);
+    const end = minutesOfDay(slot.endTime);
+    const isToday = TIMING_DAY_INDEX[String(slot.day).toUpperCase()] === todayIndex;
+    const derived: "scheduled" | "active" | "completed" =
+      isToday && nowMinutes >= start && nowMinutes < end
+        ? "active"
+        : isToday && nowMinutes >= end
+          ? "completed"
+          : "scheduled";
+    return {
+      id: slot.id,
+      title: slot.title || slot.subject || batch.name || "Class",
+      subject: slot.subject || "",
+      instructor: slot.instructor || "Unassigned",
+      course: course.name || "",
+      batch: batch.name || "",
+      date: date.toISOString().slice(0, 10),
+      time: slot.startTime || "",
+      duration: end > start ? `${end - start} min` : "",
+      platform: slot.platform || (slot.roomNo ? "In person" : "Online"),
+      meetingLink: slot.meetingLink || undefined,
+      meetingId: slot.meetingId || undefined,
+      description: slot.description || undefined,
+      recorded: Boolean(slot.recorded),
+      attendees: 0,
+      totalStudents: Number(batch.capacity || 0),
+      // `status` only exists once add-batch-timing-class-fields.sql has been run;
+      // until then a slot's state is whatever the clock says it is.
+      status: (slot.status as "scheduled" | "active" | "completed" | "cancelled") || derived,
+    };
+  });
+
+  return { success: true, data };
+}
+
 export async function createBatchTiming(input: Record<string, unknown>) {
   const { data, error } = await supabase.from("batch_timings").insert(input).select("*").single();
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
 
+/**
+ * The live-class UI edits fields (`title`, `platform`, `meetingLink`, `status`, ...)
+ * that only exist after add-batch-timing-class-fields.sql has been run, so a
+ * PGRST204 for one of them retries with just the always-present columns rather
+ * than failing the whole save.
+ */
+const BATCH_TIMING_COLUMNS = ["batchId", "day", "startTime", "endTime", "subject", "instructor", "roomNo"];
+const BATCH_TIMING_OPTIONAL_COLUMNS = ["title", "platform", "meetingLink", "meetingId", "description", "status", "recorded"];
+
 export async function updateBatchTiming(id: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("batch_timings").update(input).eq("id", id).select("*").single();
+  const known = [...BATCH_TIMING_COLUMNS, ...BATCH_TIMING_OPTIONAL_COLUMNS];
+  const payload = Object.fromEntries(Object.entries(input).filter(([key]) => known.includes(key)));
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("batch_timings").update(body).eq("id", id).select("*").single();
+
+  let { data, error } = await attempt(payload);
+  if (
+    error?.code === "PGRST204" &&
+    BATCH_TIMING_OPTIONAL_COLUMNS.some((column) => error?.message?.includes(column))
+  ) {
+    const trimmed = Object.fromEntries(
+      Object.entries(payload).filter(([key]) => BATCH_TIMING_COLUMNS.includes(key)),
+    );
+    if (!Object.keys(trimmed).length) {
+      throw new Error(
+        "This change needs the batch_timings live-class columns. Run supabase/schema/add-batch-timing-class-fields.sql.",
+      );
+    }
+    ({ data, error } = await attempt(trimmed));
+  }
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -556,35 +678,98 @@ export async function getExams(branchId: string | null) {
   if (branchId) query = query.eq("branchId", branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+  const rows = (data || []) as Record<string, any>[];
+
+  // The exam pickers label each exam with its course, and `exams` only carries
+  // `courseId`. Resolve the names in one extra request rather than per row.
+  const courseIds = [...new Set(rows.map((r) => r.courseId).filter(Boolean))];
+  const { data: courseRows } = courseIds.length
+    ? await supabase.from("courses").select("id,name").in("id", courseIds)
+    : { data: [] };
+  const names = new Map((courseRows || []).map((c: any) => [c.id, c.name as string]));
+
+  // Results live in their own table; the screens read `exam.results`.
+  const { data: resultRows } = rows.length
+    ? await supabase.from("exam_results").select("*").in("examId", rows.map((r) => r.id))
+    : { data: [] };
+  const results = (resultRows || []) as Record<string, any>[];
+
+  return {
+    success: true,
+    data: rows.map((row) => ({
+      ...row,
+      course: { name: names.get(row.courseId) || "Unassigned course" },
+      results: results
+        .filter((r) => r.examId === row.id)
+        .map((r) => ({ studentId: r.studentId as string, marks: Number(r.marks) || 0 })),
+    })),
+  };
 }
+
+/**
+ * The online-exam form collects a duration, a window, a question count and the
+ * proctoring toggles, but `exams` has none of those columns - the values were
+ * being dropped on save. add-online-exam-fields.sql adds them; until it is run,
+ * a PGRST204 for one of them retries with only the base columns so creating an
+ * exam still works.
+ */
+const EXAM_OPTIONAL_COLUMNS = [
+  "description", "endDate", "duration", "totalQuestions", "negativeMarking",
+  "shuffleQuestions", "shuffleOptions", "preventTabSwitch", "fullScreen",
+  "webcam", "showResult", "showAnswers", "allowReview", "autoSubmit",
+];
+
+const isMissingExamColumn = (error: { code?: string; message?: string } | null) =>
+  error?.code === "PGRST204" && EXAM_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c));
+
+const withoutOptionalExamColumns = (payload: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(payload).filter(([key]) => !EXAM_OPTIONAL_COLUMNS.includes(key)));
 
 export async function createExam(branchId: string | null, input: Record<string, unknown>) {
   if (!branchId) throw new Error("Branch ID required to create exam");
-  const { data, error } = await supabase.from("exams").insert({ ...input, branchId }).select("*").single();
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("exams").insert(body).select("*").single();
+
+  let { data, error } = await attempt({ ...input, branchId });
+  if (isMissingExamColumn(error)) {
+    ({ data, error } = await attempt({ ...withoutOptionalExamColumns(input), branchId }));
+  }
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
 
 export async function updateExam(id: string, branchId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("exams").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("exams").update(body).eq("id", id).eq("branchId", branchId).select("*").single();
+
+  let { data, error } = await attempt(input);
+  if (isMissingExamColumn(error)) {
+    ({ data, error } = await attempt(withoutOptionalExamColumns(input)));
+  }
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
 
-export async function submitExamResults(examId: string, branchId: string, results: Array<{ studentId: string; marksObtained: number; remarks?: string }>, publish = false) {
+/**
+ * The live column is `marks`. This wrote `marksObtained`, which does not exist,
+ * so every attempt to save exam marks failed with 42703 - the feature has never
+ * worked. `onConflict` also has to name the columns, not the constraint.
+ */
+export async function submitExamResults(examId: string, branchId: string, results: Array<{ studentId: string; marks: number; remarks?: string }>, publish = false) {
   const exam = await getExamById(examId, branchId);
   if (!exam) throw new Error("Exam not found");
 
   const upserts = results.map(r => ({
     examId,
     studentId: r.studentId,
-    marksObtained: r.marksObtained,
+    marks: r.marks,
     remarks: r.remarks || null,
   }));
 
-  const { data, error } = await supabase.from("exam_results").upsert(upserts, { onConflict: "examId_studentId" }).select("*");
+  const { data, error } = await supabase.from("exam_results").upsert(upserts, { onConflict: "examId,studentId" }).select("*");
   if (error) throw new Error(error.message);
+
+  if (publish) await supabase.from("exams").update({ status: "PUBLISHED" }).eq("id", examId);
 
   return { success: true, data: data || [] };
 }
@@ -611,6 +796,108 @@ export async function getStudentResults(studentId: string, branchId: string, exa
   } catch {
     return { success: true, data: result };
   }
+}
+
+/**
+ * Everything the admission / marksheet / certificate PDFs need, in one call.
+ *
+ * The screens used to fetch this from `/core/documents/students/:id` on the
+ * REST backend, which is not deployed - the call threw a ReferenceError before
+ * it even got that far, blanking the page. PostgREST cannot join across four
+ * tables in one request here, so this fans out and assembles the shape the PDF
+ * helpers expect. Missing relations degrade to undefined rather than throwing:
+ * a student with no batch should still get an admission letter.
+ */
+export async function getStudentDocument(studentId: string, branchId: string | null) {
+  const student = (await getStudent(studentId, branchId)).data as Record<string, any>;
+
+  const lookup = async (table: string, id: unknown) => {
+    if (!id) return null;
+    const { data } = await supabase.from(table).select("*").eq("id", id as string).maybeSingle();
+    return data as Record<string, any> | null;
+  };
+
+  const [course, batch, branch] = await Promise.all([
+    lookup("courses", student.courseId),
+    lookup("batches", student.batchId),
+    lookup("branches", student.branchId),
+  ]);
+
+  const organization = branch ? await lookup("organizations", branch.organizationId) : null;
+
+  const { data: invoiceRows } = await supabase
+    .from("fee_invoices")
+    .select("*")
+    .eq("studentId", studentId);
+  const invoices = (invoiceRows || []) as Record<string, any>[];
+
+  const { data: paymentRows } = invoices.length
+    ? await supabase
+        .from("fee_payments")
+        .select("*")
+        .in("invoiceId", invoices.map((i) => i.id))
+        .is("reversedAt", null)
+    : { data: [] };
+  const payments = (paymentRows || []) as Record<string, any>[];
+
+  const { data: resultRows } = await supabase
+    .from("exam_results")
+    .select("*")
+    .eq("studentId", studentId);
+  const results = (resultRows || []) as Record<string, any>[];
+
+  const examIds = [...new Set(results.map((r) => r.examId).filter(Boolean))];
+  const { data: examRows } = examIds.length
+    ? await supabase.from("exams").select("*").in("id", examIds)
+    : { data: [] };
+  const exams = new Map((examRows || []).map((e: any) => [e.id, e]));
+
+  return {
+    success: true,
+    data: {
+      firstName: student.firstName || "",
+      lastName: student.lastName || "",
+      enrollmentNo: student.enrollmentNo || undefined,
+      applicationNo: student.applicationNo || undefined,
+      admissionDate: student.admissionDate || student.createdAt || "",
+      course: course ? { name: course.name } : undefined,
+      batch: batch ? { name: batch.name } : undefined,
+      branch: {
+        name: branch?.name || "",
+        phone: branch?.phone || "",
+        email: branch?.email || "",
+        organization: { name: organization?.name || "" },
+      },
+      feeInvoices: invoices.map((invoice) => ({
+        invoiceNo: invoice.invoiceNo || "",
+        description: invoice.description || "",
+        amount: Number(invoice.totalAmount) || 0,
+        payments: payments
+          .filter((payment) => payment.invoiceId === invoice.id)
+          .map((payment) => ({
+            receiptNo: payment.receiptNo || "",
+            amount: Number(payment.amount) || 0,
+            method: payment.method || "",
+            paidAt: payment.paidAt || payment.createdAt || "",
+          })),
+      })),
+      examResults: results
+        .filter((result) => exams.has(result.examId))
+        .map((result) => {
+          const exam = exams.get(result.examId) as Record<string, any>;
+          return {
+            marks: Number(result.marks) || 0,
+            exam: {
+              name: exam.name || "",
+              subject: exam.subject || "",
+              maxMarks: Number(exam.maxMarks) || 0,
+              passMarks: Number(exam.passMarks) || 0,
+              examDate: exam.examDate || "",
+            },
+          };
+        }),
+    },
+  };
 }
 
 /* ============================
@@ -777,9 +1064,38 @@ export async function getBranches(organizationId: string | null) {
   return { success: true, data: data || [] };
 }
 
-export async function createBranch(organizationId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("branches").insert({ ...input, organizationId }).select("*").single();
+/**
+ * Branch settings toggles added by `supabase/schema/add-portal-settings.sql`.
+ * They shipped in the UI before the migration was run, so every insert failed
+ * with PGRST204 and the organisation ended up with no branches at all.
+ */
+const BRANCH_OPTIONAL_COLUMNS = ["onlineFeePayment", "studentPortal", "parentPortal"];
+
+const withoutOptionalBranchColumns = (input: Record<string, unknown>) => {
+  const out = { ...input };
+  for (const column of BRANCH_OPTIONAL_COLUMNS) delete out[column];
+  return out;
+};
+
+/** True when PostgREST rejected the write because a column isn't deployed yet. */
+const isMissingBranchColumn = (error: { code?: string; message?: string } | null) =>
+  error?.code === "PGRST204" &&
+  BRANCH_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c));
+
+async function insertBranchRow(payload: Record<string, unknown>) {
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("branches").insert(body).select("*").single();
+
+  let { data, error } = await attempt(payload);
+  if (error && isMissingBranchColumn(error)) {
+    ({ data, error } = await attempt(withoutOptionalBranchColumns(payload)));
+  }
   if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function createBranch(organizationId: string, input: Record<string, unknown>) {
+  const data = await insertBranchRow({ ...input, organizationId });
   return { success: true, data };
 }
 
@@ -854,12 +1170,7 @@ export async function createBranchWithDetails(
     license?: Record<string, unknown>;
   },
 ) {
-  const { data: branch, error } = await supabase
-    .from("branches")
-    .insert({ ...input.branch, organizationId })
-    .select("*")
-    .single();
-  if (error) throw new Error(error.message);
+  const branch = await insertBranchRow({ ...input.branch, organizationId });
 
   const branchId = branch.id as string;
   try {
@@ -888,7 +1199,13 @@ export async function createBranchWithDetails(
 }
 
 export async function updateBranch(id: string, organizationId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("branches").update(input).eq("id", id).eq("organizationId", organizationId).select("*").single();
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("branches").update(body).eq("id", id).eq("organizationId", organizationId).select("*").single();
+
+  let { data, error } = await attempt(input);
+  if (error && isMissingBranchColumn(error)) {
+    ({ data, error } = await attempt(withoutOptionalBranchColumns(input)));
+  }
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -1031,6 +1348,25 @@ export async function submitPortalRequest(userId: string, branchId: string, orga
   return { success: true, data };
 }
 
+/**
+ * The read side of `submitPortalRequest`. Portal requests are not a table of
+ * their own - they are `audit_events` rows tagged `entityType = "PortalRequest"`,
+ * so this filters on that rather than on a dedicated endpoint.
+ */
+export async function getPortalRequests(userId: string | null, branchId: string | null) {
+  if (!userId) return { success: true, data: [] as Record<string, unknown>[] };
+  let query = supabase
+    .from("audit_events")
+    .select("*")
+    .eq("entityType", "PortalRequest")
+    .eq("actorId", userId)
+    .order("createdAt", { ascending: false });
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
 /* ============================
    MISC / SETTINGS
    ============================ */
@@ -1042,11 +1378,31 @@ export async function getBranchSettings(branchId: string | null) {
   return { success: true, data: data || null };
 }
 
+/**
+ * The website-settings form edits far more fields than `branch_settings` has
+ * columns for. Rather than reject the whole save, this drops each unknown column
+ * PostgREST complains about and retries, reporting what it had to leave out so
+ * the caller can tell the user which migration is missing.
+ */
 export async function updateBranchSettings(branchId: string | null, input: Record<string, unknown>) {
-  if (!branchId) return { success: true, data: null };
-  const { data, error } = await supabase.from("branch_settings").upsert({ ...input, branchId }).select("*").single();
-  if (error) throw new Error(error.message);
-  return { success: true, data };
+  if (!branchId) return { success: true, data: null, droppedColumns: [] as string[] };
+
+  const payload = { ...input, branchId };
+  const dropped: string[] = [];
+
+  for (let attempt = 0; attempt < Object.keys(input).length + 1; attempt++) {
+    const { data, error } = await supabase.from("branch_settings").upsert(payload).select("*").single();
+    if (!error) return { success: true, data, droppedColumns: dropped };
+
+    const missing =
+      error.code === "PGRST204" || error.code === "42703"
+        ? Object.keys(payload).find((key) => key !== "branchId" && error.message?.includes(`'${key}'`))
+        : undefined;
+    if (!missing) throw new Error(error.message);
+    delete payload[missing];
+    dropped.push(missing);
+  }
+  throw new Error("Could not save branch settings.");
 }
 
 export async function getWallet(branchId: string | null) {
@@ -1063,7 +1419,7 @@ export async function getWallet(branchId: string | null) {
  */
 const TRANSACTION_SELECT = "*, branch:branches(name)";
 
-function mapTransaction(row: Record<string, unknown>) {
+function mapTransaction(row: Record<string, unknown>): Record<string, any> {
   const branch = row.branch as { name?: string } | null;
   const created = (row.createdAt as string) || "";
   const at = created ? new Date(created) : null;

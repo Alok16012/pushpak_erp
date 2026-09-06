@@ -18,6 +18,7 @@ import {
   ACCENT_OPTIONS,
   ID_CARD_FIELDS,
   IdCardTemplate as Template,
+  type IdCardStudent,
   blankIdCardTemplate,
   fieldValue,
   idCardHtml,
@@ -53,7 +54,7 @@ const elementList = [
 ];
 
 /** Blank placeholder for the canvas when no real student data is chosen. */
-const SAMPLE_STUDENT: Record<string, any> = {
+const SAMPLE_STUDENT: IdCardStudent = {
   id: "",
   name: "",
   class: "",

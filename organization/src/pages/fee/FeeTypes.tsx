@@ -91,7 +91,7 @@ const columns: Column<FeeType>[] = [
 const BLANK = {
   name: "",
   code: "",
-  category: "Academic" as const,
+  category: "Academic" as (typeof FEE_CATEGORIES)[number],
   defaultAmount: "" as string | number,
   frequency: "Yearly",
   applicableTo: "All Courses",
@@ -121,13 +121,21 @@ export default function FeeTypes() {
     return () => { cancelled = true; };
   }, []);
 
-  const persistFeeTypes = (next: FeeType[]) => {
-    setFeeTypes(next);
-    try { localStorage.setItem(FEE_TYPES_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  // Callers pass updater functions; `JSON.stringify(fn)` is `undefined`, which
+  // wrote the literal string "undefined" and broke the next load's `JSON.parse`.
+  const persistFeeTypes = (next: FeeType[] | ((prev: FeeType[]) => FeeType[])) => {
+    setFeeTypes((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      try { localStorage.setItem(FEE_TYPES_KEY, JSON.stringify(value)); } catch { /* quota */ }
+      return value;
+    });
   };
-  const persistFeeGroups = (next: FeeGroup[]) => {
-    setFeeGroups(next);
-    try { localStorage.setItem(FEE_GROUPS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  const persistFeeGroups = (next: FeeGroup[] | ((prev: FeeGroup[]) => FeeGroup[])) => {
+    setFeeGroups((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      try { localStorage.setItem(FEE_GROUPS_KEY, JSON.stringify(value)); } catch { /* quota */ }
+      return value;
+    });
   };
 
   const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
@@ -144,7 +152,7 @@ export default function FeeTypes() {
     setForm({
       name: fee.name,
       code: fee.code,
-      category: fee.category,
+      category: fee.category as (typeof FEE_CATEGORIES)[number],
       defaultAmount: String(fee.defaultAmount),
       frequency: fee.frequency,
       applicableTo: fee.applicableTo[0] ?? "All Courses",

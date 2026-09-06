@@ -57,9 +57,28 @@ const PaymentGateway = () => {
   }, []);
 
   const persistConnected = (next: string[]) => { setConnected(next); try { localStorage.setItem(CONNECTED_KEY, JSON.stringify(next)); } catch { } };
-  const persistConfigs = (next: Record<string, GatewayConfig>) => { setConfigs(next); try { localStorage.setItem(CONFIGS_KEY, JSON.stringify(next)); } catch { } };
+  // `disconnect` passes an updater, so this has to resolve it before writing -
+  // `JSON.stringify(fn)` is `undefined` and would have stored the string "undefined".
+  const persistConfigs = (
+    next: Record<string, GatewayConfig> | ((all: Record<string, GatewayConfig>) => Record<string, GatewayConfig>),
+  ) => {
+    setConfigs((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      try { localStorage.setItem(CONFIGS_KEY, JSON.stringify(value)); } catch { /* quota */ }
+      return value;
+    });
+  };
 
-  const setConfig = (value: GatewayConfig) => persistConfigs({ ...configs, [active]: value });
+  /**
+   * Every caller is a single field's onChange - `setConfig("keyId", value)`.
+   * The old one-argument signature replaced the whole gateway config with that
+   * field name, so credentials could never be saved.
+   */
+  const setConfig = <K extends keyof GatewayConfig>(key: K, value: GatewayConfig[K]) =>
+    persistConfigs((all) => ({
+      ...all,
+      [active]: { ...(all[active] ?? BLANK_CONFIG), [key]: value },
+    }));
 
   const connect = (id: string, name: string) => {
     if (!connected.includes(id)) persistConnected([...connected, id]);

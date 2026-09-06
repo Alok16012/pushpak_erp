@@ -202,6 +202,9 @@ export default function QuestionPaperBuilder() {
     } else {
       const paperCode = nextPaperCode(form.course, papers);
       const newPaper: QuestionPaper = {
+        // Without an id, edit / delete / publish - all of which match on `p.id` -
+        // silently acted on every paper that lacked one.
+        id: `paper-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
         paperCode,
         title,
         course: form.course,
@@ -282,6 +285,7 @@ export default function QuestionPaperBuilder() {
     const paperCode = nextPaperCode(paper.course, papers);
     const newPaper: QuestionPaper = {
       ...rest,
+      id: `paper-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       paperCode,
       title: `${paper.title} (Copy)`,
       status: "draft",
@@ -313,7 +317,8 @@ export default function QuestionPaperBuilder() {
           });
           return;
         }
-        const updated = papers.map((p) => p.id === paper.id ? { ...p, status: paper.status === "published" ? "draft" : "published" } : p);
+        const nextStatus: QuestionPaper["status"] = paper.status === "published" ? "draft" : "published";
+        const updated = papers.map((p) => (p.id === paper.id ? { ...p, status: nextStatus } : p));
         persistPapers(updated);
         toast({
           title: paper.status === "published" ? "Paper unpublished" : "Paper published",

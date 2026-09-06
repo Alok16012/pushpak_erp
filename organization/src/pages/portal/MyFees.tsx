@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getStudentPortalInvoices, addPayment, submitPortalRequest } from "@/lib/supabase/data";
+import { getStudentProfile, getStudentPortalInvoices, addPayment, submitPortalRequest } from "@/lib/supabase/data";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
@@ -92,7 +92,7 @@ export default function MyFees() {
     };
     load();
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, userId, branchId]);
 
   const balance = (invoice: PortalInvoice) => {
     const paid = invoice.payments?.filter((p) => !p.reversedAt).reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;

@@ -48,7 +48,18 @@ export default function FranchiseDashboard() {
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<DashboardData | null>(null);
   const load = useCallback(
-    () => getDashboardStats(branchId).then((r) => r.success ? setMetrics(r.data) : Promise.reject(new Error(r.message ?? "Failed to load"))).catch((error) => toast({ title: "Live metrics unavailable", description: error.message, variant: "destructive" })),
+    () =>
+      getDashboardStats(branchId)
+        // `getDashboardStats` throws on failure and carries no `message` field,
+        // so the rejection branch could never produce a useful reason.
+        .then((r) => setMetrics(r.data as DashboardData))
+        .catch((error) =>
+          toast({
+            title: "Live metrics unavailable",
+            description: error instanceof Error ? error.message : undefined,
+            variant: "destructive",
+          }),
+        ),
     [toast, branchId],
   );
   useEffect(() => { load(); }, [load]);

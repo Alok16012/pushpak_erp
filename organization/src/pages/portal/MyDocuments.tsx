@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { getStudentProfile, getStudentPortalInvoices, getStudentPortalResults, submitPortalRequest } from "@/lib/supabase/data";
+import { getPortalRequests, getStudentProfile, getStudentPortalInvoices, getStudentPortalResults, submitPortalRequest } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadHtml, printHtml } from "@/lib/export";
 import { admissionPdf } from "@/lib/documents";
@@ -83,14 +83,27 @@ export default function MyDocuments() {
       getStudentProfile(userId, branchId),
       getStudentPortalInvoices(userId, branchId),
       getStudentPortalResults(userId, branchId),
-      api<{ data: PortalRequest[] }>("/core/portal/requests"),
+      // Was a REST call against an API server that is not part of this
+      // deployment, so the whole Promise.all rejected and the page never loaded.
+      getPortalRequests(userId, branchId),
     ])
       .then(([profileResult, invoicesResult, resultsResult, requestsRes]) => {
         if (cancelled) return;
         setProfile(profileResult.data);
         setInvoices(invoicesResult.data);
         setResults(resultsResult.data);
-        setRequests(requestsRes.data);
+        setRequests(
+          (requestsRes.data || []).map((req) => {
+            const row = req as Record<string, any>;
+            return {
+              id: String(row.id),
+              kind: String(row.action ?? ""),
+              detail: String(row.after?.detail ?? ""),
+              raisedAt: String(row.createdAt ?? ""),
+              status: "open" as const,
+            };
+          }),
+        );
         setIdTemplates(localTemplates);
         setAdmitTemplates(localAdmitTemplates);
         const activeIds = localTemplates.filter((t) => t.status === "active");
@@ -105,7 +118,7 @@ export default function MyDocuments() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, userId, branchId]);
 
   const activeIdTemplates = idTemplates.filter((template) => template.status === "active");
   const activeAdmitTemplates = admitTemplates.filter((template) => template.status === "active");

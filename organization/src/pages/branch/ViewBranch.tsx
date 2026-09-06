@@ -379,8 +379,12 @@ export default function ViewBranch() {
 
       pdf.save(`center-certificates-${new Date().toISOString().slice(0, 10)}.pdf`);
       toast({ title: `${branches.length} certificate${branches.length > 1 ? "s" : ""} downloaded` });
-    } catch {
-      toast({ title: "Failed to generate certificates", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to generate certificates",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -443,8 +447,12 @@ export default function ViewBranch() {
           adminPhone: "",
         });
         setDetails(null);
-      } catch {
-        toast({ title: "Failed to load branch details", variant: "destructive" });
+      } catch (error) {
+        toast({
+          title: "Failed to load branch details",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
       }
     } },
     { label: "Center Certificate", onClick: () => certificate(branch) },
@@ -548,8 +556,12 @@ export default function ViewBranch() {
       await deleteBranch(pendingDelete.id);
       setBranchesData((prev) => prev.filter((b) => b.id !== pendingDelete.id));
       toast({ title: "Branch removed", description: `${pendingDelete.name} is no longer in the register.` });
-    } catch {
-      toast({ title: "Failed to delete branch", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to delete branch",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
     setPendingDelete(null);
   };
@@ -760,8 +772,12 @@ export default function ViewBranch() {
                   adminPhone: "",
                 });
                 setDetails(null);
-              } catch {
-                toast({ title: "Failed to load branch details", variant: "destructive" });
+              } catch (error) {
+                toast({
+                  title: "Failed to load branch details",
+                  description: error instanceof Error ? error.message : undefined,
+                  variant: "destructive",
+                });
               }
             }}>Edit branch</Button>
           </DialogFooter>

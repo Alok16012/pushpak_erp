@@ -16,8 +16,8 @@ import { downloadCsv, printHtml } from "@/lib/export";
 import {
   resultSummary,
   asStudentDocument,
-  type StudentDocument,
 } from "@/data/student-portal";
+import type { StudentDocument } from "@/lib/documents";
 
 interface StudentProfile {
   id: string;

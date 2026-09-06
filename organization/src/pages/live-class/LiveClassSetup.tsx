@@ -124,19 +124,24 @@ export default function LiveClassSetup() {
           getCourses(orgId),
           getBatches(branchId),
         ]);
-        setCourses(coursesRes.data.items.map((c) => c.name));
-        setBatches(batchesRes.data.items.map((b) => ({
-          value: b.name,
+        // These helpers return the rows directly; there is no `.items` envelope.
+        setCourses(coursesRes.data.map((c) => String(c.name)));
+        setBatches(batchesRes.data.map((b) => ({
+          value: String(b.name),
           label: `${b.name}${b._count?.students ? ` · ${b._count.students} students` : ""}`,
         })));
-      } catch {
-        // Keep empty arrays on failure
+      } catch (error) {
+        toast({
+          title: "Could not load courses and batches",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
       } finally {
         setLoadingLookups(false);
       }
     };
     fetchLookups();
-  }, [orgId, branchId]);
+  }, [orgId, branchId, toast]);
 
   // Load subjects and instructors from the class list endpoint as a convenience.
   useEffect(() => {

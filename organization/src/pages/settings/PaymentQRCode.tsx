@@ -38,7 +38,7 @@ const BLANK = {
   name: "",
   upiId: "",
   merchantName: "",
-  paymentType: "dynamic" as const,
+  paymentType: "dynamic" as "dynamic" | "static",
   amount: "",
   description: "",
   isPrimary: false,

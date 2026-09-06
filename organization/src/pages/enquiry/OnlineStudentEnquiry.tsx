@@ -2,6 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatsCard } from "@/components/ui/StatsCard";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,18 +16,37 @@ import { useAuth } from "@/contexts/AuthContext";
 import { downloadCsv } from "@/lib/export";
 import { getEnquiries, updateEnquiry } from "@/lib/supabase/data";
 
+/**
+ * Backed by the live `visit_enquiries` table. Every field below is a real column on
+ * that table. Values are nullable because the table allows nulls.
+ */
 interface StudentEnquiry {
   id: string;
-  visitorName: string;
-  phone: string;
-  email: string;
-  enquiryReason: string;
-  status: "NEW" | "CONTACTED" | "VISITED" | "ADMITTED" | "CLOSED";
-  branchId: string;
-  visitDate: string;
-  visitTime?: string;
-  purpose?: string;
-  personToMeet?: string;
+  visitorName: string | null;
+  phone: string | null;
+  email: string | null;
+  enquiryReason: string | null;
+  remarks: string | null;
+  followUpNotes: string | null;
+  status: string | null;
+  branchId: string | null;
+  visitDate: string | null;
+  visitTime?: string | null;
+  purpose?: string | null;
+  personToMeet?: string | null;
+  department?: string | null;
+}
+
+const BADGE_STATUSES = new Set([
+  "new", "contacted", "interested", "converted", "closed", "visited", "reviewed", "responded",
+]);
+
+/** Never throws and never renders "Invalid Date". */
+function formatDate(value: string | null | undefined) {
+  if (!value) return "\u2014";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "\u2014";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 const columns: Column<StudentEnquiry>[] = [
@@ -34,22 +54,15 @@ const columns: Column<StudentEnquiry>[] = [
     key: "visitDate",
     header: "Visit Date",
     sortable: true,
-    cell: (enquiry) => (
-      <span className="text-sm">
-        {new Date(enquiry.visitDate).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        })}
-      </span>
-    ),
+    cell: (enquiry) => <span className="text-sm">{formatDate(enquiry.visitDate)}</span>,
   },
   {
     key: "visitorName",
     header: "Visitor",
     cell: (enquiry) => (
       <div>
-        <p className="font-medium">{enquiry.visitorName}</p>
-        <p className="text-xs text-muted-foreground">{enquiry.phone}</p>
+        <p className="font-medium">{enquiry.visitorName || "Unnamed"}</p>
+        <p className="text-xs text-muted-foreground">{enquiry.phone || "no phone"}</p>
       </div>
     ),
   },
@@ -57,7 +70,7 @@ const columns: Column<StudentEnquiry>[] = [
     key: "enquiryReason",
     header: "Reason",
     cell: (enquiry) => (
-      <p className="text-sm text-muted-foreground truncate max-w-[200px]">{enquiry.enquiryReason || "—"}</p>
+      <p className="text-sm text-muted-foreground truncate max-w-[200px]">{enquiry.enquiryReason || enquiry.remarks || "—"}</p>
     ),
   },
   {
@@ -68,16 +81,19 @@ const columns: Column<StudentEnquiry>[] = [
   {
     key: "status",
     header: "Status",
-    cell: (enquiry) => <StatusBadge status={enquiry.status.toLowerCase() as any} />,
+    cell: (enquiry) => {
+      const key = (enquiry.status ?? "").toLowerCase();
+      return BADGE_STATUSES.has(key)
+        ? <StatusBadge status={key as "new"} />
+        : <Badge variant="outline">{enquiry.status || "Unknown"}</Badge>;
+    },
   },
 ];
 
-const statusLabel = (status: StudentEnquiry["status"]) =>
-  status === "NEW" ? "New"
-  : status === "CONTACTED" ? "Contacted"
-  : status === "VISITED" ? "Visited"
-  : status === "ADMITTED" ? "Admitted"
-  : "Closed";
+const statusLabel = (status: StudentEnquiry["status"]) => {
+  const key = (status ?? "").toLowerCase();
+  return key ? key.charAt(0).toUpperCase() + key.slice(1) : "Unknown";
+};
 
 export default function OnlineStudentEnquiry() {
   const { toast } = useToast();
@@ -94,13 +110,17 @@ export default function OnlineStudentEnquiry() {
     let cancelled = false;
     async function loadEnquiries() {
       try {
-        const result = await getEnquiries(branchId);
+        const result = await getEnquiries(branchId || null, 1, 200);
         if (!cancelled) {
-          setEnquiries(result.data as unknown as StudentEnquiry[]);
+          setEnquiries((result.data ?? []) as unknown as StudentEnquiry[]);
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          toast({ title: "Failed to load enquiries", variant: "destructive" });
+          toast({
+            title: "Failed to load enquiries",
+            description: err instanceof Error ? err.message : "Unknown error",
+            variant: "destructive",
+          });
         }
       } finally {
         if (!cancelled) {
@@ -114,8 +134,8 @@ export default function OnlineStudentEnquiry() {
 
   const refreshEnquiries = async () => {
     try {
-      const result = await getEnquiries(branchId);
-      setEnquiries(result.data as unknown as StudentEnquiry[]);
+      const result = await getEnquiries(branchId || null, 1, 200);
+      setEnquiries((result.data ?? []) as unknown as StudentEnquiry[]);
     } catch {
       // silent
     }
@@ -127,11 +147,15 @@ export default function OnlineStudentEnquiry() {
       return;
     }
     try {
-      await updateEnquiry(enquiry.id, branchId, { status: "CONTACTED" });
+      await updateEnquiry(enquiry.id, enquiry.branchId ?? branchId, { status: "CONTACTED" });
       await refreshEnquiries();
-      toast({ title: "Marked as contacted", description: enquiry.visitorName });
-    } catch {
-      toast({ title: "Failed to update enquiry", variant: "destructive" });
+      toast({ title: "Marked as contacted", description: enquiry.visitorName ?? "Enquiry updated" });
+    } catch (err) {
+      toast({
+        title: "Failed to update enquiry",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
     }
   };
 
@@ -142,45 +166,61 @@ export default function OnlineStudentEnquiry() {
       return;
     }
     try {
-      await updateEnquiry(responding.id, branchId, {
+      await updateEnquiry(responding.id, responding.branchId ?? branchId, {
         status: "CONTACTED",
-        enquiryReason: notes.trim(),
+        followUpNotes: notes.trim(),
       });
       await refreshEnquiries();
-      toast({ title: "Notes saved", description: `Follow-up updated for ${responding.visitorName}.` });
+      toast({ title: "Notes saved", description: `Follow-up updated for ${responding.visitorName ?? "this enquiry"}.` });
       setResponding(null);
       setNotes("");
-    } catch {
-      toast({ title: "Failed to save notes", variant: "destructive" });
+    } catch (err) {
+      toast({
+        title: "Failed to save notes",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
     }
   };
 
   const closeEnquiry = async () => {
     if (!closing) return;
     try {
-      await updateEnquiry(closing.id, branchId, { status: "CLOSED" });
+      await updateEnquiry(closing.id, closing.branchId ?? branchId, {
+        status: "CLOSED",
+        closeNote: "Closed from Online Student Enquiries",
+      });
       await refreshEnquiries();
-      toast({ title: "Enquiry closed", description: closing.visitorName });
-    } catch {
-      toast({ title: "Failed to close enquiry", variant: "destructive" });
+      toast({ title: "Enquiry closed", description: closing.visitorName ?? "Enquiry updated" });
+    } catch (err) {
+      toast({
+        title: "Failed to close enquiry",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
     }
     setClosing(null);
   };
 
   const exportAll = () => {
+    if (enquiries.length === 0) {
+      toast({ title: "Nothing to export", description: "No enquiries loaded yet." });
+      return;
+    }
     downloadCsv(
       "online-student-enquiries.csv",
       enquiries.map((enquiry) => ({
-        Visitor: enquiry.visitorName,
-        Phone: enquiry.phone,
-        Email: enquiry.email,
-        Reason: enquiry.enquiryReason,
-        BranchId: enquiry.branchId,
-        VisitDate: enquiry.visitDate,
+        Visitor: enquiry.visitorName ?? "",
+        Phone: enquiry.phone ?? "",
+        Email: enquiry.email ?? "",
+        Reason: enquiry.enquiryReason ?? "",
+        FollowUpNotes: enquiry.followUpNotes ?? "",
+        BranchId: enquiry.branchId ?? "",
+        VisitDate: enquiry.visitDate ?? "",
         VisitTime: enquiry.visitTime ?? "",
         Purpose: enquiry.purpose ?? "",
         PersonToMeet: enquiry.personToMeet ?? "",
-        Status: enquiry.status,
+        Status: enquiry.status ?? "",
       })),
     );
     toast({ title: "Enquiries exported", description: `${enquiries.length} rows written to CSV.` });
@@ -192,7 +232,7 @@ export default function OnlineStudentEnquiry() {
     {
       label: "Add Notes",
       onClick: () => {
-        setNotes(enquiry.enquiryReason ?? "");
+        setNotes(enquiry.followUpNotes ?? "");
         setResponding(enquiry);
       },
     },
@@ -249,25 +289,27 @@ export default function OnlineStudentEnquiry() {
         columns={columns}
         searchPlaceholder="Search student enquiries..."
         actions={handleActions}
-        emptyMessage="No student enquiries received"
+        emptyMessage={loading ? "Loading enquiries..." : "No student enquiries received"}
       />
 
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{details?.visitorName}</DialogTitle>
-            <DialogDescription>{details?.phone} · {details?.email}</DialogDescription>
+            <DialogTitle>{details?.visitorName || "Enquiry"}</DialogTitle>
+            <DialogDescription>{details?.phone || "no phone"} · {details?.email || "no email on file"}</DialogDescription>
           </DialogHeader>
           {details && (
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
               {[
-                ["Visit date", details.visitDate],
-                ["Visit time", details.visitTime ?? "—"],
-                ["Purpose", details.purpose ?? "General"],
-                ["Person to meet", details.personToMeet ?? "—"],
-                ["Branch", details.branchId],
+                ["Visit date", formatDate(details.visitDate)],
+                ["Visit time", details.visitTime || "—"],
+                ["Purpose", details.purpose || "General"],
+                ["Person to meet", details.personToMeet || "—"],
+                ["Department", details.department || "—"],
+                ["Branch", details.branchId || "—"],
                 ["Status", statusLabel(details.status)],
-                ["Reason", details.enquiryReason],
+                ["Reason", details.enquiryReason || "—"],
+                ["Follow-up notes", details.followUpNotes || "—"],
               ].map(([label, value]) => (
                 <div key={String(label)}>
                   <dt className="text-xs text-muted-foreground">{String(label)}</dt>
@@ -286,7 +328,7 @@ export default function OnlineStudentEnquiry() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Update enquiry</DialogTitle>
-            <DialogDescription>Follow-up notes for {responding?.visitorName}</DialogDescription>
+            <DialogDescription>Follow-up notes for {responding?.visitorName || "this enquiry"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Label>Notes</Label>
@@ -309,7 +351,7 @@ export default function OnlineStudentEnquiry() {
           <AlertDialogHeader>
             <AlertDialogTitle>Close this enquiry?</AlertDialogTitle>
             <AlertDialogDescription>
-              {closing?.visitorName}'s enquiry will be marked closed and removed from the active queue.
+              {closing?.visitorName || "This enquiry"} will be marked closed and removed from the active queue.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

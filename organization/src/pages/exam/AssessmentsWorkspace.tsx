@@ -21,9 +21,17 @@ import {
   marksheetPdf,
   type StudentDocument,
 } from "@/lib/documents";
-import { Award, Download, FileCheck2, GraduationCap, Save } from "lucide-react";
+import { Award, Download, FileCheck2, GraduationCap, Save, type LucideIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { getExams, createExam, submitExamResults, getStudents } from "@/lib/supabase/data";
+import {
+  getExams,
+  createExam,
+  submitExamResults,
+  getStudents,
+  getCourses,
+  getBatches,
+  getStudentDocument,
+} from "@/lib/supabase/data";
 type Exam = {
   id: string;
   name: string;
@@ -32,6 +40,7 @@ type Exam = {
   maxMarks: number;
   passMarks: number;
   status: string;
+  course: { name: string };
   results: Array<{
     marks: number;
     studentId: string;
@@ -79,10 +88,10 @@ export default function AssessmentsWorkspace() {
         getBatches(branchId),
       ])
         .then(([e, s, c, b]) => {
-          setExams(e.data);
-          setStudents(s.data);
-          setCourses(c.data);
-          setBatches(b.data);
+          setExams(e.data as Exam[]);
+          setStudents(s.data as Student[]);
+          setCourses(c.data as Course[]);
+          setBatches(b.data as Batch[]);
           if (s.data[0]) setStudentId((current) => current || s.data[0].id);
         })
         .catch((e) =>
@@ -177,9 +186,7 @@ export default function AssessmentsWorkspace() {
   const generate = async (kind: "admission" | "marksheet" | "certificate") => {
     if (!studentId) return;
     try {
-      const body = await api<StudentDocument>(
-        `/core/documents/students/${studentId}`,
-      );
+      const body = await getStudentDocument(studentId, branchId);
       ({
         admission: admissionPdf,
         marksheet: marksheetPdf,

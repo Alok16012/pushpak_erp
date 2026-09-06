@@ -134,7 +134,7 @@ export default function MyClasses() {
                           {state === "completed" && <Badge variant="outline">Completed</Badge>}
                         </div>
                         <p className="mt-0.5 text-sm text-muted-foreground">{item.topic}</p>
-                        <p className="mt-1.5 text-xs text-muted-foreground">{when(item.startsAt)} · {item.minutes} min · {item.instructor} · {item.platform}</p>
+                        <p className="mt-1.5 text-xs text-muted-foreground">{when(item.startsAt)} · {item.minutes} min · {item.faculty} · {item.platform}</p>
                       </div>
                       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground"><Video className="h-4 w-4" /></span>
                     </div>

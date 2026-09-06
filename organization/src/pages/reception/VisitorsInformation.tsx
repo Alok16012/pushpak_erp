@@ -583,7 +583,6 @@ export default function VisitorsInformation() {
                   <p className="font-medium">{selectedVisitor.remarks || "—"}</p>
                 </div>
               </div>
-              </div>
             </div>
           )}
         </DialogContent>

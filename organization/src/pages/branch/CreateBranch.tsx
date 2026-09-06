@@ -57,8 +57,13 @@ export default function CreateBranch() {
       try {
         const result = await getBranches(user?.organizationId || null);
         setBranches((result.data ?? []) as Branch[]);
-      } catch {
-        // start with empty list on failure
+      } catch (error) {
+        // An empty dropdown is indistinguishable from a failed load, so say which.
+        toast({
+          title: "Could not load existing branches",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
       }
     };
     fetchBranches();

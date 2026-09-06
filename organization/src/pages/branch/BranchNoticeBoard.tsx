@@ -112,8 +112,12 @@ export default function BranchNoticeBoard() {
             name: (b.name || b.title || `Batch ${b.id}`) as string,
           }))
         );
-      } catch {
-        toast({ title: "Failed to load branches/batches", variant: "destructive" });
+      } catch (error) {
+        toast({
+          title: "Failed to load branches/batches",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
       } finally {
         setMetaLoading(false);
       }
@@ -126,8 +130,12 @@ export default function BranchNoticeBoard() {
       try {
         const result = await getNotices(user?.branchId || "");
         setItems(result.data);
-      } catch {
-        toast({ title: "Failed to load notices", variant: "destructive" });
+      } catch (error) {
+        toast({
+          title: "Failed to load notices",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
       } finally {
         setLoading(false);
       }
@@ -185,8 +193,12 @@ export default function BranchNoticeBoard() {
         toast({ title: "Notice published", description: draft.title });
       }
       setIsDialogOpen(false);
-    } catch {
-      toast({ title: "Failed to save notice", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to save notice",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -194,8 +206,12 @@ export default function BranchNoticeBoard() {
     try {
       await updateNotice(notice.id, { isPinned: !notice.isPinned } as Record<string, unknown>);
       setItems((list) => list.map((n) => (n.id === notice.id ? { ...n, isPinned: !n.isPinned } : n)));
-    } catch {
-      toast({ title: "Failed to update notice", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to update notice",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -204,8 +220,12 @@ export default function BranchNoticeBoard() {
       await deleteNotice(notice.id);
       setItems((list) => list.filter((n) => n.id !== notice.id));
       toast({ title: "Notice deleted", description: notice.title });
-    } catch {
-      toast({ title: "Failed to delete notice", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to delete notice",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     }
   };
 
@@ -367,8 +387,12 @@ export default function BranchNoticeBoard() {
                               name: (b.name || b.title || `Batch ${b.id}`) as string,
                             }))
                           );
-                        } catch {
-                          toast({ title: "Failed to load batches for branch", variant: "destructive" });
+                        } catch (error) {
+                          toast({
+                            title: "Failed to load batches for branch",
+                            description: error instanceof Error ? error.message : undefined,
+                            variant: "destructive",
+                          });
                         }
                       }}
                     >

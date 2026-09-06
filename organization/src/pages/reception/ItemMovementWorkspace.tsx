@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,9 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, Check, Filter, MoreHorizontal, Package, Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
+import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, Check, Download, Filter, MoreHorizontal, Package, Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { downloadCsv } from "@/lib/export";
+import {
+  createItemMovement,
+  deleteItemMovement,
+  formatDateTime,
+  getItemMovements,
+  isToday,
+  updateItemMovement,
+  type MovementRow,
+} from "@/lib/supabase/reception";
 
 interface Movement {
   id: string;
@@ -22,6 +32,9 @@ interface Movement {
   department: string;
   status: string;
   date: string;
+  courier: string;
+  tracking: string;
+  notes: string;
   dispatchDate?: string;
   receiveDate?: string;
 }
@@ -29,12 +42,34 @@ interface Movement {
 const STATUSES = ["Completed", "In transit", "Needs review", "Pending pickup"];
 /** Statuses that put a row in the "Need attention" tile. */
 const ATTENTION = ["Needs review", "Pending pickup"];
-const SEED: Movement[] = [
-  { id: "MOV-2081", direction: "Received", item: "Office stationery", itemId: "ITM-001", category: "stationery", party: "ABC Suppliers", qty: 100, department: "Administration", status: "Completed", date: "Today, 11:30 AM", receiveDate: "2024-01-24" },
-  { id: "MOV-2080", direction: "Dispatched", item: "Student certificates", itemId: "ITM-002", category: "certificates", party: "ABC Institute", qty: 25, department: "Examination", status: "In transit", date: "Today, 10:00 AM", dispatchDate: "2024-01-24" },
-  { id: "MOV-2079", direction: "Received", item: "Lab chemicals", itemId: "ITM-003", category: "chemicals", party: "Scientific Supplies Co.", qty: 15, department: "Science", status: "Needs review", date: "Today, 9:45 AM", receiveDate: "2024-01-24" },
-  { id: "MOV-2078", direction: "Dispatched", item: "Reference books", itemId: "ITM-004", category: "books", party: "Central Library", qty: 50, department: "Library", status: "Pending pickup", date: "Yesterday", dispatchDate: "2024-01-23" },
-];
+
+/**
+ * `item_movements` is a real, fully snake_case table in the live database.
+ * This screen used to keep a hardcoded SEED array in localStorage, so nothing
+ * a receptionist recorded was ever visible to anyone else. It now reads and
+ * writes the table; localStorage is kept only as a paint cache so the list is
+ * not blank on the first frame.
+ *
+ * Note: `item_movements` has no `description` or `phone` column, so those two
+ * form fields are folded into `notes` instead of being silently dropped.
+ */
+const fromRow = (row: MovementRow): Movement => ({
+  id: String(row.id),
+  direction: row.direction || "Received",
+  item: row.item || "Unnamed item",
+  itemId: row.item_id || "—",
+  category: row.category || "—",
+  party: row.party || "—",
+  qty: Number(row.quantity ?? 0),
+  department: row.department || "General",
+  status: row.status || "Completed",
+  date: formatDateTime(row.created_at),
+  courier: row.courier || "",
+  tracking: row.tracking || "",
+  notes: row.notes || "",
+  dispatchDate: row.dispatch_date || undefined,
+  receiveDate: row.receive_date || undefined,
+});
 
 const STORAGE_KEY = "erp-item-movements";
 const DRAFT_KEY = "movement-draft";
@@ -76,13 +111,16 @@ const blankDraft: Draft = {
 
 export default function ItemMovementWorkspace() {
   const { toast } = useToast();
+  const { branchId } = useAuth();
   const [movements, setMovements] = useState<Movement[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) return JSON.parse(stored) as Movement[];
     } catch { /* fall through */ }
-    return SEED;
+    return [];
   });
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<"list" | "form">("list");
   const [stage, setStage] = useState(0);
   const [query, setQuery] = useState("");
@@ -102,6 +140,23 @@ export default function ItemMovementWorkspace() {
   const filled = Object.values(draft).filter(Boolean).length;
   const progress = Math.round(filled / Object.keys(draft).length * 100);
 
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getItemMovements(branchId);
+      setMovements((result.data ?? []).map(fromRow));
+    } catch (error) {
+      toast({
+        title: "Could not load the movement register",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [branchId, toast]);
+  useEffect(() => { void load(); }, [load]);
+
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(movements)); }, [movements]);
   useEffect(() => { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); }, [draft]);
 
@@ -114,8 +169,8 @@ export default function ItemMovementWorkspace() {
   ), [movements, query, direction, department, status]);
 
   const tiles = [
-    { l: "Received today", v: String(movements.filter((r) => r.direction === "Received").length), i: ArrowDownLeft },
-    { l: "Dispatched today", v: String(movements.filter((r) => r.direction === "Dispatched").length), i: ArrowUpRight },
+    { l: "Received today", v: String(movements.filter((r) => r.direction === "Received" && isToday(r.receiveDate)).length), i: ArrowDownLeft },
+    { l: "Dispatched today", v: String(movements.filter((r) => r.direction === "Dispatched" && isToday(r.dispatchDate)).length), i: ArrowUpRight },
     { l: "Need attention", v: String(movements.filter((r) => ATTENTION.includes(r.status)).length), i: Package },
   ];
 
@@ -123,31 +178,112 @@ export default function ItemMovementWorkspace() {
 
   const save = () => toast({ title: "Movement saved as draft", description: `${progress}% complete - safe to continue later.` });
 
-  const submit = () => {
+  const submit = async () => {
     if (!draft.item.trim()) {
+      setStage(1);
       toast({ title: "Item name required", description: "Go back to the Item step and name what is moving.", variant: "destructive" });
       return;
     }
-    const entry: Movement = {
-      id: `MOV-${Math.floor(Math.random() * 9000 + 1000)}`,
-      direction: draft.direction || "Received",
-      item: draft.item.trim(),
-      itemId: draft.itemId || "—",
-      category: draft.category || "—",
-      party: draft.party || "—",
-      qty: Number(draft.qty) || 0,
-      department: draft.department || "General",
-      status: draft.direction === "Dispatched" ? "In transit" : "Completed",
-      date: `Today, ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
-      dispatchDate: draft.dispatchDate || undefined,
-      receiveDate: draft.receiveDate || undefined,
-    };
-    setMovements((list) => [entry, ...list]);
-    toast({ title: "Movement recorded", description: `${entry.id} was added to the shared register.` });
-    setDraft(blankDraft);
-    setMode("list");
-    setStage(0);
-    localStorage.removeItem(DRAFT_KEY);
+    setSubmitting(true);
+    try {
+      // No `description` / `phone` columns exist, so keep them in `notes`.
+      const notes = [
+        draft.notes.trim(),
+        draft.description.trim() && `Description: ${draft.description.trim()}`,
+        draft.phone.trim() && `Contact: ${draft.phone.trim()}`,
+      ].filter(Boolean).join("\n");
+      const created = await createItemMovement(branchId, {
+        direction: draft.direction || "Received",
+        item: draft.item.trim(),
+        item_id: draft.itemId || undefined,
+        category: draft.category || undefined,
+        party: draft.party || undefined,
+        quantity: Number(draft.qty) || 0,
+        department: draft.department || undefined,
+        status: draft.direction === "Dispatched" ? "In transit" : "Completed",
+        courier: draft.courier || undefined,
+        tracking: draft.tracking || undefined,
+        notes: notes || undefined,
+        dispatch_date: draft.dispatchDate || undefined,
+        receive_date: draft.receiveDate || undefined,
+      });
+      if (created.data) setMovements((list) => [fromRow(created.data), ...list]);
+      else await load();
+      toast({ title: "Movement recorded", description: `${draft.item.trim()} was added to the shared register.` });
+      setDraft(blankDraft);
+      setMode("list");
+      setStage(0);
+      localStorage.removeItem(DRAFT_KEY);
+    } catch (error) {
+      toast({
+        title: "Could not record the movement",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /** Optimistic status change, rolled back when the write is rejected. */
+  const changeStatus = async (row: Movement, next: string) => {
+    setMovements((list) => list.map((m) => (m.id === row.id ? { ...m, status: next } : m)));
+    try {
+      await updateItemMovement(row.id, { status: next });
+      toast({ title: "Status updated", description: `${row.item} is now ${next.toLowerCase()}.` });
+    } catch (error) {
+      setMovements((list) => list.map((m) => (m.id === row.id ? { ...m, status: row.status } : m)));
+      toast({
+        title: "Status not saved",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const removeMovement = async (row: Movement) => {
+    if (!window.confirm(`Delete "${row.item}" from the movement register? This cannot be undone.`)) return;
+    const snapshot = movements;
+    setMovements((list) => list.filter((m) => m.id !== row.id));
+    try {
+      await deleteItemMovement(row.id);
+      toast({ title: "Entry removed", description: `${row.item} was deleted from the register.` });
+    } catch (error) {
+      setMovements(snapshot);
+      toast({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const exportRows = () => {
+    if (!rows.length) {
+      toast({ title: "Nothing to export", description: "No movements match the current filters.", variant: "destructive" });
+      return;
+    }
+    downloadCsv(
+      "item-movements.csv",
+      rows.map((r) => ({
+        Reference: r.id,
+        Direction: r.direction,
+        Item: r.item,
+        "Item ID": r.itemId,
+        Category: r.category,
+        Quantity: r.qty,
+        Party: r.party,
+        Department: r.department,
+        Status: r.status,
+        Courier: r.courier,
+        Tracking: r.tracking,
+        "Dispatch date": r.dispatchDate || "",
+        "Receive date": r.receiveDate || "",
+        Recorded: r.date,
+        Notes: r.notes,
+      })),
+    );
+    toast({ title: "Register exported", description: `${rows.length} rows written to CSV.` });
   };
 
   return (
@@ -199,6 +335,9 @@ export default function ItemMovementWorkspace() {
                 <Button variant={showFilters ? "default" : "outline"} onClick={() => setShowFilters((f) => !f)}>
                   <SlidersHorizontal />More filters
                 </Button>
+                <Button variant="outline" onClick={exportRows} disabled={!rows.length}>
+                  <Download />Export
+                </Button>
               </div>
               {showFilters && (
                 <div className="flex flex-col gap-3 border-b bg-muted/20 p-4 md:flex-row md:items-center">
@@ -221,9 +360,7 @@ export default function ItemMovementWorkspace() {
                     </SelectContent>
                   </Select>
                   <Button variant="ghost" onClick={clearFilters}><X />Clear</Button>
-                  <Button variant="outline" className="md:ml-auto" onClick={() => rows.length ? downloadCsv("item-movements.csv", rows) : toast({ title: "Nothing to export", description: "No movements match the current filters.", variant: "destructive" })}>
-                    Export {rows.length} row(s)
-                  </Button>
+                  <span className="text-xs text-muted-foreground md:ml-auto">{rows.length} of {movements.length} movements</span>
                 </div>
               )}
               <div className="overflow-x-auto">
@@ -269,18 +406,12 @@ export default function ItemMovementWorkspace() {
                             <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal /></Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               {STATUSES.map((s) => (
-                                <DropdownMenuItem key={s} disabled={r.status === s} onSelect={() => {
-                                  setMovements((list) => list.map((m) => (m.id === r.id ? { ...m, status: s } : m)));
-                                  toast({ title: "Status updated", description: `${r.id} is now ${s.toLowerCase()}.` });
-                                }}>
+                                <DropdownMenuItem key={s} disabled={r.status === s} onSelect={() => void changeStatus(r, s)}>
                                   Mark as {s.toLowerCase()}
                                 </DropdownMenuItem>
                               ))}
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive" onSelect={() => {
-                                setMovements((list) => list.filter((m) => m.id !== r.id));
-                                toast({ title: "Entry removed", description: `${r.id} was deleted from the register.` });
-                              }}>
+                              <DropdownMenuItem className="text-destructive" onSelect={() => void removeMovement(r)}>
                                 Delete entry
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -289,7 +420,7 @@ export default function ItemMovementWorkspace() {
                       </tr>
                     ))}
                     {rows.length === 0 && (
-                      <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-muted-foreground">No movements match the current filters.</td></tr>
+                      <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-muted-foreground">{loading ? "Loading the movement register…" : "No movements recorded yet."}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -338,19 +469,10 @@ export default function ItemMovementWorkspace() {
               {stage === 1 && (
                 <Step title="What is the item?" sub="Capture only the information needed to identify it.">
                   <div className="grid gap-5 sm:grid-cols-2">
-                    <Field label="Item ID">
-                      <Select value={draft.itemId} onValueChange={(v) => setDraftField("itemId", v)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select item" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ITM-001">ITM-001</SelectItem>
-                          <SelectItem value="ITM-002">ITM-002</SelectItem>
-                          <SelectItem value="ITM-003">ITM-003</SelectItem>
-                          <SelectItem value="ITM-004">ITM-004</SelectItem>
-                          <SelectItem value="ITM-005">ITM-005</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    {/* There is no items/inventory table in the database, so a
+                        fixed ITM-001…ITM-005 dropdown was pure fiction. */}
+                    <Field label="Item ID / reference">
+                      <Input value={draft.itemId} onChange={(e) => setDraftField("itemId", e.target.value)} placeholder="e.g. ITM-1043 (optional)" />
                     </Field>
                     <Field label="Item based Section / Category">
                       <Select value={draft.category} onValueChange={(v) => setDraftField("category", v)}>
@@ -441,7 +563,7 @@ export default function ItemMovementWorkspace() {
               {stage > 0 && <Button variant="outline" onClick={() => setStage((s) => s - 1)}><ArrowLeft />Back</Button>}
               {stage < 3
                 ? <Button onClick={() => setStage((s) => s + 1)}>Continue<ArrowRight /></Button>
-                : <Button onClick={submit}><Check />Record movement</Button>
+                : <Button onClick={() => void submit()} disabled={submitting}><Check />{submitting ? "Recording…" : "Record movement"}</Button>
               }
             </div>
           </div>

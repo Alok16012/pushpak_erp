@@ -16,7 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
-import { getBatchTimings, updateBatchTiming } from "@/lib/supabase/data";
+import { getLiveClasses, updateBatchTiming } from "@/lib/supabase/data";
 
 interface LiveClass {
   id: string;
@@ -113,6 +113,7 @@ const columns: Column<LiveClass>[] = [
 export default function ViewLiveClasses() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const branchId = user?.branchId || null;
   const { toast } = useToast();
   const [classesData, setClassesData] = useState<LiveClass[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,16 +123,22 @@ export default function ViewLiveClasses() {
   useEffect(() => {
     const fetchClasses = async () => {
       try {
-        const data = await api<{ items: LiveClass[] }>("/core/portal/classes");
-        setClassesData(data.data.items);
-      } catch {
-        toast({ title: "Failed to load classes", variant: "destructive" });
+        // Was a REST call against an API server that is not part of this
+        // deployment - `api` is not even defined here, so the page threw on mount.
+        const result = await getLiveClasses(branchId);
+        setClassesData(result.data as LiveClass[]);
+      } catch (error) {
+        toast({
+          title: "Failed to load classes",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        });
       } finally {
         setLoading(false);
       }
     };
     fetchClasses();
-  }, [toast]);
+  }, [toast, branchId]);
 
   const join = (liveClass: LiveClass) => {
     if (!liveClass.meetingLink) {
@@ -188,7 +195,7 @@ export default function ViewLiveClasses() {
       return;
     }
     try {
-      await updateBatchTiming(editing.id, editing);
+      await updateBatchTiming(editing.id, { ...editing } as Record<string, unknown>);
       setClassesData((prev) => prev.map((c) => (c.id === editing.id ? editing : c)));
       toast({ title: "Class updated", description: `${editing.title} was saved.` });
       setEditing(null);

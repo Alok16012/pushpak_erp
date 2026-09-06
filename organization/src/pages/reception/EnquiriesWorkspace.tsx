@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,67 +38,49 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getEnquiries, createEnquiry, updateEnquiry, getBranches } from "@/lib/supabase/data";
+import {
+  getEnquiries,
+  createEnquiry,
+  updateEnquiry,
+  deleteEnquiry,
+  getBranches,
+} from "@/lib/supabase/data";
+import {
+  ENQUIRY_STATUSES,
+  ENQUIRY_STATUS_LABEL,
+  formatDate,
+  formatDateTime,
+  isToday,
+  toDepartmentEnum,
+  toIdTypeEnum,
+  toIsoTimestamp,
+  toPurposeEnum,
+} from "@/lib/supabase/reception";
 import { downloadCsv } from "@/lib/export";
 
-const records = [
-  {
-    id: "V-1048",
-    name: "Meera Joshi",
-    phone: "98765 43215",
-    whatsappNumber: "98765 43215",
-    purpose: "Interview",
-    owner: "HR Department",
-    status: "Checked in",
-    date: "Today, 2:00 PM",
-    source: "Walk-in",
-    visitDate: new Date().toISOString(),
-    followUpDate: null,
-    callType: null,
-  },
-  {
-    id: "V-1047",
-    name: "Vikram Singh",
-    phone: "98765 43214",
-    whatsappNumber: "",
-    purpose: "Delivery",
-    owner: "Administration",
-    status: "Completed",
-    date: "Today, 12:00 PM",
-    source: "Phone",
-    visitDate: new Date().toISOString(),
-    followUpDate: null,
-    callType: null,
-  },
-  {
-    id: "V-1046",
-    name: "Priya Sharma",
-    phone: "98765 43213",
-    whatsappNumber: "98765 43213",
-    purpose: "Admission Enquiry",
-    owner: "Admissions",
-    status: "Follow-up",
-    date: "Today, 10:30 AM",
-    source: "Website",
-    visitDate: new Date().toISOString(),
-    followUpDate: new Date(Date.now() + 86400000).toISOString(),
-    callType: "Outgoing",
-  },
-  {
-    id: "V-1045",
-    name: "Rajesh Kumar",
-    phone: "98765 43212",
-    whatsappNumber: "",
-    purpose: "Meeting",
-    owner: "Director",
-    status: "Completed",
-    date: "Yesterday",
-    source: "Referral",
-    visitDate: new Date(Date.now() - 86400000).toISOString(),
-    followUpDate: null,
-    callType: null,
-  },
-];
+/**
+ * One row of the visitor log, already flattened out of `visit_enquiries`.
+ * `status` holds the raw EnquiryStatus enum value — labels come from
+ * ENQUIRY_STATUS_LABEL so filtering and writing use the same vocabulary.
+ */
+type EnquiryRow = {
+  id: string;
+  /** The row's own branchId — updateEnquiry/deleteEnquiry filter on it. */
+  branchIdRef: string;
+  name: string;
+  phone: string;
+  whatsappNumber: string;
+  purpose: string;
+  owner: string;
+  status: string;
+  date: string;
+  source: string;
+  visitDate: string | null;
+  followUpDate: string | null;
+  callType: string;
+  checkOut: string | null;
+};
+
 const stages = ["Visitor", "Visit", "Verification", "Follow-up", "Review"];
 const PURPOSES = [
   "Admission Enquiry",
@@ -181,19 +164,22 @@ const emptyDraft: Draft = {
 
 export default function EnquiriesWorkspace() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const branchId = user?.branchId || "";
   // Org-level accounts are not tied to a branch, so they pick the one the
   // visitor is checking in to before the enquiry can be written.
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(!branchId);
   const [pickedBranchId, setPickedBranchId] = useState("");
   const targetBranchId = branchId || pickedBranchId;
   const [mode, setMode] = useState<"list" | "form">("list");
   const [stage, setStage] = useState(0);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
-  const [liveRecords, setLiveRecords] = useState(records);
+  const [liveRecords, setLiveRecords] = useState<EnquiryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [purpose, setPurpose] = useState("all");
   const [owner, setOwner] = useState("all");
@@ -225,6 +211,29 @@ export default function EnquiriesWorkspace() {
       ),
     [query, status, purpose, owner, liveRecords],
   );
+  /** Live counters — previously hardcoded to "3" / "18" / "5". */
+  const stats = useMemo(
+    () => [
+      {
+        label: "On premises",
+        value: String(liveRecords.filter((r) => r.status !== "CLOSED" && !r.checkOut).length),
+        icon: UserRoundCheck,
+      },
+      {
+        label: "Visitors today",
+        value: String(liveRecords.filter((r) => isToday(r.visitDate)).length),
+        icon: Users,
+      },
+      {
+        label: "Need follow-up",
+        value: String(
+          liveRecords.filter((r) => r.status === "CONTACTED" || Boolean(r.followUpDate)).length,
+        ),
+        icon: ArrowRight,
+      },
+    ],
+    [liveRecords],
+  );
   const purposes = useMemo(
     () => Array.from(new Set(liveRecords.map((r) => r.purpose))).filter(Boolean),
     [liveRecords],
@@ -233,13 +242,40 @@ export default function EnquiriesWorkspace() {
     () => Array.from(new Set(liveRecords.map((r) => r.owner))).filter(Boolean),
     [liveRecords],
   );
-  const setRecordStatus = (id: string, next: string) => {
-    setLiveRecords((prev) => prev.map((r) => (r.id === id ? { ...r, status: next } : r)));
-    toast({ title: `Marked ${next.toLowerCase()}`, description: `Visitor ${id} was updated.` });
+  /** Optimistic status change, rolled back if the write is rejected. */
+  const setRecordStatus = async (row: EnquiryRow, next: string) => {
+    const previous = row.status;
+    setLiveRecords((prev) => prev.map((r) => (r.id === row.id ? { ...r, status: next } : r)));
+    try {
+      await updateEnquiry(row.id, row.branchIdRef || targetBranchId, { status: next });
+      toast({
+        title: `Marked ${(ENQUIRY_STATUS_LABEL[next] || next).toLowerCase()}`,
+        description: `${row.name || "Visitor"} was updated.`,
+      });
+    } catch (error) {
+      setLiveRecords((prev) => prev.map((r) => (r.id === row.id ? { ...r, status: previous } : r)));
+      toast({
+        title: "Could not update status",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    }
   };
-  const removeRecord = (id: string) => {
-    setLiveRecords((prev) => prev.filter((r) => r.id !== id));
-    toast({ title: "Entry removed", description: `Visitor ${id} was taken off the log.` });
+  const removeRecord = async (row: EnquiryRow) => {
+    if (!window.confirm(`Remove ${row.name || "this visitor"} from the log? This cannot be undone.`)) return;
+    const snapshot = liveRecords;
+    setLiveRecords((prev) => prev.filter((r) => r.id !== row.id));
+    try {
+      await deleteEnquiry(row.id, row.branchIdRef || targetBranchId);
+      toast({ title: "Entry removed", description: `${row.name || "Visitor"} was taken off the log.` });
+    } catch (error) {
+      setLiveRecords(snapshot);
+      toast({
+        title: "Could not remove entry",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    }
   };
   const exportVisitors = () => {
     if (!filtered.length) {
@@ -252,10 +288,15 @@ export default function EnquiriesWorkspace() {
         ID: r.id,
         Visitor: r.name,
         Phone: r.phone,
+        WhatsApp: r.whatsappNumber,
         Purpose: r.purpose,
         Meeting: r.owner,
-        Status: r.status,
-        Time: r.date,
+        Source: r.source,
+        Status: ENQUIRY_STATUS_LABEL[r.status] || r.status,
+        "Check-in": r.date,
+        "Check-out": r.checkOut ? formatDateTime(r.checkOut, "") : "",
+        "Follow-up": r.followUpDate ? formatDate(r.followUpDate, "") : "",
+        "Call type": r.callType,
       })),
     );
     toast({ title: "Visitor log exported", description: `${filtered.length} rows written to CSV.` });
@@ -269,132 +310,145 @@ export default function EnquiriesWorkspace() {
   useEffect(() => {
     localStorage.setItem("reception-enquiry-draft", JSON.stringify(draft));
   }, [draft]);
-  useEffect(() => {
-    let cancelled = false;
-    async function loadEnquiries() {
-      try {
-        const result = await getEnquiries(user?.branchId || "");
-        if (!cancelled) {
-          setLiveRecords(
-            (result.data ?? []).map((item: Record<string, unknown>) => ({
-              id: item.id as string,
-              name: item.visitorName as string,
-              phone: item.phone as string,
-              whatsappNumber: (item.whatsapp_number as string) || "",
-              purpose: (item.purpose as string).replaceAll("_", " "),
-              owner: item.personToMeet as string,
-              status: (item.status as string) || "Checked in",
-              date: item.visitDate
-                ? new Date(item.visitDate as string).toLocaleString()
-                : new Date(item.createdAt as string).toLocaleString(),
-              source: item.source as string,
-              visitDate: item.visitDate as string,
-              followUpDate: item.follow_up_date as string,
-              callType: item.call_type as string,
-              checkOut: item.check_out as string,
-            })),
-          );
-        }
-      } catch (error) {
-        if (!cancelled) {
-          toast({
-            title: "Could not load enquiries",
-            description: (error as Error).message,
-            variant: "destructive",
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-    loadEnquiries();
-    return () => { cancelled = true; };
-  }, [toast]);
-  useEffect(() => {
-    if (branchId) return;
-    let cancelled = false;
-    getBranches(user?.organizationId || null)
-      .then((result) => {
-        if (cancelled) return;
-        const list = (result.data ?? []).map((b: Record<string, unknown>) => ({
-          id: b.id as string,
-          name: b.name as string,
-        }));
-        setBranches(list);
-        if (list.length === 1) setPickedBranchId(list[0].id);
-      })
-      .catch(() => {
-        if (!cancelled) setBranches([]);
+  /**
+   * `visit_enquiries` is mixed-case in the live database: most columns are
+   * camelCase but `call_type` / `check_in` / `check_out` are snake_case. Reading
+   * `follow_up_date` or `callType` (as this did) always yielded undefined.
+   */
+  const loadEnquiries = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getEnquiries(branchId || null, 1, 200);
+      setLiveRecords(
+        (result.data ?? []).map((item: Record<string, unknown>): EnquiryRow => ({
+          id: String(item.id ?? ""),
+          branchIdRef: String(item.branchId ?? ""),
+          name: String(item.visitorName ?? "Unnamed visitor"),
+          phone: String(item.phone ?? ""),
+          whatsappNumber: String(item.whatsappNumber ?? item.whatsapp_number ?? ""),
+          purpose: String(item.purpose ?? "OTHER").replace(/_/g, " "),
+          owner: String(item.personToMeet ?? ""),
+          status: String(item.status ?? "NEW"),
+          date: formatDateTime(item.visitDate ?? item.createdAt),
+          source: String(item.source ?? ""),
+          visitDate: (item.visitDate as string) ?? null,
+          followUpDate: (item.followUpDate as string) ?? null,
+          callType: String(item.call_type ?? ""),
+          checkOut: (item.check_out as string) ?? null,
+        })),
+      );
+    } catch (error) {
+      toast({
+        title: "Could not load enquiries",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
       });
-    return () => { cancelled = true; };
-  }, [branchId, user?.organizationId]);
+    } finally {
+      setLoading(false);
+    }
+  }, [branchId, toast]);
+  useEffect(() => {
+    void loadEnquiries();
+  }, [loadEnquiries]);
+  /** Branch list for the final step. `getBranches` returns { success, data }. */
+  const loadBranches = useCallback(async () => {
+    if (branchId) return;
+    setBranchesLoading(true);
+    try {
+      const result = await getBranches(user?.organizationId || null);
+      const list = (result.data ?? [])
+        .map((b: Record<string, unknown>) => ({
+          id: String(b.id ?? ""),
+          name: String(b.name ?? "Unnamed branch"),
+        }))
+        // Radix Select items must have a non-empty value.
+        .filter((b) => b.id);
+      setBranches(list);
+      if (list.length === 1) setPickedBranchId(list[0].id);
+    } catch (error) {
+      setBranches([]);
+      toast({
+        title: "Could not load branches",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setBranchesLoading(false);
+    }
+  }, [branchId, user?.organizationId, toast]);
+  useEffect(() => {
+    void loadBranches();
+  }, [loadBranches]);
   const save = () =>
     toast({
       title: "Draft saved",
       description: `Your enquiry is ${progress}% complete. You can resume it anytime.`,
     });
   const submit = async () => {
+    if (!targetBranchId) {
+      toast({
+        title: "Branch required",
+        description: branches.length
+          ? "Pick the branch this visitor is checking in to."
+          : "No branches exist yet — create one at Branches > Create branch first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!draft.name.trim() || !draft.phone.trim()) {
+      setStage(0);
+      toast({
+        title: "Visitor name and mobile number are required",
+        description: "Both are on the first step.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSubmitting(true);
     try {
-      const purpose =
-        (
-          {
-            "Student enquiry": "ADMISSION",
-            Meeting: "MEETING",
-            Interview: "INTERVIEW",
-            Delivery: "DELIVERY",
-            "Fee Related": "FEE",
-            Complaint: "COMPLAINT",
-            "Admission Enquiry": "ADMISSION",
-          } as Record<string, string>
-        )[draft.purpose] || "OTHER";
-      const created = await createEnquiry(targetBranchId, {
-            visitorName: draft.name,
-            phone: draft.phone,
-            whatsappNumber: draft.whatsappNumber || undefined,
-            email: draft.email || undefined,
-            candidateName: draft.candidateName || undefined,
-            address: draft.address || undefined,
-            registrationDate: draft.registrationDate ? new Date(draft.registrationDate).toISOString() : new Date().toISOString(),
-            visitDate: draft.visitDate ? new Date(draft.visitDate).toISOString() : new Date().toISOString(),
-            visitTime: draft.visitTime || undefined,
-            purpose,
-            personToMeet: draft.person || "Reception",
-            department: draft.department || "ADMINISTRATION",
-            idType: draft.idType || undefined,
-            idNumber: draft.idNumber || undefined,
-            source: draft.source || undefined,
-            enquiryReason: draft.enquiryReason || undefined,
-            location: draft.location || undefined,
-            remarks: draft.remarks || undefined,
-            followUpDate: draft.followUpDate ? new Date(draft.followUpDate).toISOString() : undefined,
-            followUpTime: draft.followUpTime || undefined,
-            followUpNotes: draft.followUpNotes || undefined,
-            callType: draft.callType || undefined,
-            checkIn: new Date(`${draft.visitDate || new Date().toISOString().split("T")[0]} ${draft.visitTime || "00:00"}`).toISOString(),
-          });
-      setLiveRecords((prev) => [
-        {
-          id: created.data.id as unknown as string,
-          name: draft.name,
-          phone: draft.phone,
-          purpose: draft.purpose || "Other",
-          owner: draft.person || "Reception",
-          status: "Checked in",
-          date: "Just now",
-        },
-        ...prev,
-      ]);
+      // `visit_enquiries` has no `notes` column, so the reception notes are
+      // folded into `remarks` rather than being silently dropped.
+      const remarks = [draft.remarks.trim(), draft.notes.trim() && `Reception notes: ${draft.notes.trim()}`]
+        .filter(Boolean)
+        .join("\n");
+      await createEnquiry(targetBranchId, {
+        visitorName: draft.name.trim(),
+        phone: draft.phone.trim(),
+        whatsappNumber: draft.whatsappNumber || undefined,
+        email: draft.email || undefined,
+        candidateName: draft.candidateName || undefined,
+        address: draft.address || undefined,
+        registrationDate: toIsoTimestamp(draft.registrationDate),
+        visitDate: toIsoTimestamp(draft.visitDate),
+        visitTime: draft.visitTime || undefined,
+        purpose: toPurposeEnum(draft.purpose),
+        personToMeet: draft.person || "Reception",
+        // Department is a Postgres enum: "Administration" is rejected (22P02).
+        department: toDepartmentEnum(draft.department),
+        // ID type is a Postgres enum too: AADHAR / PAN / DRIVING / VOTER / PASSPORT.
+        idType: toIdTypeEnum(draft.idType),
+        idNumber: draft.idNumber || undefined,
+        source: draft.source || undefined,
+        enquiryReason: draft.enquiryReason || undefined,
+        location: draft.location || undefined,
+        remarks: remarks || undefined,
+        followUpDate: draft.followUpDate ? toIsoTimestamp(draft.followUpDate) : undefined,
+        followUpTime: draft.followUpTime || undefined,
+        followUpNotes: draft.followUpNotes || undefined,
+        status: "NEW",
+        // snake_case in the live schema — `callType` / `checkIn` fail PGRST204.
+        call_type: draft.callType || undefined,
+        check_in: toIsoTimestamp(draft.visitDate, draft.visitTime),
+      });
       toast({
         title: "Visitor registered",
-        description:
-          "The reception log and enquiry record were created together.",
+        description: "The reception log and enquiry record were created together.",
       });
       setDraft(emptyDraft);
       setStage(0);
       setMode("list");
       localStorage.removeItem("reception-enquiry-draft");
+      await loadEnquiries();
     } catch (error) {
       toast({
         title: "Registration failed",
@@ -402,6 +456,8 @@ export default function EnquiriesWorkspace() {
           error instanceof Error ? error.message : "Please try again",
         variant: "destructive",
       });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -435,11 +491,7 @@ export default function EnquiriesWorkspace() {
       {mode === "list" ? (
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            {[
-              { label: "On premises", value: "3", icon: UserRoundCheck },
-              { label: "Visitors today", value: "18", icon: Users },
-              { label: "Need follow-up", value: "5", icon: ArrowRight },
-            ].map((item) => (
+            {stats.map((item) => (
               <Card key={item.label}>
                 <CardContent className="flex items-center justify-between p-4">
                   <div>
@@ -474,9 +526,11 @@ export default function EnquiriesWorkspace() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="Checked in">Checked in</SelectItem>
-                    <SelectItem value="Completed">Completed</SelectItem>
-                    <SelectItem value="Follow-up">Follow-up</SelectItem>
+                    {ENQUIRY_STATUSES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {ENQUIRY_STATUS_LABEL[value]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Button
@@ -544,24 +598,28 @@ export default function EnquiriesWorkspace() {
                         </td>
                         <td className="px-4 py-3">{r.phone}</td>
                         <td className="px-4 py-3 text-muted-foreground">
-                          {(r as any).whatsappNumber || "—"}
+                          {r.whatsappNumber || "—"}
                         </td>
                         <td className="px-4 py-3">{r.purpose}</td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {r.owner}
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {(r as any).source || "—"}
+                          {r.source || "—"}
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           <div className="text-xs">{r.date}</div>
                           <div className="text-xs">
-                            {(r as any).checkOut ? `→ ${new Date((r as any).checkOut).toLocaleString()}` : r.status === "Completed" ? "Checked out" : "Active"}
+                            {r.checkOut
+                              ? `→ ${formatDateTime(r.checkOut)}`
+                              : r.status === "CLOSED"
+                                ? "Checked out"
+                                : "Active"}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {(r as any).followUpDate ? new Date((r as any).followUpDate).toLocaleDateString() : "—"}
-                          {(r as any).callType ? <div className="text-[10px]">{(r as any).callType}</div> : null}
+                          {formatDate(r.followUpDate)}
+                          {r.callType ? <div className="text-[10px]">{r.callType}</div> : null}
                         </td>
                         <td className="px-4">
                           <DropdownMenu>
@@ -571,13 +629,13 @@ export default function EnquiriesWorkspace() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => setRecordStatus(r.id, "Checked in")}>
+                              <DropdownMenuItem onSelect={() => void setRecordStatus(r, "NEW")}>
                                 Mark checked in
                               </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => setRecordStatus(r.id, "Follow-up")}>
+                              <DropdownMenuItem onSelect={() => void setRecordStatus(r, "CONTACTED")}>
                                 Flag for follow-up
                               </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => setRecordStatus(r.id, "Completed")}>
+                              <DropdownMenuItem onSelect={() => void setRecordStatus(r, "CLOSED")}>
                                 Mark completed
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
@@ -591,7 +649,7 @@ export default function EnquiriesWorkspace() {
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive"
-                                onSelect={() => removeRecord(r.id)}
+                                onSelect={() => void removeRecord(r)}
                               >
                                 Remove from log
                               </DropdownMenuItem>
@@ -615,12 +673,12 @@ export default function EnquiriesWorkspace() {
                   <div key={r.id} className="p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0"><p className="font-semibold">{r.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{r.phone} · {r.purpose}</p></div>
-                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${r.status === "Checked in" ? "bg-brand text-brand-foreground" : r.status === "Follow-up" ? "bg-amber-500/15 text-amber-600" : "bg-muted"}`}>{r.status}</span>
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${r.status === "NEW" ? "bg-brand text-brand-foreground" : r.status === "CONTACTED" ? "bg-amber-500/15 text-amber-600" : "bg-muted"}`}>{ENQUIRY_STATUS_LABEL[r.status] || r.status}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-3 text-xs">
-                      <div><p className="text-muted-foreground">WhatsApp</p><p className="mt-1 font-medium">{(r as any).whatsappNumber || "—"}</p></div>
+                      <div><p className="text-muted-foreground">WhatsApp</p><p className="mt-1 font-medium">{r.whatsappNumber || "—"}</p></div>
                       <div><p className="text-muted-foreground">Meeting</p><p className="mt-1 font-medium">{r.owner}</p></div>
-                      <div><p className="text-muted-foreground">Source</p><p className="mt-1 font-medium">{(r as any).source || "—"}</p></div>
+                      <div><p className="text-muted-foreground">Source</p><p className="mt-1 font-medium">{r.source || "—"}</p></div>
                       <div><p className="text-muted-foreground">Time</p><p className="mt-1 font-medium">{r.date}</p></div>
                     </div>
                   </div>
@@ -963,27 +1021,60 @@ export default function EnquiriesWorkspace() {
                   <div className="space-y-4">
                     {!branchId && (
                       <Field label="Branch *" required>
-                        <Select
-                          value={pickedBranchId}
-                          onValueChange={setPickedBranchId}
-                        >
-                          <SelectTrigger>
-                            <SelectValue
-                              placeholder={
-                                branches.length
-                                  ? "Select the branch for this visit"
-                                  : "No branches available"
-                              }
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {branches.map((b) => (
-                              <SelectItem key={b.id} value={b.id}>
-                                {b.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {branchesLoading ? (
+                          <p className="rounded-xl border border-dashed px-3 py-3 text-sm text-muted-foreground">
+                            Loading branches…
+                          </p>
+                        ) : branches.length ? (
+                          <Select
+                            value={pickedBranchId}
+                            onValueChange={setPickedBranchId}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select the branch for this visit" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {branches.map((b) => (
+                                <SelectItem key={b.id} value={b.id}>
+                                  {b.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-amber-500/50 bg-amber-500/5 p-4">
+                            <p className="text-sm font-medium">
+                              No branches have been created yet.
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Every visitor record has to belong to a branch, so check-in
+                              stays disabled until at least one exists. Create one, then
+                              come back — your draft is saved.
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => {
+                                  save();
+                                  navigate("/branch/create");
+                                }}
+                              >
+                                <Plus />
+                                Create a branch
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void loadBranches()}
+                                disabled={branchesLoading}
+                              >
+                                Retry
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </Field>
                     )}
 
@@ -1040,10 +1131,19 @@ export default function EnquiriesWorkspace() {
                   <ArrowRight />
                 </Button>
               ) : (
-                <Button onClick={submit} disabled={!targetBranchId}>
-                  <Check />
-                  Register & check in
-                </Button>
+                <div className="flex flex-col items-stretch gap-1 sm:items-end">
+                  <Button onClick={() => void submit()} disabled={!targetBranchId || submitting}>
+                    <Check />
+                    {submitting ? "Registering…" : "Register & check in"}
+                  </Button>
+                  {!targetBranchId && !branchesLoading && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {branches.length
+                        ? "Pick a branch above to enable check-in."
+                        : "Disabled until a branch exists — create one above."}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -1075,14 +1175,16 @@ function Stage({
 function Field({
   label,
   required,
+  className,
   children,
 }: {
   label: string;
   required?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${className || ""}`}>
       <Label>
         {label}
         {required && <span className="ml-1 text-destructive">*</span>}

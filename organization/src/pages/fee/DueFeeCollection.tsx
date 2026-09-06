@@ -4,53 +4,26 @@ import { DataTable, Column } from "@/components/ui/DataTable";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, IndianRupee, Users, Clock, Download, Bell } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getInvoices, addPayment } from "@/lib/supabase/data";
+import {
+  listInvoices,
+  recordPayment,
+  updateInvoiceRow,
+  paidFromPayments,
+  studentName,
+  toNumber,
+  formatDate,
+  type InvoiceRow,
+} from "@/lib/supabase/studentFee";
 import { downloadCsv } from "@/lib/export";
-
-interface BackendInvoice {
-  id: string;
-  invoiceNo: string;
-  studentId: string;
-  branchId: string;
-  description: string;
-  amount: number;
-  dueDate: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  studentFirstName?: string;
-  studentLastName?: string;
-  studentEnrollmentNo?: string;
-  payments: {
-    id: string;
-    amount: number;
-    method: string;
-    referenceNo?: string;
-    receiptNo?: string;
-    paidAt: string;
-    receivedById: string;
-  }[];
-}
-
-interface BackendPaymentResponse {
-  id: string;
-  invoiceId: string;
-  amount: number;
-  method: string;
-  referenceNo?: string;
-  receiptNo: string;
-  paidAt: string;
-  receivedById: string;
-  reversedAt: string | null;
-}
 
 interface Receipt {
   date: string;
@@ -73,16 +46,45 @@ interface DueFee {
   lastReminder: string;
   status: "overdue" | "due_today" | "due_soon" | "cleared";
   history: Receipt[];
+  invoice: InvoiceRow;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-const daysBetween = (dueDate: string) =>
-  Math.round((Date.parse(today()) - Date.parse(dueDate)) / 86_400_000);
+/** Reminders have no table in the live database, so they are remembered here. */
+const REMINDER_KEY = "erp-fee-reminders";
+
+const readReminders = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(REMINDER_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeReminders = (next: Record<string, string>) => {
+  try {
+    localStorage.setItem(REMINDER_KEY, JSON.stringify(next));
+  } catch {
+    /* storage unavailable — reminders simply will not survive a reload */
+  }
+};
+
+/** Whole days a due date is past. Returns null when the date is unusable, so
+ *  the UI never renders "NaN days". */
+const daysBetween = (dueDate: string): number | null => {
+  if (!dueDate || dueDate === "—") return null;
+  const due = Date.parse(dueDate);
+  if (Number.isNaN(due)) return null;
+  return Math.round((Date.parse(today()) - due) / 86_400_000);
+};
 
 const derive = (fee: DueFee): DueFee => {
   if (fee.totalDue <= 0) return { ...fee, daysOverdue: 0, status: "cleared" };
   const daysOverdue = daysBetween(fee.dueDate);
+  if (daysOverdue === null) return { ...fee, daysOverdue: 0, status: "due_soon" };
   return {
     ...fee,
     daysOverdue,
@@ -104,17 +106,20 @@ const columns: Column<DueFee>[] = [
     cell: (fee) => (
       <div>
         <p className="font-medium">{fee.name}</p>
-        <p className="text-xs text-muted-foreground">{fee.studentId} • {fee.phone}</p>
+        <p className="text-xs text-muted-foreground">
+          {fee.studentId || "—"}
+          {fee.phone ? ` • ${fee.phone}` : ""}
+        </p>
       </div>
     ),
   },
   {
     key: "course",
-    header: "Course",
+    header: "Invoice",
     cell: (fee) => (
       <div>
-        <Badge variant="outline">{fee.course}</Badge>
-        <p className="text-xs text-muted-foreground mt-1">{fee.batch}</p>
+        <Badge variant="outline">{fee.course || "Fee invoice"}</Badge>
+        {fee.batch ? <p className="text-xs text-muted-foreground mt-1">{fee.batch}</p> : null}
       </div>
     ),
   },
@@ -124,7 +129,7 @@ const columns: Column<DueFee>[] = [
     sortable: true,
     cell: (fee) => (
       <span className={fee.totalDue > 0 ? "font-medium text-destructive" : "font-medium text-success"}>
-        ₹{fee.totalDue.toLocaleString()}
+        ₹{toNumber(fee.totalDue).toLocaleString("en-IN")}
       </span>
     ),
   },
@@ -132,12 +137,13 @@ const columns: Column<DueFee>[] = [
     key: "dueDate",
     header: "Due Date",
     sortable: true,
+    cell: (fee) => <span className="text-sm">{formatDate(fee.dueDate)}</span>,
   },
   {
     key: "daysOverdue",
     header: "Overdue",
     sortable: true,
-    cell: (fee) => (
+    cell: (fee) =>
       fee.status === "cleared" ? (
         <Badge variant="secondary">Settled</Badge>
       ) : fee.daysOverdue > 0 ? (
@@ -146,19 +152,17 @@ const columns: Column<DueFee>[] = [
         <Badge variant="default">Today</Badge>
       ) : (
         <Badge variant="secondary">In {Math.abs(fee.daysOverdue)} days</Badge>
-      )
-    ),
+      ),
   },
   {
     key: "lastReminder",
     header: "Last Reminder",
-    cell: (fee) => (
-      fee.lastReminder !== "-" ? (
+    cell: (fee) =>
+      fee.lastReminder && fee.lastReminder !== "-" ? (
         <span className="text-sm">{fee.lastReminder}</span>
       ) : (
         <span className="text-muted-foreground text-sm">Not sent</span>
-      )
-    ),
+      ),
   },
   {
     key: "status",
@@ -187,65 +191,82 @@ export default function DueFeeCollection() {
   const [penaltyAmount, setPenaltyAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const branchId = user?.branchId || null;
+
   const fetchFees = () => {
     setLoading(true);
     setError(null);
-    getInvoices(user?.branchId || "")
+    listInvoices(branchId, { statuses: ["DUE", "PARTIAL"] })
       .then((res) => {
-        const data: BackendInvoice[] = res.data;
-        const mapped: DueFee[] = data.map((invoice) => {
-          const paid = invoice.payments.reduce((sum, p) => sum + Number(p.amount), 0);
-          const totalDue = Math.max(0, Number(invoice.amount) - paid);
-          const lastPayment = invoice.payments.sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime())[0];
-          const history: Receipt[] = invoice.payments.map((p) => ({
-            date: p.paidAt,
-            amount: Number(p.amount),
-            method: p.method,
-            reference: p.referenceNo || p.receiptNo || "—",
-          }));
+        const reminders = readReminders();
+        const mapped: DueFee[] = (res.data || []).map((invoice) => {
+          const paid = paidFromPayments(invoice);
+          const totalDue = Math.max(0, toNumber(invoice.totalAmount) - paid);
+          const payments = Array.isArray(invoice.payments) ? invoice.payments : [];
+          const studentId = invoice.studentId || "";
           return {
             id: invoice.id,
-            studentId: invoice.studentId,
-            name: `Student #${invoice.studentId.slice(-6)}`,
-            course: invoice.description,
-            batch: "",
-            phone: "",
+            studentId,
+            name:
+              studentName(invoice.student, "") ||
+              (studentId ? `Student #${studentId.slice(-6)}` : "Unlinked invoice"),
+            course: invoice.description || "Fee invoice",
+            batch: invoice.invoiceNo || "",
+            phone: invoice.student?.phone || "",
             totalDue,
-            dueDate: invoice.dueDate,
+            dueDate: invoice.dueDate || "",
             daysOverdue: 0,
-            lastReminder: "-",
-            status: "cleared",
-            history: (invoice.payments || []).map((p) => ({
-              date: p.paidAt,
-              amount: Number(p.amount),
-              method: p.method || "—",
-              reference: p.referenceNo || p.receiptNo || "—",
-            })),
+            lastReminder: reminders[invoice.id] || "-",
+            status: "cleared" as const,
+            history: payments
+              .slice()
+              .sort((a, b) => new Date(b.paidAt || 0).getTime() - new Date(a.paidAt || 0).getTime())
+              .map((p) => ({
+                date: formatDate(p.paidAt),
+                amount: toNumber(p.amount),
+                method: p.method || "—",
+                reference: p.referenceNo || p.receiptNo || "—",
+                note: p.reversedAt ? "Reversed" : undefined,
+              })),
+            invoice,
           };
         });
         setFees(mapped.map(derive));
       })
       .catch((err) => {
-        setError(err.message || "Failed to load fee data");
-        toast({ title: "Could not load fees", description: err.message || "Please try again.", variant: "destructive" });
+        const message = err?.message || "Failed to load fee data";
+        setError(message);
+        toast({ title: "Could not load fees", description: message, variant: "destructive" });
       })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     fetchFees();
-  }, [toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId]);
 
   const openCollect = (fee: DueFee) => {
     setCollecting(fee);
     setPayment({ ...BLANK_PAYMENT, amount: String(fee.totalDue) });
   };
 
+  const stampReminder = (ids: string[]) => {
+    const stamped = today();
+    const next = { ...readReminders() };
+    ids.forEach((id) => {
+      next[id] = stamped;
+    });
+    writeReminders(next);
+    setFees((prev) => prev.map((fee) => (ids.includes(fee.id) ? { ...fee, lastReminder: stamped } : fee)));
+    return stamped;
+  };
+
   const remind = (fee: DueFee) => {
-    setFees((prev) => prev.map((f) => (f.id === fee.id ? { ...f, lastReminder: today() } : f)));
+    stampReminder([fee.id]);
     toast({
-      title: "Reminder sent",
-      description: `${fee.name} was notified about ₹${fee.totalDue.toLocaleString()}.`,
+      title: "Reminder logged",
+      description: `₹${fee.totalDue.toLocaleString("en-IN")} flagged for ${fee.name}. No SMS/email gateway is connected, so nothing was sent out.`,
     });
   };
 
@@ -255,25 +276,28 @@ export default function DueFeeCollection() {
       toast({ title: "Nothing to chase", description: "No overdue or due-today balances right now." });
       return;
     }
-    const stamped = today();
-    setFees((prev) => prev.map((fee) => (pending.some((p) => p.id === fee.id) ? { ...fee, lastReminder: stamped } : fee)));
+    stampReminder(pending.map((fee) => fee.id));
     toast({
-      title: `Reminders sent to ${pending.length} students`,
-      description: `₹${pending.reduce((sum, fee) => sum + fee.totalDue, 0).toLocaleString()} chased in this run.`,
+      title: `${pending.length} students flagged for follow-up`,
+      description: `₹${pending.reduce((sum, fee) => sum + fee.totalDue, 0).toLocaleString("en-IN")} outstanding. No messaging gateway is connected, so this is a local record only.`,
     });
   };
 
   const exportReport = () => {
+    if (!fees.length) {
+      toast({ title: "Nothing to export", description: "There are no outstanding invoices." });
+      return;
+    }
     downloadCsv(
       `due-fees-${today()}.csv`,
       fees.map((fee) => ({
+        "Invoice No": fee.invoice.invoiceNo || "",
         "Student ID": fee.studentId,
         Name: fee.name,
-        Course: fee.course,
-        Batch: fee.batch,
+        Description: fee.course,
         Phone: fee.phone,
         "Amount Due": fee.totalDue,
-        "Due Date": fee.dueDate,
+        "Due Date": formatDate(fee.dueDate),
         "Days Overdue": fee.daysOverdue,
         "Last Reminder": fee.lastReminder,
         Status: STATUS_LABEL[fee.status],
@@ -285,14 +309,19 @@ export default function DueFeeCollection() {
   const collect = async () => {
     if (!collecting) return;
     const amount = Number(payment.amount);
-    if (!amount || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       toast({ title: "Enter an amount to collect", variant: "destructive" });
       return;
     }
-    if (amount > collecting.totalDue) {
+    const lateFee = Number(payment.lateFee) || 0;
+    if (lateFee < 0) {
+      toast({ title: "Late fee cannot be negative", variant: "destructive" });
+      return;
+    }
+    if (amount > collecting.totalDue + lateFee) {
       toast({
         title: "Amount exceeds the balance",
-        description: `₹${collecting.totalDue.toLocaleString()} is outstanding.`,
+        description: `₹${(collecting.totalDue + lateFee).toLocaleString("en-IN")} is outstanding.`,
         variant: "destructive",
       });
       return;
@@ -303,63 +332,92 @@ export default function DueFeeCollection() {
     }
     setSubmitting(true);
     try {
-      await addPayment(collecting.id, {
+      let invoice = collecting.invoice;
+      // A late fee increases what is owed, so it is added to the invoice before
+      // the payment is recorded. Previously this field was collected and then
+      // silently thrown away.
+      if (lateFee > 0) {
+        const bumped = await updateInvoiceRow(invoice.id, {
+          totalAmount: toNumber(invoice.totalAmount) + lateFee,
+          lateFee: toNumber(invoice.lateFee) + lateFee,
+        });
+        invoice = { ...invoice, ...bumped.data, payments: invoice.payments };
+      }
+      await recordPayment(invoice, {
         amount,
-        method: payment.method.toUpperCase().replace(/\s+/g, "_"),
+        method: payment.method,
         referenceNo: payment.reference.trim() || undefined,
+        note: lateFee > 0 ? `Includes late fee of ₹${lateFee}` : undefined,
       });
       toast({
         title: "Payment collected",
-        description: `₹${amount.toLocaleString()} received successfully.`,
+        description: `₹${amount.toLocaleString("en-IN")} received successfully.`,
       });
       setCollecting(null);
       setPayment(BLANK_PAYMENT);
       fetchFees();
     } catch (err) {
-      toast({ title: "Payment failed", description: err.message || "Please try again.", variant: "destructive" });
+      toast({
+        title: "Payment failed",
+        description: (err as Error)?.message || "Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const applyPenalty = () => {
+  const applyPenalty = async () => {
     if (!penalty) return;
     const amount = Number(penaltyAmount);
-    if (!amount || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       toast({ title: "Enter a penalty amount", variant: "destructive" });
       return;
     }
-    setFees((prev) => prev.map((fee) =>
-      fee.id === penalty.id
-        ? {
-            ...fee,
-            totalDue: fee.totalDue + amount,
-            history: [{ date: today(), amount: -amount, method: "Penalty", reference: "—" }, ...fee.history],
-          }
-        : fee
-    ));
-    toast({ title: "Penalty added", description: `₹${amount.toLocaleString()} charged to ${penalty.name}.` });
-    setPenalty(null);
-    setPenaltyAmount("");
+    setSubmitting(true);
+    try {
+      await updateInvoiceRow(penalty.id, {
+        totalAmount: toNumber(penalty.invoice.totalAmount) + amount,
+        lateFee: toNumber(penalty.invoice.lateFee) + amount,
+      });
+      toast({ title: "Penalty added", description: `₹${amount.toLocaleString("en-IN")} charged to ${penalty.name}.` });
+      setPenalty(null);
+      setPenaltyAmount("");
+      fetchFees();
+    } catch (err) {
+      toast({
+        title: "Could not add the penalty",
+        description: (err as Error)?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const waive = (fee: DueFee) => {
-    const charged = fee.history.filter((entry) => entry.method === "Penalty");
-    if (!charged.length) {
+  const waive = async (fee: DueFee) => {
+    const charged = toNumber(fee.invoice.lateFee);
+    if (charged <= 0) {
       toast({ title: "No late fee to waive", description: `${fee.name} has no penalty on record.` });
       return;
     }
-    const total = charged.reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
-    setFees((prev) => prev.map((f) =>
-      f.id === fee.id
-        ? {
-            ...f,
-            totalDue: Math.max(0, f.totalDue - total),
-            history: f.history.filter((entry) => entry.method !== "Penalty"),
-          }
-        : f
-    ));
-    toast({ title: "Late fee waived", description: `₹${total.toLocaleString()} removed from ${fee.name}'s balance.` });
+    try {
+      await updateInvoiceRow(fee.id, {
+        totalAmount: Math.max(0, toNumber(fee.invoice.totalAmount) - charged),
+        lateFee: 0,
+      });
+      toast({
+        title: "Late fee waived",
+        description: `₹${charged.toLocaleString("en-IN")} removed from ${fee.name}'s balance.`,
+      });
+      fetchFees();
+    } catch (err) {
+      toast({
+        title: "Could not waive the late fee",
+        description: (err as Error)?.message || "Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleActions = (fee: DueFee) => [
@@ -367,30 +425,14 @@ export default function DueFeeCollection() {
     { label: "Send Reminder", onClick: () => remind(fee) },
     { label: "View History", onClick: () => setHistory(fee) },
     { label: "Add Penalty", onClick: () => { setPenalty(fee); setPenaltyAmount("500"); } },
-    { label: "Waive Late Fee", onClick: () => waive(fee) },
+    { label: "Waive Late Fee", onClick: () => { void waive(fee); } },
   ];
 
   const derivedFees = fees.map(derive);
   const totalDue = derivedFees.reduce((sum, f) => sum + f.totalDue, 0);
-  const overdueCount = derivedFees.filter(f => f.status === "overdue").length;
-  const dueTodayCount = derivedFees.filter(f => f.status === "due_today").length;
-  const pendingCount = derivedFees.filter(f => f.totalDue > 0).length;
-
-  if (error) {
-    return (
-      <AppLayout>
-        <PageHeader
-          title="Due Fee Collection"
-          description="Track and collect overdue fees from students"
-          breadcrumbs={[
-            { label: "Fee Management", href: "/fee/collection" },
-            { label: "Due Fee Collection" },
-          ]}
-        />
-        <Card><CardContent className="py-12 text-center text-sm text-destructive">{error}</CardContent></Card>
-      </AppLayout>
-    );
-  }
+  const overdueCount = derivedFees.filter((f) => f.status === "overdue").length;
+  const dueTodayCount = derivedFees.filter((f) => f.status === "due_today").length;
+  const pendingCount = derivedFees.filter((f) => f.totalDue > 0).length;
 
   return (
     <AppLayout>
@@ -415,7 +457,14 @@ export default function DueFeeCollection() {
         }
       />
 
-      {loading ? (
+      {error ? (
+        <Card>
+          <CardContent className="py-12 text-center space-y-3">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" onClick={fetchFees}>Retry</Button>
+          </CardContent>
+        </Card>
+      ) : loading ? (
         <Card><CardContent className="py-12 text-center text-sm text-muted-foreground">Loading fee data…</CardContent></Card>
       ) : (
         <>
@@ -451,6 +500,7 @@ export default function DueFeeCollection() {
             columns={columns}
             searchPlaceholder="Search students with dues..."
             actions={handleActions}
+            emptyMessage="No outstanding invoices for this branch."
             selectable
           />
         </>
@@ -470,7 +520,7 @@ export default function DueFeeCollection() {
                 </div>
                 <div className="flex justify-between mb-2">
                   <span className="text-muted-foreground">Total Due:</span>
-                  <span className="font-medium text-destructive">₹{collecting.totalDue.toLocaleString()}</span>
+                  <span className="font-medium text-destructive">₹{collecting.totalDue.toLocaleString("en-IN")}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Days Overdue:</span>
@@ -495,11 +545,11 @@ export default function DueFeeCollection() {
                       <SelectValue placeholder="Select method" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Card">Card</SelectItem>
+                      <SelectItem value="CASH">Cash</SelectItem>
+                      <SelectItem value="CARD">Card</SelectItem>
                       <SelectItem value="UPI">UPI</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="Cheque">Cheque</SelectItem>
+                      <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
+                      <SelectItem value="CHEQUE">Cheque</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -512,6 +562,7 @@ export default function DueFeeCollection() {
                     value={payment.lateFee}
                     onChange={(e) => setPayment({ ...payment, lateFee: e.target.value })}
                   />
+                  <p className="text-xs text-muted-foreground">Added to the invoice before the payment is recorded.</p>
                 </div>
               </div>
               <div className="space-y-2">
@@ -539,9 +590,9 @@ export default function DueFeeCollection() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Payment history</DialogTitle>
-            <DialogDescription>{history?.name} · {history?.studentId}</DialogDescription>
+            <DialogDescription>{history?.name} · {history?.studentId || "—"}</DialogDescription>
           </DialogHeader>
-          {history?.history.length ? (
+          {history?.history?.length ? (
             <div className="divide-y">
               {history.history.map((entry, index) => (
                 <div key={`${entry.date}-${index}`} className="flex items-start justify-between py-3 text-sm">
@@ -550,8 +601,8 @@ export default function DueFeeCollection() {
                     <p className="text-xs text-muted-foreground">{entry.date} · Ref {entry.reference}</p>
                     {entry.note && <p className="text-xs text-muted-foreground">{entry.note}</p>}
                   </div>
-                  <span className={entry.amount < 0 ? "font-medium text-destructive" : "font-medium text-success"}>
-                    {entry.amount < 0 ? "+" : "−"}₹{Math.abs(entry.amount).toLocaleString()}
+                  <span className="font-medium text-success">
+                    ₹{Math.abs(entry.amount).toLocaleString("en-IN")}
                   </span>
                 </div>
               ))}
@@ -567,7 +618,7 @@ export default function DueFeeCollection() {
           <DialogHeader>
             <DialogTitle>Add penalty</DialogTitle>
             <DialogDescription>
-              Charged on top of {penalty?.name}'s ₹{penalty?.totalDue.toLocaleString()} balance.
+              Charged on top of {penalty?.name}'s ₹{toNumber(penalty?.totalDue).toLocaleString("en-IN")} balance.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -581,7 +632,7 @@ export default function DueFeeCollection() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPenalty(null)}>Cancel</Button>
-            <Button onClick={applyPenalty}>Add penalty</Button>
+            <Button onClick={applyPenalty} disabled={submitting}>Add penalty</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

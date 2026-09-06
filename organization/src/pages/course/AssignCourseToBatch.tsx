@@ -45,7 +45,8 @@ interface Course {
 interface Batch {
   id: string;
   name: string;
-  course: string;
+  /** `batches` stores the course as a foreign key, not a name. */
+  courseId?: string | null;
 }
 
 const availableSubjects = [
@@ -147,12 +148,16 @@ export default function AssignCourseToBatch() {
           getBatches(branchId),
         ]);
         if (!cancelled) {
-          setCourses(coursesRes.data);
-          setBatches(batchesRes.data);
+          setCourses(coursesRes.data as Course[]);
+          setBatches(batchesRes.data as Batch[]);
         }
       } catch (err) {
         if (!cancelled) {
-          toast({ title: "Failed to load courses and batches", variant: "destructive" });
+          toast({
+            title: "Failed to load courses and batches",
+            description: err instanceof Error ? err.message : undefined,
+            variant: "destructive",
+          });
         }
       } finally {
         if (!cancelled) {
@@ -338,7 +343,7 @@ export default function AssignCourseToBatch() {
                   <SelectContent>
                     {batches.map((batch) => (
                       <SelectItem key={batch.id} value={batch.id}>
-                        {batch.name} - {batch.courseId?.slice(0, 8)}
+                        {batch.name}{batch.courseId ? ` - ${courses.find((c) => c.id === batch.courseId)?.name ?? ""}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>

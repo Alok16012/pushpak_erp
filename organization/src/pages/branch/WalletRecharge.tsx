@@ -80,9 +80,13 @@ export default function WalletRecharge() {
           );
           setHistory((txsRes.data || []).map((tx: any) => ({ ...tx, createdAt: tx.createdAt })));
         }
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          toast({ title: "Failed to load wallet data", variant: "destructive" });
+          toast({
+            title: "Failed to load wallet data",
+            description: error instanceof Error ? error.message : undefined,
+            variant: "destructive",
+          });
         }
       } finally {
         if (!cancelled) {
@@ -307,7 +311,8 @@ export default function WalletRecharge() {
                 {history.slice(0, 5).map((item) => {
                   const branchName = institutes.find((i) => i.id === item.branchId)?.name ?? item.branchId;
                   const itemDate = item.createdAt ?? "";
-                  const itemMethod = item.paymentMethod ?? item.method ?? "—";
+                  // `branch_transactions` stores this as `paymentMethod`; there is no `method`.
+                  const itemMethod = item.paymentMethod ?? "—";
                   return (
                     <div key={item.id} className="flex items-center justify-between py-2 border-b last:border-0">
                       <div>

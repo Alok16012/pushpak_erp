@@ -76,9 +76,11 @@ export default function GenerateIDCards() {
     setLoading(true);
     const branchId = user?.branchId || "";
     getStudents(branchId, 1, 100)
-      .then((data) => {
+      .then((result) => {
         if (cancelled) return;
-        const mapped: IdCardStudent[] = (data ?? []).map((s: any) => ({
+        // `getStudents` resolves to `{ success, data, meta }` - mapping over the
+        // envelope threw, so this list was always empty.
+        const mapped: IdCardStudent[] = (result.data ?? []).map((s: any) => ({
           id: s.id,
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
           class: s.courseId ? String(s.courseId).slice(0, 8) : "—",
@@ -92,9 +94,13 @@ export default function GenerateIDCards() {
         }));
         setStudents(mapped);
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
-          toast({ title: "Failed to load students", description: "Could not fetch student list.", variant: "destructive" });
+          toast({
+            title: "Failed to load students",
+            description: error instanceof Error ? error.message : "Could not fetch student list.",
+            variant: "destructive",
+          });
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });

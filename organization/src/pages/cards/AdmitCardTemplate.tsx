@@ -37,6 +37,7 @@ import {
   GripVertical,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { printHtml } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -173,7 +174,9 @@ export default function AdmitCardTemplate() {
 
   /** Print the sample card exactly as the generator would render it. */
   const preview = () => {
-    const effective: AdmitCardTemplate = { ...draft, id: editingId ?? "preview" } as AdmitCardTemplate;
+    // `AdmitCardTemplate` here is this file's own component, not the row type -
+    // the shape lives in @/data/admit-card-templates, imported above as `Template`.
+    const effective: Template = { ...draft, id: editingId ?? "preview" };
     printHtml(
       draft.name || "Admit Card",
       admitCardHtml(effective, SAMPLE_STUDENT),

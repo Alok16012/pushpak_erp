@@ -15,26 +15,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, Eye, Download, Filter, Calendar, Clock } from "lucide-react";
-import { format } from "date-fns";
+import { Search, Download, Filter, Calendar } from "lucide-react";
 import { downloadCsv } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAllAttendanceRecords } from "@/lib/supabase/data";
+import { listBatches, listCourses, safeDateLabel } from "@/lib/supabase/examAttendance";
 
 interface AttendanceLog {
   id: string;
@@ -45,8 +37,8 @@ interface AttendanceLog {
   batchId: string;
   date: string;
   status: "PRESENT" | "ABSENT" | "LATE" | "HALF_DAY" | "LEAVE";
-  checkInTime?: string;
-  checkOutTime?: string;
+  courseName: string;
+  batchName: string;
   remarks?: string;
 }
 
@@ -79,6 +71,13 @@ export default function AttendanceLogs() {
           .select("id, firstName, lastName, enrollmentNo, courseId, batchId")
           .in("id", studentIds);
         const byId = new Map((students || []).map((s: any) => [s.id, s]));
+        // Raw UUIDs are unreadable in a log, so course/batch are resolved to names.
+        const [courseRows, batchRows] = await Promise.all([
+          listCourses(user?.organizationId),
+          listBatches(branchId || undefined),
+        ]);
+        const courseName = new Map(courseRows.map((c) => [c.id, c.name]));
+        const batchName = new Map(batchRows.map((b) => [b.id, b.name]));
         const mapped: AttendanceLog[] = rawRecords.map((r: any) => {
           const s = byId.get(r.studentId);
           return {
@@ -88,10 +87,10 @@ export default function AttendanceLogs() {
             enrollmentNo: s?.enrollmentNo || "",
             courseId: s?.courseId || "",
             batchId: s?.batchId || "",
+            courseName: courseName.get(s?.courseId) || "",
+            batchName: batchName.get(s?.batchId) || "",
             date: r.date,
             status: r.status,
-            checkInTime: r.checkInTime,
-            checkOutTime: r.checkOutTime,
             remarks: r.remarks,
           };
         });
@@ -104,15 +103,15 @@ export default function AttendanceLogs() {
     }
     load();
     return () => { cancelled = true; };
-  }, [user?.branchId, toast]);
+  }, [user?.branchId, user?.organizationId, toast]);
 
   const statuses = useMemo(() => Array.from(new Set(logs.map(l => l.status).filter(Boolean))).sort(), [logs]);
 
   const filtered = logs.filter((log) => {
     const matchesSearch =
-      log.studentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.studentName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.studentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.enrollmentNo.toLowerCase().includes(searchTerm.toLowerCase());
+      (log.enrollmentNo || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = selectedStatus === "all" || log.status === selectedStatus;
     return matchesSearch && matchesStatus;
   });
@@ -133,12 +132,10 @@ export default function AttendanceLogs() {
         StudentId: log.studentId,
         StudentName: log.studentName,
         EnrollmentNo: log.enrollmentNo,
-        CourseId: log.courseId,
-        BatchId: log.batchId,
+        Course: log.courseName || log.courseId,
+        Batch: log.batchName || log.batchId,
         Date: log.date,
         Status: log.status,
-        CheckIn: log.checkInTime || "-",
-        CheckOut: log.checkOutTime || "-",
         Remarks: log.remarks || "-",
       })),
     );
@@ -153,7 +150,7 @@ export default function AttendanceLogs() {
       HALF_DAY: "outline",
       LEAVE: "outline",
     };
-    return <Badge variant={variants[status] || "outline"}>{status.replace(/_/g, " ")}</Badge>;
+    return <Badge variant={variants[status] || "outline"}>{(status || "—").replace(/_/g, " ")}</Badge>;
   };
 
   const columns = [
@@ -162,7 +159,7 @@ export default function AttendanceLogs() {
       header: "Date",
       sortable: true,
       cell: (log: AttendanceLog) => (
-        <span className="text-sm">{format(new Date(log.date), "dd MMM yyyy")}</span>
+        <span className="text-sm">{safeDateLabel(log.date, "en-IN", { day: "2-digit", month: "short", year: "numeric" })}</span>
       ),
     },
     {
@@ -178,37 +175,17 @@ export default function AttendanceLogs() {
     {
       key: "courseId",
       header: "Course",
-      cell: (log: AttendanceLog) => <span className="text-sm">{log.courseId || "—"}</span>,
+      cell: (log: AttendanceLog) => <span className="text-sm">{log.courseName || log.courseId || "—"}</span>,
     },
     {
       key: "batchId",
       header: "Batch",
-      cell: (log: AttendanceLog) => <span className="text-sm">{log.batchId || "—"}</span>,
+      cell: (log: AttendanceLog) => <span className="text-sm">{log.batchName || log.batchId || "—"}</span>,
     },
     {
       key: "status",
       header: "Status",
       cell: (log: AttendanceLog) => statusBadge(log.status),
-    },
-    {
-      key: "checkInTime",
-      header: "Check In",
-      cell: (log: AttendanceLog) => log.checkInTime ? (
-        <div className="flex items-center gap-1">
-          <Clock className="h-3 w-3 text-muted-foreground" />
-          <span className="text-sm">{format(new Date(log.checkInTime), "hh:mm a")}</span>
-        </div>
-      ) : <span className="text-xs text-muted-foreground">—</span>,
-    },
-    {
-      key: "checkOutTime",
-      header: "Check Out",
-      cell: (log: AttendanceLog) => log.checkOutTime ? (
-        <div className="flex items-center gap-1">
-          <Clock className="h-3 w-3 text-muted-foreground" />
-          <span className="text-sm">{format(new Date(log.checkOutTime), "hh:mm a")}</span>
-        </div>
-      ) : <span className="text-xs text-muted-foreground">—</span>,
     },
     {
       key: "remarks",
@@ -293,6 +270,36 @@ export default function AttendanceLogs() {
               data={filtered}
               searchable={false}
               emptyMessage="No attendance logs found"
+              actions={(log) => [
+                { label: "View details", onClick: () => setDetail({ log }) },
+                {
+                  label: "Copy student ID",
+                  onClick: () => {
+                    void navigator.clipboard
+                      .writeText(log.studentId)
+                      .then(() => toast({ title: "Student ID copied", description: log.studentId }))
+                      .catch(() => toast({ title: "Could not copy", description: log.studentId, variant: "destructive" }));
+                  },
+                },
+                {
+                  label: "Export this record",
+                  onClick: () => {
+                    downloadCsv(`attendance-${log.studentId}-${log.date}.csv`, [
+                      {
+                        StudentId: log.studentId,
+                        StudentName: log.studentName,
+                        EnrollmentNo: log.enrollmentNo,
+                        Course: log.courseName || log.courseId,
+                        Batch: log.batchName || log.batchId,
+                        Date: log.date,
+                        Status: log.status,
+                        Remarks: log.remarks || "-",
+                      },
+                    ]);
+                    toast({ title: "Record exported" });
+                  },
+                },
+              ]}
             />
           )}
         </CardContent>
@@ -305,18 +312,16 @@ export default function AttendanceLogs() {
               <DialogHeader>
                 <DialogTitle>Attendance Log Details</DialogTitle>
                 <DialogDescription>
-                  {detail.log.studentName || detail.log.studentId} • {format(new Date(detail.log.date), "dd MMM yyyy")}
+                  {detail.log.studentName || detail.log.studentId} • {safeDateLabel(detail.log.date, "en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                 </DialogDescription>
               </DialogHeader>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                 {[
                   ["Student ID", detail.log.studentId],
                   ["Enrollment", detail.log.enrollmentNo || "—"],
-                  ["Course", detail.log.courseId || "—"],
-                  ["Batch", detail.log.batchId || "—"],
-                  ["Status", detail.log.status.replace(/_/g, " ")],
-                  ["Check In", detail.log.checkInTime ? format(new Date(detail.log.checkInTime), "hh:mm a") : "—"],
-                  ["Check Out", detail.log.checkOutTime ? format(new Date(detail.log.checkOutTime), "hh:mm a") : "—"],
+                  ["Course", detail.log.courseName || detail.log.courseId || "—"],
+                  ["Batch", detail.log.batchName || detail.log.batchId || "—"],
+                  ["Status", (detail.log.status || "").replace(/_/g, " ")],
                   ["Remarks", detail.log.remarks || "—"],
                 ].map(([label, value]) => (
                   <div key={String(label)}>

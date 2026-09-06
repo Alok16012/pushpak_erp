@@ -14,16 +14,21 @@ const cell = (value: unknown) => {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
-/** Export an array of records as CSV, deriving headers from the first row. */
-export function downloadCsv(
+/**
+ * Export an array of records as CSV, deriving headers from the first row.
+ * Generic rather than `Record<string, unknown>[]`: an interface without an index
+ * signature is not assignable to that, so every caller passing a typed row
+ * (`AttendanceDay[]`, `PortalResult[]`, ...) would otherwise have to cast.
+ */
+export function downloadCsv<T extends object>(
   filename: string,
-  rows: Array<Record<string, unknown>>,
+  rows: readonly T[],
   headers?: string[],
 ) {
   const keys = headers ?? Object.keys(rows[0] ?? {});
   const csv = [
     keys.join(","),
-    ...rows.map((row) => keys.map((k) => cell(row[k])).join(",")),
+    ...rows.map((row) => keys.map((k) => cell((row as Record<string, unknown>)[k])).join(",")),
   ].join("\n");
   save(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
@@ -168,7 +173,7 @@ export function downloadZip(filename: string, files: Array<{ name: string; data:
   end.setUint32(16, offset, true);
 
   save(
-    new Blob([...locals, ...central, new Uint8Array(end.buffer)], { type: "application/zip" }),
+    new Blob([...locals, ...central, new Uint8Array(end.buffer)] as BlobPart[], { type: "application/zip" }),
     filename,
   );
 }

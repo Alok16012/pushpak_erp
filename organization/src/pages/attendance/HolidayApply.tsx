@@ -12,9 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarCheck, CalendarDays, Check, Clock3, FileText, User, Users, X } from "lucide-react";
+import { CalendarCheck, Check, Clock3, Download, FileText, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { downloadCsv } from "@/lib/export";
 
 type HolidayType = "public_holiday" | "casual_leave" | "sick_leave" | "earned_leave" | "other";
 
@@ -93,6 +94,7 @@ export default function HolidayApply() {
   const [fromDate, setFromDate] = useState(new Date().toISOString().slice(0, 10));
   const [toDate, setToDate] = useState(new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("");
+  const [search, setSearch] = useState("");
 
   const selectedEmployee = useMemo(
     () => EMPLOYEES.find((e) => e.id === employeeId),
@@ -109,12 +111,6 @@ export default function HolidayApply() {
   }, [user?.email]);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(applications)); }, [applications]);
-
-  useEffect(() => {
-    if (selectedEmployee) {
-      toast({ title: "Employee selected", description: `${selectedEmployee.name} — ${selectedEmployee.department}` });
-    }
-  }, [employeeId]);
 
   const reset = () => {
     setEmployeeId("");
@@ -156,6 +152,47 @@ export default function HolidayApply() {
     setMode("list");
   };
 
+  /** Approve / reject moves an application out of "pending". */
+  const decide = (id: string, status: "approved" | "rejected") => {
+    setApplications((list) => list.map((a) => (a.id === id ? { ...a, status } : a)));
+    toast({ title: status === "approved" ? "Application approved" : "Application rejected", description: id });
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return applications;
+    return applications.filter((a) =>
+      `${a.id} ${a.employeeId} ${a.employeeName} ${a.department} ${a.designation} ${a.reason}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [applications, search]);
+
+  const exportCsv = () => {
+    if (!filtered.length) {
+      toast({ title: "Nothing to export", description: "No applications match this search.", variant: "destructive" });
+      return;
+    }
+    downloadCsv(
+      "holiday-applications.csv",
+      filtered.map((a) => ({
+        id: a.id,
+        employeeId: a.employeeId,
+        employeeName: a.employeeName,
+        department: a.department,
+        designation: a.designation,
+        type: a.holidayType.replace(/_/g, " "),
+        fromDate: a.fromDate,
+        toDate: a.toDate,
+        reason: a.reason,
+        status: a.status,
+        appliedAt: a.appliedAt,
+      })),
+      ["id", "employeeId", "employeeName", "department", "designation", "type", "fromDate", "toDate", "reason", "status", "appliedAt"],
+    );
+    toast({ title: "Exported", description: `${filtered.length} application(s) downloaded.` });
+  };
+
   const stats = useMemo(() => {
     const total = applications.length;
     const pending = applications.filter((a) => a.status === "pending").length;
@@ -171,9 +208,15 @@ export default function HolidayApply() {
           <p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">Attendance</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-[-.04em]">Holiday Apply</h1>
           <p className="mt-1 text-sm text-muted-foreground">Apply leave or holiday for any employee. Employee data is auto-filled from the employee directory.</p>
+          <p className="mt-1 text-xs text-amber-700">Saved in this browser only — the institute database has no holiday / leave table yet, so these applications are not shared with other users.</p>
         </div>
         {mode === "list"
-          ? <Button onClick={() => setMode("form")}><CalendarCheck />New Application</Button>
+          ? (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={exportCsv} disabled={!filtered.length}><Download />Export</Button>
+              <Button onClick={() => setMode("form")}><CalendarCheck />New Application</Button>
+            </div>
+          )
           : <Button variant="outline" onClick={() => { reset(); setMode("list"); }}><X />Close</Button>
         }
       </div>
@@ -201,7 +244,11 @@ export default function HolidayApply() {
           <Card>
             <CardContent className="p-0">
               <div className="border-b p-4">
-                <Input placeholder="Search by employee name, ID, or reason..." />
+                <Input
+                  placeholder="Search by employee name, ID, or reason..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[780px] text-sm">
@@ -215,10 +262,11 @@ export default function HolidayApply() {
                       <th className="px-4 py-3 font-medium">To</th>
                       <th className="px-4 py-3 font-medium">Status</th>
                       <th className="px-4 py-3 font-medium">Applied</th>
+                      <th className="px-4 py-3 font-medium text-right">Decision</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {applications.map((r) => (
+                    {filtered.map((r) => (
                       <tr key={r.id} className="border-b last:border-0 hover:bg-muted/25">
                         <td className="px-4 py-3 font-mono text-xs">{r.id}</td>
                         <td className="px-4 py-3">
@@ -233,10 +281,28 @@ export default function HolidayApply() {
                           <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[r.status]}`}>{r.status}</span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">{r.appliedAt}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-1.5">
+                            {r.status === "pending" ? (
+                              <>
+                                <Button size="sm" variant="outline" onClick={() => decide(r.id, "approved")}>
+                                  <Check className="mr-1 h-3.5 w-3.5" />Approve
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => decide(r.id, "rejected")}>
+                                  <X className="mr-1 h-3.5 w-3.5" />Reject
+                                </Button>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Decided</span>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
-                    {applications.length === 0 && (
-                      <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-muted-foreground">No holiday applications yet.</td></tr>
+                    {filtered.length === 0 && (
+                      <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                        {applications.length ? "No applications match this search." : "No holiday applications yet."}
+                      </td></tr>
                     )}
                   </tbody>
                 </table>

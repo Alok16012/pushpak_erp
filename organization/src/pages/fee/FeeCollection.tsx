@@ -25,7 +25,18 @@ import {
 } from "@/components/ui/select";
 import { CreditCard, Receipt, AlertCircle, CheckCircle, Plus, Printer, Download } from "lucide-react";
 import { downloadCsv } from "@/lib/export";
-import { getInvoices, createInvoice as createInvoiceFn, addPayment, getStudents } from "@/lib/supabase/data";
+import {
+  listInvoices,
+  listStudents,
+  createInvoiceRow,
+  recordPayment,
+  paidFromPayments,
+  studentCode,
+  studentName,
+  toNumber,
+  formatDate,
+  type InvoiceRow,
+} from "@/lib/supabase/studentFee";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { feeReceiptPdf, feeStatementPdf } from "@/lib/documents";
@@ -41,82 +52,8 @@ interface FeeRecord {
   dueAmount: number;
   dueDate: string;
   status: "paid" | "due" | "partial";
+  invoice: InvoiceRow;
 }
-
-const feeData: FeeRecord[] = [
-  {
-    id: "1",
-    studentName: "John Doe",
-    rollNo: "STU001",
-    course: "Computer Science",
-    feeType: "Tuition Fee",
-    totalAmount: 50000,
-    paidAmount: 50000,
-    dueAmount: 0,
-    dueDate: "2024-01-15",
-    status: "paid",
-  },
-  {
-    id: "2",
-    studentName: "Sarah Smith",
-    rollNo: "STU002",
-    course: "Commerce",
-    feeType: "Tuition Fee",
-    totalAmount: 45000,
-    paidAmount: 25000,
-    dueAmount: 20000,
-    dueDate: "2024-01-20",
-    status: "partial",
-  },
-  {
-    id: "3",
-    studentName: "Mike Johnson",
-    rollNo: "STU003",
-    course: "Arts",
-    feeType: "Exam Fee",
-    totalAmount: 5000,
-    paidAmount: 0,
-    dueAmount: 5000,
-    dueDate: "2024-01-10",
-    status: "due",
-  },
-  {
-    id: "4",
-    studentName: "Emily Brown",
-    rollNo: "STU004",
-    course: "Science",
-    feeType: "Lab Fee",
-    totalAmount: 15000,
-    paidAmount: 15000,
-    dueAmount: 0,
-    dueDate: "2024-01-25",
-    status: "paid",
-  },
-  {
-    id: "5",
-    studentName: "David Wilson",
-    rollNo: "STU005",
-    course: "Engineering",
-    feeType: "Tuition Fee",
-    totalAmount: 75000,
-    paidAmount: 50000,
-    dueAmount: 25000,
-    dueDate: "2024-01-18",
-    status: "partial",
-  },
-  {
-    id: "6",
-    studentName: "Lisa Anderson",
-    rollNo: "STU006",
-    course: "Medical",
-    feeType: "Tuition Fee",
-    totalAmount: 100000,
-    paidAmount: 0,
-    dueAmount: 100000,
-    dueDate: "2024-01-12",
-    status: "due",
-  },
-];
 
 const columns: Column<FeeRecord>[] = [
   {
@@ -127,7 +64,7 @@ const columns: Column<FeeRecord>[] = [
       <div className="flex items-center gap-3">
         <Avatar className="h-9 w-9">
           <AvatarFallback className="bg-primary/10 text-primary text-sm">
-            {record.studentName.split(" ").map((n) => n[0]).join("")}
+            {(record.studentName || "?").split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2) || "?"}
           </AvatarFallback>
         </Avatar>
         <div>
@@ -151,14 +88,14 @@ const columns: Column<FeeRecord>[] = [
     key: "totalAmount",
     header: "Total",
     cell: (record) => (
-      <span className="font-medium">₹{record.totalAmount.toLocaleString()}</span>
+      <span className="font-medium">₹{toNumber(record.totalAmount).toLocaleString("en-IN")}</span>
     ),
   },
   {
     key: "paidAmount",
     header: "Paid",
     cell: (record) => (
-      <span className="text-success font-medium">₹{record.paidAmount.toLocaleString()}</span>
+      <span className="text-success font-medium">₹{toNumber(record.paidAmount).toLocaleString("en-IN")}</span>
     ),
   },
   {
@@ -166,7 +103,7 @@ const columns: Column<FeeRecord>[] = [
     header: "Due",
     cell: (record) => (
       <span className={record.dueAmount > 0 ? "text-destructive font-medium" : ""}>
-        ₹{record.dueAmount.toLocaleString()}
+        ₹{toNumber(record.dueAmount).toLocaleString("en-IN")}
       </span>
     ),
   },
@@ -175,13 +112,7 @@ const columns: Column<FeeRecord>[] = [
     header: "Due Date",
     sortable: true,
     cell: (record) => (
-      <span className="text-sm">
-        {new Date(record.dueDate).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        })}
-      </span>
+      <span className="text-sm">{formatDate(record.dueDate)}</span>
     ),
   },
   {
@@ -207,39 +138,79 @@ export default function FeeCollection() {
   const [isCreateDialogOpen,setIsCreateDialogOpen]=useState(false);
   const [invoice,setInvoice]=useState({studentId:"",description:"",amount:"",dueDate:""});
   const [creating,setCreating]=useState(false);
+  const [loading, setLoading] = useState(true);
   const load = async () => {
+    setLoading(true);
     try {
-      const result = await getInvoices(branchId);
-      const records: FeeRecord[] = result.data.map((i: any) => ({
-        id: i.id,
-        studentName: "Student " + String(i.studentId || "").slice(-4),
-        rollNo: String(i.studentId || "—").slice(0, 8),
-        course: "—",
-        feeType: i.description || "Fee",
-        totalAmount: Number(i.amount),
-        paidAmount: 0,
-        dueAmount: Number(i.amount),
-        dueDate: i.dueDate || "—",
-        status: (i.status || "").toLowerCase() === "due" ? "due"
-          : (i.status || "").toLowerCase() === "partial" ? "partial"
-          : "paid",
-      }));
-      setRecords(records);
+      // fee_invoices has no `amount` column — the live column is `totalAmount`,
+      // and what has been paid comes from the fee_payments rows.
+      const result = await listInvoices(branchId || null, { includeVoid: false });
+      const mapped: FeeRecord[] = (result.data || []).map((i) => {
+        const total = toNumber(i.totalAmount);
+        const paid = paidFromPayments(i);
+        const due = Math.max(0, total - paid);
+        const status: FeeRecord["status"] =
+          String(i.status || "").toUpperCase() === "PAID" || due === 0
+            ? "paid"
+            : paid > 0
+              ? "partial"
+              : "due";
+        return {
+          id: i.id,
+          studentName: studentName(i.student, i.studentId ? `Student ${String(i.studentId).slice(-4)}` : "Unlinked invoice"),
+          rollNo: studentCode(i.student as never) !== "—" ? studentCode(i.student as never) : (i.invoiceNo || "—"),
+          course: i.invoiceNo || "—",
+          feeType: i.description || "Fee",
+          totalAmount: total,
+          paidAmount: paid,
+          dueAmount: due,
+          dueDate: i.dueDate || "",
+          status,
+          invoice: i,
+        };
+      });
+      setRecords(mapped);
     } catch (error) {
+      setRecords([]);
       toast({ title: "Could not load fees", description: error instanceof Error ? error.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
   };
-  useEffect(() => { void load(); }, []);
   useEffect(() => {
-    getStudents(branchId, 1, 100).then(result => {
-      setStudents(result.data.map((s) => ({ id: s.id, firstName: s.firstName, lastName: s.lastName, enrollmentNo: s.enrollmentNo })));
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId]);
+  useEffect(() => {
+    listStudents(branchId || null, 200).then(result => {
+      setStudents((result.data || []).map((s) => ({
+        id: s.id,
+        firstName: s.firstName || "",
+        lastName: s.lastName || "",
+        enrollmentNo: s.enrollmentNo || undefined,
+      })));
     }).catch(() => { /* the invoice dialog surfaces this on open */ });
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId]);
 
   const createInvoice = async () => {
+    const total = Number(invoice.amount);
+    if (!invoice.studentId) {
+      toast({ title: "Pick a student", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(total) || total <= 0) {
+      toast({ title: "Enter an amount greater than zero", variant: "destructive" });
+      return;
+    }
     setCreating(true);
     try {
-      await createInvoiceFn(branchId, { studentId: invoice.studentId, description: invoice.description, amount: Number(invoice.amount), dueDate: invoice.dueDate });
+      await createInvoiceRow(branchId || null, {
+        studentId: invoice.studentId,
+        description: invoice.description.trim(),
+        totalAmount: total,
+        dueDate: invoice.dueDate || null,
+      });
       toast({ title: "Invoice created", description: `${invoice.description} raised successfully.` });
       setIsCreateDialogOpen(false);
       setInvoice({ studentId: "", description: "", amount: "", dueDate: "" });
@@ -252,6 +223,7 @@ export default function FeeCollection() {
   };
 
   const collected = !!selectedRecord && lastReceipt?.recordId === selectedRecord.id;
+  const [collecting, setCollecting] = useState(false);
 
   const totalCollected = records.reduce((sum, r) => sum + r.paidAmount, 0);
   const totalPending = records.reduce((sum, r) => sum + r.dueAmount, 0);
@@ -259,6 +231,10 @@ export default function FeeCollection() {
   const dueCount = records.filter((r) => r.status === "due").length;
 
   const exportRecords = () => {
+    if (!records.length) {
+      toast({ title: "Nothing to export", description: "No invoices for this branch yet." });
+      return;
+    }
     downloadCsv(
       "fee-collection.csv",
       records.map((r) => ({
@@ -269,7 +245,7 @@ export default function FeeCollection() {
         TotalAmount: r.totalAmount,
         PaidAmount: r.paidAmount,
         DueAmount: r.dueAmount,
-        DueDate: r.dueDate,
+        DueDate: r.dueDate ? formatDate(r.dueDate) : "",
         Status: r.status,
       })),
     );
@@ -309,16 +285,40 @@ export default function FeeCollection() {
     { label: "Collect Payment", onClick: () => handleCollectFee(record) },
     { label: "Print Statement", onClick: () => printStatement(record) },
   ];
-  const printStatement=(record:FeeRecord)=>{feeStatementPdf(record);toast({title:"PDF statement generated",description:"The print-ready statement is in Downloads."})};
+  const printStatement=(record:FeeRecord)=>{feeStatementPdf({...record,dueDate:record.dueDate?formatDate(record.dueDate):"—"});toast({title:"PDF statement generated",description:"The print-ready statement is in Downloads."})};
   const collect = async () => {
     if (!selectedRecord) return;
+    const paid = Number(amount);
+    if (!Number.isFinite(paid) || paid <= 0) {
+      toast({ title: "Enter an amount to collect", description: "The payment amount must be greater than zero.", variant: "destructive" });
+      return;
+    }
+    if (paid > selectedRecord.dueAmount) {
+      toast({
+        title: "Amount exceeds the balance",
+        description: `₹${selectedRecord.dueAmount.toLocaleString("en-IN")} is outstanding on this invoice.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    setCollecting(true);
     try {
-      const payment = await addPayment(selectedRecord.id, { amount: Number(amount), method });
-      setLastReceipt({ recordId: selectedRecord.id, receiptNo: payment.data.receiptNo });
-      toast({ title: "Payment collected", description: `Receipt ${payment.data.receiptNo} created successfully.` });
+      const payment = await recordPayment(selectedRecord.invoice, {
+        amount: paid,
+        method,
+        referenceNo: remarks.trim() || undefined,
+      });
+      const receiptNo = String((payment.data.payment as Record<string, unknown>)?.receiptNo || "");
+      setLastReceipt({ recordId: selectedRecord.id, receiptNo });
+      toast({
+        title: "Payment collected",
+        description: receiptNo ? `Receipt ${receiptNo} created successfully.` : `₹${paid.toLocaleString("en-IN")} received.`,
+      });
       await load();
     } catch (error) {
       toast({ title: "Payment failed", description: error instanceof Error ? error.message : "Please try again", variant: "destructive" });
+    } finally {
+      setCollecting(false);
     }
   };
 
@@ -381,13 +381,18 @@ export default function FeeCollection() {
           <CardTitle>Fee Records</CardTitle>
         </CardHeader>
         <CardContent>
-          <DataTable
-            data={records}
-            columns={columns}
-            selectable
-            searchPlaceholder="Search by student name, roll no, or course..."
-            actions={handleActions}
-          />
+          {loading ? (
+            <p className="py-12 text-center text-sm text-muted-foreground">Loading invoices…</p>
+          ) : (
+            <DataTable
+              data={records}
+              columns={columns}
+              selectable
+              searchPlaceholder="Search by student name, roll no, or course..."
+              actions={handleActions}
+              emptyMessage="No fee invoices for this branch yet."
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -476,7 +481,7 @@ export default function FeeCollection() {
                 <div className="flex items-center gap-3 mb-3">
                   <Avatar className="h-10 w-10">
                     <AvatarFallback className="bg-primary/10 text-primary">
-                      {selectedRecord.studentName.split(" ").map((n) => n[0]).join("")}
+                      {(selectedRecord.studentName || "?").split(" ").filter(Boolean).map((n) => n[0]).join("").slice(0, 2) || "?"}
                     </AvatarFallback>
                   </Avatar>
                   <div>
@@ -490,7 +495,7 @@ export default function FeeCollection() {
                   <div>
                     <span className="text-muted-foreground">Due Amount:</span>
                     <span className="ml-2 font-medium text-destructive">
-                      ₹{selectedRecord.dueAmount.toLocaleString()}
+                      ₹{toNumber(selectedRecord.dueAmount).toLocaleString("en-IN")}
                     </span>
                   </div>
                   <div>
@@ -542,8 +547,8 @@ export default function FeeCollection() {
               <Printer className="h-4 w-4" />
               Print Receipt
             </Button>
-            <Button onClick={collect} disabled={collected}>
-              {collected ? "Collected" : "Collect Payment"}
+            <Button onClick={collect} disabled={collected || collecting}>
+              {collected ? "Collected" : collecting ? "Collecting…" : "Collect Payment"}
             </Button>
           </DialogFooter>
         </DialogContent>

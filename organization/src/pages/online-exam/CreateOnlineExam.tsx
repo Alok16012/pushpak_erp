@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { getExams, createExam, updateExam } from "@/lib/supabase/data";
+import { getExams, createExam, updateExam, getCourses, getBatches } from "@/lib/supabase/data";
 
 type Course = { id: string; name: string; code?: string };
 type Batch = { id: string; name: string; code?: string; course?: { id: string; name: string } };
@@ -28,6 +28,8 @@ interface Exam {
   passMarks: number;
   course?: { name: string };
   batch?: { name: string };
+  /** Only present once add-online-exam-fields.sql has been run. */
+  duration?: number | null;
 }
 
 const BLANK = {
@@ -76,19 +78,23 @@ export default function CreateOnlineExam() {
       getBatches(user?.branchId),
       getExams(user?.branchId),
     ])
-      .then(([coursesData, batchesData, examsRes]) => {
+      .then(([coursesRes, batchesRes, examsRes]) => {
         if (cancelled) return;
-        setCourses(coursesData);
-        setBatches(batchesData);
-        setExams(examsRes.data);
+        setCourses(coursesRes.data as Course[]);
+        setBatches(batchesRes.data as Batch[]);
+        setExams(examsRes.data as unknown as Exam[]);
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
-        toast({ title: "Failed to load data", description: "Could not fetch courses, batches, or exams.", variant: "destructive" });
+        toast({
+          title: "Failed to load data",
+          description: error instanceof Error ? error.message : "Could not fetch courses, batches, or exams.",
+          variant: "destructive",
+        });
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, user?.organizationId, user?.branchId]);
 
   const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -135,13 +141,31 @@ export default function CreateOnlineExam() {
           examDate: examDate.toISOString(),
           maxMarks,
           passMarks,
+          description: form.description || null,
+          endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
+          duration: form.duration ? Number(form.duration) : null,
+          totalQuestions: form.totalQuestions ? Number(form.totalQuestions) : null,
+          negativeMarking: form.negativeMarking ? Number(form.negativeMarking) : null,
+          shuffleQuestions: form.shuffleQuestions,
+          shuffleOptions: form.shuffleOptions,
+          preventTabSwitch: form.preventTabSwitch,
+          fullScreen: form.fullScreen,
+          webcam: form.webcam,
+          showResult: form.showResult,
+          showAnswers: form.showAnswers,
+          allowReview: form.allowReview,
+          autoSubmit: form.autoSubmit,
         });
       const updated = await getExams(user?.branchId);
-      setExams(updated.data);
+      setExams(updated.data as unknown as Exam[]);
       setForm(BLANK);
       toast({ title: "Exam created", description: `${form.title} is scheduled and ready.` });
-    } catch {
-      toast({ title: "Failed to create exam", description: "Please try again.", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Failed to create exam",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
     }
   };
 

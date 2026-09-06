@@ -23,7 +23,7 @@ async function refreshAccessToken() {
       const body = await response.json();
       localStorage.setItem("erp-access-token", body.data.accessToken);
       return body.data.accessToken as string;
-    }).finally(() => {
+    })().finally(() => {
       refreshPromise = null;
     });
   return refreshPromise;
