@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import QRCode from "qrcode";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -93,13 +93,23 @@ export default function DocumentDesigner() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-  const [kind, setKind] = useState<DocumentKind>(() =>
-    kindFromPath(window.location.pathname, params.get("type")),
-  );
-  const [designs, setDesigns] = useState<Partial<Record<DocumentKind, DocumentDesign>>>(
-    () => loadDesigns(),
-  );
-  const design = designs[kind] ?? starterDesign(kind);
+  const location = useLocation();
+  // The URL is the only source of truth for the type. Holding it in state meant
+  // the sidebar's own links could not change it: React Router reuses this
+  // component between /certificate/template and /marksheet/template, so the
+  // state initialiser never ran again and the canvas stayed on the old type.
+  const kind = kindFromPath(location.pathname, params.get("type"));
+  const setKind = (next: DocumentKind) => setParams({ type: next }, { replace: true });
+  // Every kind is seeded up front. Falling back to `starterDesign(kind)` during
+  // render instead handed each pass a fresh set of element ids, so whatever was
+  // selected stopped existing the moment anything re-rendered.
+  const [designs, setDesigns] = useState<Record<DocumentKind, DocumentDesign>>(() => {
+    const stored = loadDesigns();
+    return Object.fromEntries(
+      KIND_ORDER.map((k) => [k, stored[k] ?? starterDesign(k)]),
+    ) as Record<DocumentKind, DocumentDesign>;
+  });
+  const design = designs[kind];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0.6);
   const [students, setStudents] = useState<StudentRow[]>([]);
@@ -114,36 +124,51 @@ export default function DocumentDesigner() {
   const meta = DOCUMENT_KINDS[kind];
   const selected = design.elements.find((e) => e.id === selectedId) ?? null;
 
-  const commit = useCallback(
-    (next: DocumentDesign, record = true) => {
-      setDesigns((prev) => {
-        const merged = { ...prev, [kind]: next };
-        if (record) {
-          const entry = history.current[kind] ?? { stack: [], index: -1 };
-          entry.stack = entry.stack.slice(0, entry.index + 1);
-          entry.stack.push(JSON.stringify(next));
-          if (entry.stack.length > 40) entry.stack.shift();
-          entry.index = entry.stack.length - 1;
-          history.current[kind] = entry;
-        }
-        return merged;
-      });
+  /** This kind's undo stack, seeded with the state before its first edit. */
+  const entryFor = useCallback(
+    (before: DocumentDesign) => {
+      const entry = history.current[kind] ?? {
+        stack: [JSON.stringify(before)],
+        index: 0,
+      };
+      history.current[kind] = entry;
+      return entry;
     },
     [kind],
   );
 
-  // A kind opened for the first time gets its starter layout, and its first
-  // history entry, so the very first undo has somewhere to land.
+  /** Make `next` the undoable step that follows `before`. */
+  const record = useCallback(
+    (next: DocumentDesign, before: DocumentDesign) => {
+      const entry = entryFor(before);
+      entry.stack = entry.stack.slice(0, entry.index + 1);
+      entry.stack.push(JSON.stringify(next));
+      if (entry.stack.length > 40) entry.stack.shift();
+      entry.index = entry.stack.length - 1;
+    },
+    [entryFor],
+  );
+
+  /** Store a design without adding a step - what undo and redo themselves do. */
+  const apply = useCallback(
+    (next: DocumentDesign) => setDesigns((prev) => ({ ...prev, [kind]: next })),
+    [kind],
+  );
+
+  const commit = useCallback(
+    (next: DocumentDesign) => {
+      record(next, design);
+      apply(next);
+    },
+    [record, apply, design],
+  );
+
+  // Only a change of type drops the selection. This used to depend on `designs`
+  // too, which deselected the element on every keystroke: the properties panel
+  // closed after a single typed character, so a name could not be edited.
   useEffect(() => {
-    if (!designs[kind]) {
-      const fresh = starterDesign(kind);
-      history.current[kind] = { stack: [JSON.stringify(fresh)], index: 0 };
-      setDesigns((prev) => ({ ...prev, [kind]: fresh }));
-    } else if (!history.current[kind]) {
-      history.current[kind] = { stack: [JSON.stringify(designs[kind])], index: 0 };
-    }
     setSelectedId(null);
-  }, [kind, designs]);
+  }, [kind]);
 
   useEffect(() => {
     const branchId = user?.branchId ?? null;
@@ -248,13 +273,11 @@ export default function DocumentDesigner() {
   };
 
   const step = (direction: -1 | 1) => {
-    const entry = history.current[kind];
-    if (!entry) return;
+    const entry = entryFor(design);
     const next = entry.index + direction;
     if (next < 0 || next >= entry.stack.length) return;
     entry.index = next;
-    commit(JSON.parse(entry.stack[next]) as DocumentDesign, false);
-    setSelectedId(null);
+    apply(JSON.parse(entry.stack[next]) as DocumentDesign);
   };
 
   const startDrag = (event: React.PointerEvent, el: DocElement) => {
@@ -264,65 +287,56 @@ export default function DocumentDesigner() {
     const startY = event.clientY;
     const originX = el.x;
     const originY = el.y;
+    const before = design;
     let latest = { x: originX, y: originY };
+    let moved = false;
     const move = (ev: PointerEvent) => {
+      moved = true;
       latest = {
         x: Math.round(originX + (ev.clientX - startX) / zoom),
         y: Math.round(originY + (ev.clientY - startY) / zoom),
       };
       // Dragging is recorded once on release; recording every pointermove would
       // fill the undo stack with a pixel of movement per entry.
-      setDesigns((prev) => {
-        const current = prev[kind];
-        if (!current) return prev;
-        return {
-          ...prev,
-          [kind]: {
-            ...current,
-            elements: current.elements.map((e) =>
-              e.id === el.id ? { ...e, ...latest } : e,
-            ),
-          },
-        };
+      apply({
+        ...before,
+        elements: before.elements.map((e) => (e.id === el.id ? { ...e, ...latest } : e)),
       });
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
-      setDesigns((prev) => {
-        const current = prev[kind];
-        if (current) {
-          const entry = history.current[kind] ?? { stack: [], index: -1 };
-          entry.stack = entry.stack.slice(0, entry.index + 1);
-          entry.stack.push(JSON.stringify(current));
-          entry.index = entry.stack.length - 1;
-          history.current[kind] = entry;
-        }
-        return prev;
-      });
+      // A plain click only selects, so it must not leave an undo step behind.
+      if (!moved) return;
+      record(
+        {
+          ...before,
+          elements: before.elements.map((e) => (e.id === el.id ? { ...e, ...latest } : e)),
+        },
+        before,
+      );
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
   };
 
-  const uploadImage = (event: React.ChangeEvent<HTMLInputElement>) => {
+  /** Shared by the add / replace / canvas-background pickers. */
+  const readImage = (
+    event: React.ChangeEvent<HTMLInputElement>,
+    then: (src: string) => void,
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      add(
-        element("image", {
-          x: 340,
-          y: 240,
-          width: 180,
-          height: 180,
-          src: String(reader.result),
-        }),
-      );
-    };
+    reader.onload = () => then(String(reader.result));
     reader.readAsDataURL(file);
     event.target.value = "";
   };
+
+  const uploadImage = (event: React.ChangeEvent<HTMLInputElement>) =>
+    readImage(event, (src) =>
+      add(element("image", { x: 340, y: 240, width: 180, height: 180, src })),
+    );
 
   const save = () => {
     saveDesigns(designs);
@@ -341,6 +355,10 @@ export default function DocumentDesigner() {
   const print = () => {
     printHtml(meta.label, designHtml(kind, design, data, qrByElement));
   };
+
+  // Text, colour, weight and alignment apply to every box that draws text, and
+  // that includes shapes - a shape's own label had no editor at all before.
+  const writes = !!selected && (selected.type === "text" || selected.type === "shape");
 
   const unfilled = usedTokens(design.elements).filter((t) => !data[t]);
 
@@ -382,10 +400,7 @@ export default function DocumentDesigner() {
             <CardContent className="space-y-3">
               <Select
                 value={kind}
-                onValueChange={(v) => {
-                  setKind(v as DocumentKind);
-                  setParams({ type: v }, { replace: true });
-                }}
+                onValueChange={(v) => setKind(v as DocumentKind)}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -687,6 +702,36 @@ export default function DocumentDesigner() {
                   onChange={(e) => commit({ ...design, background: e.target.value })}
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Background image</Label>
+                <div className="flex gap-2">
+                  <label className="flex-1">
+                    <span className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border bg-muted/40 p-2.5 text-xs font-semibold hover:bg-muted">
+                      <ImageIcon className="h-4 w-4" />
+                      {design.backgroundImage ? "Change" : "Upload"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) =>
+                        readImage(e, (backgroundImage) =>
+                          commit({ ...design, backgroundImage }),
+                        )
+                      }
+                    />
+                  </label>
+                  {design.backgroundImage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => commit({ ...design, backgroundImage: "" })}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -701,7 +746,7 @@ export default function DocumentDesigner() {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {selected.type === "text" && (
+                  {writes && (
                     <div className="space-y-2">
                       <Label>Text</Label>
                       <Textarea
@@ -710,6 +755,20 @@ export default function DocumentDesigner() {
                         onChange={(e) => update({ text: e.target.value })}
                       />
                     </div>
+                  )}
+                  {selected.type === "image" && (
+                    <label className="block">
+                      <span className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border bg-muted/40 p-3 text-xs font-semibold hover:bg-muted">
+                        <ImageIcon className="h-4 w-4" />
+                        Replace image
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => readImage(e, (src) => update({ src }))}
+                      />
+                    </label>
                   )}
                   <div className="grid grid-cols-2 gap-2">
                     <NumberField label="X" value={selected.x} onChange={(x) => update({ x })} />
@@ -735,7 +794,7 @@ export default function DocumentDesigner() {
                       onChange={(fontSize) => update({ fontSize })}
                     />
                   </div>
-                  {selected.type === "text" && (
+                  {writes && (
                     <>
                       <div className="space-y-2">
                         <Label>Colour</Label>
@@ -785,6 +844,61 @@ export default function DocumentDesigner() {
                       </div>
                     </>
                   )}
+                  {selected.type !== "qr" && (
+                    <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
+                      <div className="space-y-2">
+                        <Label>Fill</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            type="color"
+                            className="flex-1"
+                            value={
+                              selected.background === "transparent"
+                                ? "#ffffff"
+                                : selected.background
+                            }
+                            onChange={(e) => update({ background: e.target.value })}
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => update({ background: "transparent" })}
+                          >
+                            None
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <NumberField
+                          label="Border width"
+                          value={borderOf(selected.border).width}
+                          onChange={(width) =>
+                            update({ border: cssBorder(width, borderOf(selected.border).color) })
+                          }
+                        />
+                        <div className="space-y-1">
+                          <Label className="text-xs">Border colour</Label>
+                          <Input
+                            type="color"
+                            value={borderOf(selected.border).color}
+                            onChange={(e) =>
+                              update({
+                                border: cssBorder(
+                                  Math.max(1, borderOf(selected.border).width),
+                                  e.target.value,
+                                ),
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <NumberField
+                        label="Corner radius"
+                        value={selected.radius}
+                        onChange={(radius) => update({ radius })}
+                      />
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label>Opacity — {Math.round(selected.opacity * 100)}%</Label>
                     <input
@@ -802,7 +916,9 @@ export default function DocumentDesigner() {
                       variant="outline"
                       size="sm"
                       onClick={() =>
-                        update({ z: Math.max(...design.elements.map((e) => e.z)) + 1 })
+                        update({
+                          z: design.elements.reduce((top, e) => Math.max(top, e.z), 1) + 1,
+                        })
                       }
                     >
                       Bring front
@@ -867,9 +983,21 @@ function ElementBody({
         overflow: "hidden",
       }}
     >
-      {el.type === "shape" && el.text === "Text" ? "" : replaceTokens(el.text, data)}
+      {replaceTokens(el.text, data)}
     </div>
   );
+}
+
+/** The model stores a CSS border string; the panel edits a width and a colour. */
+function borderOf(value: string) {
+  const match = /^\s*(\d+(?:\.\d+)?)px\s+solid\s+(.+?)\s*$/.exec(value || "");
+  return match
+    ? { width: Number(match[1]), color: match[2] }
+    : { width: 0, color: "#334155" };
+}
+
+function cssBorder(width: number, color: string) {
+  return width > 0 ? `${Math.round(width)}px solid ${color}` : "none";
 }
 
 function ElementButton({

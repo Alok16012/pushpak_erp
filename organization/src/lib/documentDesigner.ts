@@ -62,7 +62,9 @@ export function element(type: ElementType, options: Partial<DocElement> = {}): D
     y: 100,
     width: 250,
     height: 60,
-    text: "Text",
+    // Empty, not "Text": the renderer used to strip that one string back out
+    // again, so a box the user genuinely wanted to read "Text" came out blank.
+    text: "",
     fontSize: 24,
     fontWeight: "400",
     color: "#0f172a",
@@ -141,14 +143,19 @@ export const SAMPLE_DATA: TokenData = {
 
 /** `{{ student_name }}` -> the value, leaving unknown tokens visible on purpose. */
 export function replaceTokens(text: string, data: TokenData): string {
-  return text.replace(/\{\{(.*?)\}\}/g, (match, key) => data[String(key).trim()] ?? match);
+  return String(text ?? "").replace(
+    /\{\{(.*?)\}\}/g,
+    (match, key) => data[String(key).trim()] ?? match,
+  );
 }
 
 /** Every token a design actually uses, for the "unfilled tokens" warning. */
 export function usedTokens(elements: DocElement[]): string[] {
   const found = new Set<string>();
   for (const el of elements) {
-    for (const match of el.text.matchAll(/\{\{(.*?)\}\}/g)) found.add(match[1].trim());
+    for (const match of String(el.text ?? "").matchAll(/\{\{(.*?)\}\}/g)) {
+      found.add(match[1].trim());
+    }
   }
   return [...found].sort();
 }
@@ -273,7 +280,18 @@ export function loadDesigns(): Partial<Record<DocumentKind, DocumentDesign>> {
     const raw = localStorage.getItem(DESIGN_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object") return {};
+    const all = parsed as Partial<Record<DocumentKind, DocumentDesign>>;
+    for (const design of Object.values(all)) {
+      if (!design) continue;
+      design.background ||= "#ffffff";
+      design.backgroundImage ??= "";
+      design.elements = (design.elements ?? []).map((el) => ({
+        ...element(el.type ?? "text"),
+        ...el,
+      }));
+    }
+    return all;
   } catch {
     return {};
   }
@@ -316,7 +334,9 @@ export function designHtml(
           ? `<img src="${src}" style="${box}background:#fff;padding:4px" />`
           : `<div style="${box}background:#fff;border:1px solid #cbd5e1"></div>`;
       }
-      return `<div style="${box}background:${el.background};border:${el.border};border-radius:${el.radius}px;display:flex;align-items:center;justify-content:center;font-size:${el.fontSize}px;color:${el.color}">${escape(replaceTokens(el.text === "Text" ? "" : el.text, data))}</div>`;
+      const justify =
+        el.align === "left" ? "flex-start" : el.align === "right" ? "flex-end" : "center";
+      return `<div style="${box}background:${el.background};border:${el.border};border-radius:${el.radius}px;display:flex;align-items:center;justify-content:${justify};font-size:${el.fontSize}px;font-weight:${el.fontWeight};color:${el.color};text-align:${el.align}">${escape(replaceTokens(el.text, data))}</div>`;
     })
     .join("");
   const bg = design.backgroundImage
