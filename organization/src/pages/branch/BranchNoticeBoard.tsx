@@ -40,6 +40,14 @@ interface Branch {
   name: string;
 }
 
+/**
+ * `getNotices` already treats a null branchId as "every branch sees this" - it
+ * reads `branchId.eq.<mine>,branchId.is.null`. Only the form was missing the
+ * option. Radix Select cannot hold "" as a value, so an org-wide notice is
+ * carried as this sentinel and written back as null on save.
+ */
+const ALL_BRANCHES = "__all_branches__";
+
 const today = () => new Date().toISOString().slice(0, 10);
 const inAMonth = () => new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
 
@@ -47,7 +55,7 @@ const blankDraft = (branchId: string): Notice => ({
   id: "",
   title: "",
   content: "",
-  branchId: branchId || "",
+  branchId: branchId || ALL_BRANCHES,
   batch: "",
   priority: "MEDIUM",
   publishDate: today(),
@@ -157,6 +165,7 @@ export default function BranchNoticeBoard() {
   const openEdit = (notice: Notice) => {
     setDraft({
       ...notice,
+      branchId: notice.branchId || ALL_BRANCHES,
       meetingTime: toLocalInput(notice.meetingTime),
       meetingLink: notice.meetingLink || "",
     });
@@ -177,8 +186,14 @@ export default function BranchNoticeBoard() {
       });
       return;
     }
+    if (draft.type === "BATCH" && !draft.branchId) {
+      toast({ title: "Select a branch", description: "A batch notice has to name the branch its batch belongs to.", variant: "destructive" });
+      return;
+    }
     const payload = {
       ...draft,
+      // null is what makes the notice visible to every branch on read.
+      branchId: draft.branchId === ALL_BRANCHES ? null : draft.branchId,
       meetingLink: link || null,
       meetingTime: draft.meetingTime ? new Date(draft.meetingTime).toISOString() : null,
     };
@@ -229,6 +244,12 @@ export default function BranchNoticeBoard() {
     }
   };
 
+  /** The badge used to print the raw branch uuid. */
+  const branchLabel = (branchId: string) => {
+    if (!branchId || branchId === ALL_BRANCHES) return "All branches";
+    return branches.find((b) => b.id === branchId)?.name || "Unknown branch";
+  };
+
   const NoticeCard = (notice: Notice) => (
     <Card key={notice.id} className={notice.isPinned ? "border-primary/50" : ""}>
       <CardHeader className="pb-2">
@@ -242,7 +263,7 @@ export default function BranchNoticeBoard() {
               {notice.priority}
             </Badge>
             {notice.type === "BATCH" && <Badge variant="outline">{notice.batch}</Badge>}
-            <Badge variant={notice.type === "BATCH" ? "secondary" : "outline"}>{notice.branchId}</Badge>
+            <Badge variant={notice.type === "BATCH" ? "secondary" : "outline"}>{branchLabel(notice.branchId)}</Badge>
           </div>
         </div>
       </CardHeader>
@@ -347,7 +368,9 @@ export default function BranchNoticeBoard() {
                 <Select value={draft.type} onValueChange={(val) => {
                   const next = val as NoticeType;
                   set("type", next);
-                  set("branchId", "");
+                  // A batch notice needs a real branch to list batches from;
+                  // a branch notice may legitimately target all of them.
+                  set("branchId", next === "BRANCH" ? ALL_BRANCHES : "");
                   set("batch", "");
                 }}>
                   <SelectTrigger>
@@ -367,6 +390,7 @@ export default function BranchNoticeBoard() {
                       <SelectValue placeholder="Select branch" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={ALL_BRANCHES}>All branches</SelectItem>
                       {branches.map((branch) => (
                         <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
                       ))}
