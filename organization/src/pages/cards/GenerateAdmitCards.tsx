@@ -105,31 +105,30 @@ export default function GenerateAdmitCards() {
         }
         setBatchMap(map);
 
-        // Build invoice lookup: studentId -> best status
-        const invoiceByStudent: Record<string, string> = {};
+        // Build invoice lookup: studentId -> worst outstanding state.
+        // The live FeeStatus enum is DUE | PARTIAL | PAID | VOID - there is no
+        // OVERDUE member, so "overdue" is derived from an unpaid invoice whose
+        // dueDate has passed.
+        const today = new Date().toISOString().slice(0, 10);
+        const RANK: Record<string, number> = { paid: 0, pending: 1, overdue: 2 };
+        const invoiceByStudent: Record<string, "paid" | "pending" | "overdue"> = {};
         for (const inv of invoicesRes.data || []) {
           const sid = (inv as any).studentId;
           if (!sid) continue;
-          const status = (inv as any).status || "PENDING";
-          // Best status: PAID > PARTIAL > anything else
-          if (!invoiceByStudent[sid] || status === "PAID") {
-            invoiceByStudent[sid] = status;
-          }
+          const status = String((inv as any).status || "DUE");
+          if (status === "VOID") continue;
+          const dueDate = String((inv as any).dueDate || "").slice(0, 10);
+          const state: "paid" | "pending" | "overdue" =
+            status === "PAID" ? "paid" : dueDate && dueDate < today ? "overdue" : "pending";
+          const current = invoiceByStudent[sid];
+          if (!current || RANK[state] > RANK[current]) invoiceByStudent[sid] = state;
         }
-
-        const feeMap: Record<string, "paid" | "pending" | "overdue"> = {
-          PAID: "paid",
-          PARTIAL: "pending",
-          PENDING: "pending",
-          OVERDUE: "overdue",
-        };
 
         const mapped: AdmitCardStudent[] = (studentsRes.data || []).map((s: any) => {
           const batchKey = s.batchId || "";
           const batch = map[batchKey];
           const parts = batch?.name?.split(/\s+/) || ["—", "—"];
-          const invoiceStatus = invoiceByStudent[s.id] || "PENDING";
-          const feeStatus = feeMap[invoiceStatus] || "pending";
+          const feeStatus = invoiceByStudent[s.id] || "pending";
           return {
             id: s.id,
             name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),

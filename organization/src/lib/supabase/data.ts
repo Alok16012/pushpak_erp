@@ -1,4 +1,10 @@
 import { supabase } from "./client";
+import {
+  createInvoiceRow,
+  listInvoices,
+  updateInvoiceRow,
+  type CreateInvoiceInput,
+} from "./studentFee";
 
 /* ============================
    AUTH
@@ -64,7 +70,10 @@ export async function getDashboardStats(branchId: string | null) {
   const enquiriesQuery = supabase.from("visit_enquiries").select("*", { count: "exact", head: true }).gte("createdAt", today);
   if (branchId) enquiriesQuery.eq("branchId", branchId);
 
-  const dueQuery = supabase.from("fee_invoices").select("*").in("status", ["PENDING", "PARTIAL", "OVERDUE"]);
+  // The live `FeeStatus` enum is DUE | PARTIAL | PAID | VOID. Filtering on
+  // "PENDING"/"OVERDUE" made Postgres reject this query with 22P02, so
+  // `dueRes.data` came back null and outstanding fees always read zero.
+  const dueQuery = supabase.from("fee_invoices").select("totalAmount,paidAmount").in("status", ["DUE", "PARTIAL"]);
   if (branchId) dueQuery.eq("branchId", branchId);
 
   const attendanceQuery = supabase.from("attendance_records").select("status").eq("date", today);
@@ -91,7 +100,12 @@ export async function getDashboardStats(branchId: string | null) {
     coursesQuery,
   ]);
 
-  const outstanding = (dueRes.data || []).reduce((sum, inv: any) => sum + Number(inv.netAmount || inv.totalAmount || 0), 0);
+  // Outstanding is what is still owed, not what was billed: a PARTIAL invoice
+  // counts only its unpaid remainder.
+  const outstanding = (dueRes.data || []).reduce(
+    (sum, inv: any) => sum + Math.max(0, Number(inv.totalAmount || 0) - Number(inv.paidAmount || 0)),
+    0,
+  );
 
   const attendanceTotal = (attendanceRes.data || []).length;
   const present = (attendanceRes.data || []).filter((r: any) => r.status === "PRESENT" || r.status === "LATE").length;
@@ -617,31 +631,27 @@ export async function getAllAttendanceRecords(branchId?: string) {
    FEES
    ============================ */
 
+/*
+ * These three delegate to ./studentFee, which was written against the probed
+ * live schema. The versions that used to live here could never succeed:
+ * `getInvoices` filtered on FeeStatus values the enum does not contain (22P02
+ * on every call), and `createInvoice` wrote an `invoiceNumber` column that does
+ * not exist (the column is `invoiceNo`) while silently dropping the `branchId`
+ * it was handed. They are kept as named exports so existing callers - notably
+ * GenerateAdmitCards - keep working.
+ */
+
+/** Every live invoice (DUE, PARTIAL and PAID) with payments and student embedded. */
 export async function getInvoices(branchId: string | null) {
-  let query = supabase
-    .from("fee_invoices")
-    .select("*")
-    .in("status", ["PENDING", "PARTIAL", "OVERDUE"])
-    .order("createdAt", { ascending: false });
-  if (branchId) {
-    query = query.eq("branchId", branchId);
-  }
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+  return listInvoices(branchId);
 }
 
 export async function createInvoice(branchId: string, input: Record<string, unknown>) {
-  const invoiceNumber = `INV-${Date.now().toString(36).toUpperCase()}`;
-  const { data, error } = await supabase.from("fee_invoices").insert({ ...input, invoiceNumber }).select("*").single();
-  if (error) throw new Error(error.message);
-  return { success: true, data };
+  return createInvoiceRow(branchId || null, input as unknown as CreateInvoiceInput);
 }
 
 export async function updateInvoice(id: string, _branchId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("fee_invoices").update(input).eq("id", id).select("*").single();
-  if (error) throw new Error(error.message);
-  return { success: true, data };
+  return updateInvoiceRow(id, input);
 }
 
 export async function deleteInvoice(id: string, _branchId: string) {

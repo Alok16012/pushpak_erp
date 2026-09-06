@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,11 +65,38 @@ const blankExam = {
   maxMarks: "100",
   passMarks: "40",
 };
+
+/**
+ * Nine sidebar links answer to this one screen. Until this existed they all
+ * rendered `<Tabs defaultValue="results">`, so "Create exam", "Enter marks" and
+ * "Student Documents" each dropped you on the results table with no sign that
+ * the thing you clicked was a tab away.
+ */
+type AssessmentTab = "results" | "create" | "marks" | "documents";
+const TAB_FOR_PATH: Record<string, AssessmentTab> = {
+  "/exam/create": "create",
+  "/exam/schedule": "create",
+  "/exam/assign-marks": "marks",
+  "/exam/marks-list": "results",
+  "/exam/grade-management": "results",
+  "/certificate/template": "documents",
+  "/certificate/generate": "documents",
+  "/marksheet/template": "documents",
+  "/marksheet/generate": "documents",
+};
+
 export default function AssessmentsWorkspace() {
   const { user } = useAuth();
+  const { pathname } = useLocation();
   const branchId = user?.branchId || null;
   const orgId = user?.organizationId || null;
   const { toast } = useToast();
+  const [tab, setTab] = useState<AssessmentTab>(() => TAB_FOR_PATH[pathname] ?? "results");
+  // Navigating between two links that share this screen changes the path
+  // without remounting, so the tab has to follow the path.
+  useEffect(() => {
+    setTab(TAB_FOR_PATH[pathname] ?? "results");
+  }, [pathname]);
   const [exams, setExams] = useState<Exam[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -235,7 +263,7 @@ export default function AssessmentsWorkspace() {
           </Card>
         ))}
       </div>
-      <Tabs defaultValue="results">
+      <Tabs value={tab} onValueChange={(value) => setTab(value as AssessmentTab)}>
         <TabsList>
           <TabsTrigger value="results">Results</TabsTrigger>
           <TabsTrigger value="create">Create exam</TabsTrigger>

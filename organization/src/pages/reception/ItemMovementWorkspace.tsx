@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -124,7 +125,18 @@ export default function ItemMovementWorkspace() {
   const [mode, setMode] = useState<"list" | "form">("list");
   const [stage, setStage] = useState(0);
   const [query, setQuery] = useState("");
-  const [direction, setDirection] = useState("all");
+  // /reception/receive and /reception/dispatch both render this screen. Without
+  // this they were the same link twice: an unfiltered list either way.
+  const { pathname } = useLocation();
+  const directionForPath = pathname.startsWith("/reception/receive")
+    ? "Received"
+    : pathname.startsWith("/reception/dispatch")
+      ? "Dispatched"
+      : "all";
+  const [direction, setDirection] = useState(directionForPath);
+  useEffect(() => {
+    setDirection(directionForPath);
+  }, [directionForPath]);
   const [showFilters, setShowFilters] = useState(false);
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState("all");

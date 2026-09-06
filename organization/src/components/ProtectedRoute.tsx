@@ -1,6 +1,8 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { canAccess } from "@/lib/navigation";
+import NotAuthorized from "@/pages/NotAuthorized";
 
 /**
  * Two gates: signed in at all, then authorised for this particular path.
@@ -10,9 +12,15 @@ import { useAuth } from "@/contexts/AuthContext";
  * person to the login screen and then on to their home page — losing the page
  * they actually reloaded. Wait for `loading` to settle first, and remember where
  * they were headed so the login can return them there.
+ *
+ * The second gate used to be described here but never ran: `canAccess` was
+ * exported and called by nothing, and `NotAuthorized` was routed from nowhere,
+ * so a student who typed /branch/create got the admin screen. It now renders in
+ * place — not a redirect — so the address bar still shows the path that was
+ * refused and a reload does not silently land somewhere else.
  */
 export function ProtectedRoute() {
-  const { user, loading } = useAuth();
+  const { user, view, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -24,6 +32,8 @@ export function ProtectedRoute() {
   }
 
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
+
+  if (!canAccess(view, location.pathname)) return <NotAuthorized />;
 
   return <Outlet />;
 }

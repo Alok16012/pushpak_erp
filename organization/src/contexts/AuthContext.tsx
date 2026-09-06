@@ -22,11 +22,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const view = viewForRole(user?.role);
 
   useEffect(() => {
-    const saved = localStorage.getItem("erp-user");
-    if (saved) {
-      const parsed = JSON.parse(saved) as User;
-      setUser(parsed);
+    // Restore the last known account so a reload paints the app immediately
+    // instead of a spinner, then let Supabase confirm or replace it below.
+    // Guarded: a corrupt "erp-user" (a half-written value, or the literal
+    // string "undefined") used to throw here, and an exception inside this
+    // effect white-screens the whole app rather than just failing to restore.
+    try {
+      const saved = localStorage.getItem("erp-user");
+      if (saved && saved !== "undefined") setUser(JSON.parse(saved) as User);
+    } catch {
+      localStorage.removeItem("erp-user");
     }
+
+    // `loading` gates every protected route, and it used to be cleared *only*
+    // from the auth callback below. If that callback never fired - offline, a
+    // blocked request, a misconfigured URL - the app sat on the loading spinner
+    // forever with no way out. Settle it from an explicit session read too.
+    let active = true;
+    supabase.auth
+      .getSession()
+      .catch(() => null)
+      .finally(() => { if (active) setLoading(false); });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
@@ -48,7 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => { subscription.unsubscribe(); };
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (identifier: string, password: string) => {
