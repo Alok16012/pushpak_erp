@@ -157,6 +157,9 @@ export const menuItems: MenuItem[] = [
     title: "Certificate & Marksheet",
     icon: Award,
     items: [
+      { title: "Document Designer", url: "/documents/designer", icon: LayoutTemplate },
+      { title: "Certificate Format", url: "/certificate/template", icon: LayoutTemplate },
+      { title: "Marksheet Format", url: "/marksheet/template", icon: LayoutTemplate },
       { title: "Student Documents", url: "/certificate/generate", icon: Printer },
     ],
   },
@@ -329,6 +332,7 @@ const EXTRA_PATHS: Record<View, string[]> = {
     "/exam/grade-management",
     "/certificate/template",
     "/marksheet/template",
+    "/documents/designer",
     "/marksheet/generate",
   ],
   // "/" is allowed so a student who lands on the root is redirected to their

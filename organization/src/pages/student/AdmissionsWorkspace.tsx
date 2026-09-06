@@ -12,45 +12,151 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, ArrowRight, Check, Save } from "lucide-react";
-import { getStudents, getCourses, getBatches, createStudent, getBranches } from "@/lib/supabase/data";
+import { getCourses, getBatches, createStudent, getBranches } from "@/lib/supabase/data";
 import { INDIAN_STATES } from "@/data/indianStates";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+
+/**
+ * Every key here is a real column on `students`, so the whole draft can be
+ * handed to `createStudent` after the numeric and date fields are converted.
+ */
 type Draft = {
+  // Personal
   firstName: string;
+  middleName: string;
   lastName: string;
   dateOfBirth: string;
   gender: string;
+  bloodGroup: string;
+  category: string;
+  religion: string;
+  nationality: string;
+  aadharNumber: string;
+  apaarNumber: string;
+  // Contact
   phone: string;
+  altPhone: string;
+  whatsappNumber: string;
   email: string;
   streetAddress: string;
   city: string;
+  district: string;
   state: string;
   pincode: string;
-  fatherName: string;
-  motherName: string;
+  country: string;
+  // Enrolment
   branchId: string;
+  academicYear: string;
+  admissionDate: string;
   courseId: string;
   batchId: string;
+  // Previous education
+  tenthSchoolName: string;
+  tenthBoard: string;
+  tenthYearOfPassing: string;
+  tenthPercentage: string;
+  tenthRollNo: string;
+  tenthSubjects: string;
+  twelfthSchoolName: string;
+  twelfthBoard: string;
+  twelfthYearOfPassing: string;
+  twelfthPercentage: string;
+  twelfthStream: string;
+  twelfthSubjects: string;
+  // Family
+  fatherName: string;
+  fatherOccupation: string;
+  fatherPhone: string;
+  fatherEmail: string;
+  fatherAnnualIncome: string;
+  motherName: string;
+  motherOccupation: string;
+  motherPhone: string;
+  localGuardianName: string;
+  localGuardianRelation: string;
+  localGuardianPhone: string;
+  localGuardianAddress: string;
 };
+
 const blank: Draft = {
   firstName: "",
+  middleName: "",
   lastName: "",
   dateOfBirth: "",
   gender: "",
+  bloodGroup: "",
+  category: "",
+  religion: "",
+  nationality: "Indian",
+  aadharNumber: "",
+  apaarNumber: "",
   phone: "",
+  altPhone: "",
+  whatsappNumber: "",
   email: "",
   streetAddress: "",
   city: "",
+  district: "",
   state: "",
   pincode: "",
-  fatherName: "",
-  motherName: "",
+  country: "India",
   branchId: "",
+  academicYear: "",
+  admissionDate: "",
   courseId: "",
   batchId: "",
+  tenthSchoolName: "",
+  tenthBoard: "",
+  tenthYearOfPassing: "",
+  tenthPercentage: "",
+  tenthRollNo: "",
+  tenthSubjects: "",
+  twelfthSchoolName: "",
+  twelfthBoard: "",
+  twelfthYearOfPassing: "",
+  twelfthPercentage: "",
+  twelfthStream: "",
+  twelfthSubjects: "",
+  fatherName: "",
+  fatherOccupation: "",
+  fatherPhone: "",
+  fatherEmail: "",
+  fatherAnnualIncome: "",
+  motherName: "",
+  motherOccupation: "",
+  motherPhone: "",
+  localGuardianName: "",
+  localGuardianRelation: "",
+  localGuardianPhone: "",
+  localGuardianAddress: "",
 };
-const steps = ["Student", "Family & address", "Academic", "Review"];
+
+/** NOT NULL on `students` - the insert fails with an opaque error without them. */
+const REQUIRED: Array<[keyof Draft, string]> = [
+  ["firstName", "First name"],
+  ["lastName", "Last name"],
+  ["dateOfBirth", "Date of birth"],
+  ["gender", "Gender"],
+  ["phone", "Mobile"],
+  ["streetAddress", "Street address"],
+  ["city", "City"],
+  ["state", "State"],
+  ["pincode", "Pincode"],
+  ["fatherName", "Father's name"],
+  ["motherName", "Mother's name"],
+];
+
+/** Integer columns - a blank string is rejected, so they are dropped instead. */
+const NUMERIC: Array<keyof Draft> = ["tenthYearOfPassing", "twelfthYearOfPassing"];
+
+const steps = ["Personal", "Academic", "Guardian", "Review"];
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const CATEGORIES = ["General", "OBC", "SC", "ST", "EWS"];
+const BOARDS = ["CBSE", "ICSE", "State Board", "NIOS", "Other"];
+const STREAMS = ["Science", "Commerce", "Arts", "Vocational"];
+const RELATIONS = ["Uncle", "Aunt", "Grandparent", "Sibling", "Family friend", "Other"];
+
 export default function AdmissionsWorkspace() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -75,6 +181,10 @@ export default function AdmissionsWorkspace() {
   >([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [saving, setSaving] = useState(false);
+  /** Set once the record exists, so the issued number has somewhere to be read. */
+  const [issued, setIssued] = useState<{ applicationNo: string; name: string } | null>(
+    null,
+  );
   // Branch-scoped accounts admit into their own branch and never see the picker.
   const targetBranchId = branchId || draft.branchId;
   const set = (k: keyof Draft, v: string) =>
@@ -107,28 +217,13 @@ export default function AdmissionsWorkspace() {
       .then((r) => setBatches(r.data as Array<{ id: string; name: string; courseId: string }>))
       .catch(() => setBatches([]));
   }, [targetBranchId]);
+  // Measured against what an admission actually needs. Counting all ~50 optional
+  // boxes would leave a complete application sitting at a third of the bar.
   const progress = Math.round(
-    (Object.values(draft).filter(Boolean).length / Object.keys(draft).length) *
-      100,
+    (REQUIRED.filter(([key]) => draft[key]).length / REQUIRED.length) * 100,
   );
   const submit = async () => {
-    // Every one of these is NOT NULL on `students`; letting the insert fail
-    // instead returns an opaque Postgres error the applicant cannot act on.
-    const missing = (
-      [
-        ["firstName", "First name"],
-        ["lastName", "Last name"],
-        ["dateOfBirth", "Date of birth"],
-        ["gender", "Gender"],
-        ["phone", "Mobile"],
-        ["streetAddress", "Street address"],
-        ["city", "City"],
-        ["state", "State"],
-        ["pincode", "Pincode"],
-      ] as Array<[keyof Draft, string]>
-    )
-      .filter(([key]) => !draft[key])
-      .map(([, label]) => label);
+    const missing = REQUIRED.filter(([key]) => !draft[key]).map(([, label]) => label);
     if (missing.length) {
       toast({
         title: "Admission is incomplete",
@@ -143,22 +238,33 @@ export default function AdmissionsWorkspace() {
         description: "An admission has to be filed against a branch.",
         variant: "destructive",
       });
-      setStep(2);
+      setStep(1);
       return;
     }
     setSaving(true);
     try {
+      // Empty boxes are left out rather than written as "", so a column that was
+      // never filled reads as null and the integer columns are never sent "".
+      const payload: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(draft)) {
+        if (key === "branchId" || value === "") continue;
+        payload[key] = NUMERIC.includes(key as keyof Draft) ? Number(value) : value;
+      }
       const { data } = await createStudent(targetBranchId, {
-        ...draft,
-        branchId: undefined,
-        // The column is a timestamp; a bare `yyyy-mm-dd` is rejected.
+        ...payload,
+        // The columns are timestamps; a bare `yyyy-mm-dd` is rejected.
         dateOfBirth: new Date(draft.dateOfBirth).toISOString(),
-        email: draft.email || undefined,
-        courseId: draft.courseId || undefined,
-        batchId: draft.batchId || undefined,
+        admissionDate: new Date(draft.admissionDate || Date.now()).toISOString(),
         admissionStatus: "APPROVED",
       });
-      const applicationNo = (data as { applicationNo?: string } | null)?.applicationNo;
+      const applicationNo =
+        (data as { applicationNo?: string } | null)?.applicationNo || "";
+      setIssued({
+        applicationNo,
+        name: [draft.firstName, draft.middleName, draft.lastName]
+          .filter(Boolean)
+          .join(" "),
+      });
       toast({
         title: "Admission completed",
         description: applicationNo
@@ -178,6 +284,38 @@ export default function AdmissionsWorkspace() {
       setSaving(false);
     }
   };
+
+  if (issued) {
+    return (
+      <AppLayout>
+        <Card className="mx-auto mt-10 max-w-xl text-center">
+          <CardContent className="p-8">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <Check className="h-7 w-7" />
+            </div>
+            <h1 className="mt-4 text-2xl font-semibold tracking-[-.03em]">
+              Admission completed
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {issued.name} has been admitted.
+            </p>
+            <div className="mt-6 rounded-2xl border bg-muted/30 p-6">
+              <p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">
+                Application number
+              </p>
+              <p className="mt-2 select-all text-3xl font-semibold tracking-tight">
+                {issued.applicationNo || "Not issued"}
+              </p>
+            </div>
+            <Button className="mt-6 w-full" onClick={() => setIssued(null)}>
+              Start another admission
+            </Button>
+          </CardContent>
+        </Card>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <div className="mb-5">
@@ -188,7 +326,8 @@ export default function AdmissionsWorkspace() {
           New admission
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A guided application that creates a real student record.
+          A guided application that creates a real student record. The
+          application number is issued once the form is completed.
         </p>
       </div>
       <Card className="overflow-hidden">
@@ -219,95 +358,139 @@ export default function AdmissionsWorkspace() {
           <div className="mx-auto grid max-w-3xl gap-5 sm:grid-cols-2">
             {step === 0 && (
               <>
-                <Field l="First name">
+                <Section title="Personal details" />
+                <Field l="First name" required>
                   <Input
                     value={draft.firstName}
                     onChange={(e) => set("firstName", e.target.value)}
                   />
                 </Field>
-                <Field l="Last name">
+                <Field l="Middle name">
+                  <Input
+                    value={draft.middleName}
+                    onChange={(e) => set("middleName", e.target.value)}
+                  />
+                </Field>
+                <Field l="Last name" required>
                   <Input
                     value={draft.lastName}
                     onChange={(e) => set("lastName", e.target.value)}
                   />
                 </Field>
-                <Field l="Date of birth">
+                <Field l="Date of birth" required>
                   <Input
                     type="date"
                     value={draft.dateOfBirth}
                     onChange={(e) => set("dateOfBirth", e.target.value)}
                   />
                 </Field>
-                <Field l="Gender">
-                  <Select
+                <Field l="Gender" required>
+                  <Picker
                     value={draft.gender}
-                    onValueChange={(v) => set("gender", v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="MALE">Male</SelectItem>
-                      <SelectItem value="FEMALE">Female</SelectItem>
-                      <SelectItem value="OTHER">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    onChange={(v) => set("gender", v)}
+                    options={[
+                      ["MALE", "Male"],
+                      ["FEMALE", "Female"],
+                      ["OTHER", "Other"],
+                    ]}
+                  />
                 </Field>
-                <Field l="Mobile">
+                <Field l="Blood group">
+                  <Picker
+                    value={draft.bloodGroup}
+                    onChange={(v) => set("bloodGroup", v)}
+                    options={BLOOD_GROUPS.map((b) => [b, b])}
+                  />
+                </Field>
+                <Field l="Category">
+                  <Picker
+                    value={draft.category}
+                    onChange={(v) => set("category", v)}
+                    options={CATEGORIES.map((c) => [c, c])}
+                  />
+                </Field>
+                <Field l="Religion">
+                  <Input
+                    value={draft.religion}
+                    onChange={(e) => set("religion", e.target.value)}
+                  />
+                </Field>
+                <Field l="Nationality">
+                  <Input
+                    value={draft.nationality}
+                    onChange={(e) => set("nationality", e.target.value)}
+                  />
+                </Field>
+                <Field l="Aadhaar number">
+                  <Input
+                    inputMode="numeric"
+                    maxLength={12}
+                    value={draft.aadharNumber}
+                    onChange={(e) =>
+                      set("aadharNumber", e.target.value.replace(/\D/g, ""))
+                    }
+                  />
+                </Field>
+                <Field l="APAAR / ABC ID">
+                  <Input
+                    value={draft.apaarNumber}
+                    onChange={(e) => set("apaarNumber", e.target.value)}
+                  />
+                </Field>
+
+                <Section title="Contact" />
+                <Field l="Mobile" required>
                   <Input
                     value={draft.phone}
                     onChange={(e) => set("phone", e.target.value)}
                   />
                 </Field>
+                <Field l="Alternate mobile">
+                  <Input
+                    value={draft.altPhone}
+                    onChange={(e) => set("altPhone", e.target.value)}
+                  />
+                </Field>
+                <Field l="WhatsApp number">
+                  <Input
+                    value={draft.whatsappNumber}
+                    onChange={(e) => set("whatsappNumber", e.target.value)}
+                  />
+                </Field>
                 <Field l="Email">
                   <Input
+                    type="email"
                     value={draft.email}
                     onChange={(e) => set("email", e.target.value)}
                   />
                 </Field>
-              </>
-            )}
-            {step === 1 && (
-              <>
-                <Field l="Father / guardian">
-                  <Input
-                    value={draft.fatherName}
-                    onChange={(e) => set("fatherName", e.target.value)}
-                  />
-                </Field>
-                <Field l="Mother / guardian">
-                  <Input
-                    value={draft.motherName}
-                    onChange={(e) => set("motherName", e.target.value)}
-                  />
-                </Field>
-                <Field l="Street address">
+                <Field l="Street address" required wide>
                   <Input
                     value={draft.streetAddress}
                     onChange={(e) => set("streetAddress", e.target.value)}
                   />
                 </Field>
-                <Field l="City">
+                <Field l="City" required>
                   <Input
                     value={draft.city}
                     onChange={(e) => set("city", e.target.value)}
                   />
                 </Field>
-                <Field l="State">
-                  <Select value={draft.state} onValueChange={(v) => set("state", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select state" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {INDIAN_STATES.map((state) => (
-                        <SelectItem key={state} value={state}>
-                          {state}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <Field l="District">
+                  <Input
+                    value={draft.district}
+                    onChange={(e) => set("district", e.target.value)}
+                  />
                 </Field>
-                <Field l="Pincode">
+                <Field l="State" required>
+                  <Picker
+                    value={draft.state}
+                    onChange={(v) => set("state", v)}
+                    options={INDIAN_STATES.map((s) => [s, s])}
+                    placeholder="Select state"
+                  />
+                </Field>
+                <Field l="Pincode" required>
                   <Input
                     inputMode="numeric"
                     maxLength={6}
@@ -315,93 +498,296 @@ export default function AdmissionsWorkspace() {
                     onChange={(e) => set("pincode", e.target.value.replace(/\D/g, ""))}
                   />
                 </Field>
+                <Field l="Country">
+                  <Input
+                    value={draft.country}
+                    onChange={(e) => set("country", e.target.value)}
+                  />
+                </Field>
+              </>
+            )}
+            {step === 1 && (
+              <>
+                <Section title="Enrolment" />
+                {!branchId && (
+                  <Field l="Branch">
+                    <Picker
+                      value={draft.branchId}
+                      onChange={(v) => {
+                        set("branchId", v);
+                        set("batchId", "");
+                      }}
+                      options={branches.map((b) => [b.id, b.name])}
+                      placeholder="Choose branch"
+                    />
+                  </Field>
+                )}
+                <Field l="Academic year">
+                  <Input
+                    placeholder="2026-27"
+                    value={draft.academicYear}
+                    onChange={(e) => set("academicYear", e.target.value)}
+                  />
+                </Field>
+                <Field l="Admission date">
+                  <Input
+                    type="date"
+                    value={draft.admissionDate}
+                    onChange={(e) => set("admissionDate", e.target.value)}
+                  />
+                </Field>
+                <Field l="Course">
+                  <Picker
+                    value={draft.courseId}
+                    onChange={(v) => {
+                      set("courseId", v);
+                      set("batchId", "");
+                    }}
+                    options={courses.map((c) => [c.id, c.name])}
+                    placeholder="Choose course"
+                  />
+                </Field>
+                <Field l="Batch">
+                  <Picker
+                    value={draft.batchId}
+                    onChange={(v) => set("batchId", v)}
+                    disabled={!targetBranchId}
+                    options={batches
+                      .filter((b) => !draft.courseId || b.courseId === draft.courseId)
+                      .map((b) => [b.id, b.name])}
+                    placeholder={targetBranchId ? "Choose batch" : "Choose a branch first"}
+                  />
+                </Field>
+
+                <Section title="Class 10" />
+                <Field l="School name" wide>
+                  <Input
+                    value={draft.tenthSchoolName}
+                    onChange={(e) => set("tenthSchoolName", e.target.value)}
+                  />
+                </Field>
+                <Field l="Board">
+                  <Picker
+                    value={draft.tenthBoard}
+                    onChange={(v) => set("tenthBoard", v)}
+                    options={BOARDS.map((b) => [b, b])}
+                  />
+                </Field>
+                <Field l="Year of passing">
+                  <Input
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={draft.tenthYearOfPassing}
+                    onChange={(e) =>
+                      set("tenthYearOfPassing", e.target.value.replace(/\D/g, ""))
+                    }
+                  />
+                </Field>
+                <Field l="Percentage / CGPA">
+                  <Input
+                    value={draft.tenthPercentage}
+                    onChange={(e) => set("tenthPercentage", e.target.value)}
+                  />
+                </Field>
+                <Field l="Roll number">
+                  <Input
+                    value={draft.tenthRollNo}
+                    onChange={(e) => set("tenthRollNo", e.target.value)}
+                  />
+                </Field>
+                <Field l="Subjects" wide>
+                  <Input
+                    placeholder="Comma separated"
+                    value={draft.tenthSubjects}
+                    onChange={(e) => set("tenthSubjects", e.target.value)}
+                  />
+                </Field>
+
+                <Section
+                  title="Class 12"
+                  hint="Leave blank if the applicant has not taken class 12."
+                />
+                <Field l="School name" wide>
+                  <Input
+                    value={draft.twelfthSchoolName}
+                    onChange={(e) => set("twelfthSchoolName", e.target.value)}
+                  />
+                </Field>
+                <Field l="Board">
+                  <Picker
+                    value={draft.twelfthBoard}
+                    onChange={(v) => set("twelfthBoard", v)}
+                    options={BOARDS.map((b) => [b, b])}
+                  />
+                </Field>
+                <Field l="Year of passing">
+                  <Input
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={draft.twelfthYearOfPassing}
+                    onChange={(e) =>
+                      set("twelfthYearOfPassing", e.target.value.replace(/\D/g, ""))
+                    }
+                  />
+                </Field>
+                <Field l="Percentage / CGPA">
+                  <Input
+                    value={draft.twelfthPercentage}
+                    onChange={(e) => set("twelfthPercentage", e.target.value)}
+                  />
+                </Field>
+                <Field l="Stream">
+                  <Picker
+                    value={draft.twelfthStream}
+                    onChange={(v) => set("twelfthStream", v)}
+                    options={STREAMS.map((s) => [s, s])}
+                  />
+                </Field>
+                <Field l="Subjects" wide>
+                  <Input
+                    placeholder="Comma separated"
+                    value={draft.twelfthSubjects}
+                    onChange={(e) => set("twelfthSubjects", e.target.value)}
+                  />
+                </Field>
               </>
             )}
             {step === 2 && (
               <>
-                {!branchId && (
-                  <Field l="Branch">
-                    <Select
-                      value={draft.branchId}
-                      onValueChange={(v) => {
-                        set("branchId", v);
-                        set("batchId", "");
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose branch" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {branches.map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                )}
-                <Field l="Course">
-                  <Select
-                    value={draft.courseId}
-                    onValueChange={(v) => {
-                      set("courseId", v);
-                      set("batchId", "");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose course" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {courses.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <Section title="Father" />
+                <Field l="Full name" required>
+                  <Input
+                    value={draft.fatherName}
+                    onChange={(e) => set("fatherName", e.target.value)}
+                  />
                 </Field>
-                <Field l="Batch">
-                  <Select
-                    value={draft.batchId}
-                    disabled={!targetBranchId}
-                    onValueChange={(v) => set("batchId", v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={targetBranchId ? "Choose batch" : "Choose a branch first"}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {batches
-                        .filter(
-                          (b) =>
-                            !draft.courseId || b.courseId === draft.courseId,
-                        )
-                        .map((b) => (
-                          <SelectItem key={b.id} value={b.id}>
-                            {b.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                <Field l="Occupation">
+                  <Input
+                    value={draft.fatherOccupation}
+                    onChange={(e) => set("fatherOccupation", e.target.value)}
+                  />
+                </Field>
+                <Field l="Mobile">
+                  <Input
+                    value={draft.fatherPhone}
+                    onChange={(e) => set("fatherPhone", e.target.value)}
+                  />
+                </Field>
+                <Field l="Email">
+                  <Input
+                    type="email"
+                    value={draft.fatherEmail}
+                    onChange={(e) => set("fatherEmail", e.target.value)}
+                  />
+                </Field>
+                <Field l="Annual income" wide>
+                  <Input
+                    placeholder="e.g. 6,00,000"
+                    value={draft.fatherAnnualIncome}
+                    onChange={(e) => set("fatherAnnualIncome", e.target.value)}
+                  />
+                </Field>
+
+                <Section title="Mother" />
+                <Field l="Full name" required>
+                  <Input
+                    value={draft.motherName}
+                    onChange={(e) => set("motherName", e.target.value)}
+                  />
+                </Field>
+                <Field l="Occupation">
+                  <Input
+                    value={draft.motherOccupation}
+                    onChange={(e) => set("motherOccupation", e.target.value)}
+                  />
+                </Field>
+                <Field l="Mobile" wide>
+                  <Input
+                    value={draft.motherPhone}
+                    onChange={(e) => set("motherPhone", e.target.value)}
+                  />
+                </Field>
+
+                <Section
+                  title="Local guardian"
+                  hint="Only needed when the student does not live with a parent."
+                />
+                <Field l="Full name">
+                  <Input
+                    value={draft.localGuardianName}
+                    onChange={(e) => set("localGuardianName", e.target.value)}
+                  />
+                </Field>
+                <Field l="Relationship">
+                  <Picker
+                    value={draft.localGuardianRelation}
+                    onChange={(v) => set("localGuardianRelation", v)}
+                    options={RELATIONS.map((r) => [r, r])}
+                  />
+                </Field>
+                <Field l="Mobile">
+                  <Input
+                    value={draft.localGuardianPhone}
+                    onChange={(e) => set("localGuardianPhone", e.target.value)}
+                  />
+                </Field>
+                <Field l="Address">
+                  <Input
+                    value={draft.localGuardianAddress}
+                    onChange={(e) => set("localGuardianAddress", e.target.value)}
+                  />
                 </Field>
               </>
             )}
             {step === 3 && (
-              <div className="sm:col-span-2 rounded-2xl border bg-muted/30 p-5">
-                <p className="text-xl font-semibold">
-                  {draft.firstName || "Unnamed"} {draft.lastName}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {draft.phone || "No phone"} ·{" "}
-                  {courses.find((c) => c.id === draft.courseId)?.name ||
-                    "Course not assigned"}
-                </p>
-                <p className="mt-4 text-sm">
-                  Submitting creates an approved student record and preserves an
-                  audit event.
-                </p>
+              <div className="sm:col-span-2 space-y-4">
+                <div className="rounded-2xl border bg-muted/30 p-5">
+                  <p className="text-xl font-semibold">
+                    {[draft.firstName, draft.middleName, draft.lastName]
+                      .filter(Boolean)
+                      .join(" ") || "Unnamed"}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {draft.phone || "No phone"} ·{" "}
+                    {courses.find((c) => c.id === draft.courseId)?.name ||
+                      "Course not assigned"}
+                  </p>
+                  <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+                    <Row k="Date of birth" v={draft.dateOfBirth} />
+                    <Row k="Gender" v={draft.gender} />
+                    <Row
+                      k="Address"
+                      v={[draft.streetAddress, draft.city, draft.state, draft.pincode]
+                        .filter(Boolean)
+                        .join(", ")}
+                    />
+                    <Row k="Father" v={draft.fatherName} />
+                    <Row k="Mother" v={draft.motherName} />
+                    <Row
+                      k="Class 10"
+                      v={[draft.tenthBoard, draft.tenthPercentage].filter(Boolean).join(" · ")}
+                    />
+                    <Row
+                      k="Class 12"
+                      v={[draft.twelfthBoard, draft.twelfthPercentage]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    />
+                  </dl>
+                </div>
+                {(() => {
+                  const missing = REQUIRED.filter(([k]) => !draft[k]).map(([, l]) => l);
+                  return missing.length ? (
+                    <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm">
+                      <strong>Still needed:</strong> {missing.join(", ")}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border p-4 text-sm">
+                      Completing the admission creates an approved student record
+                      and issues the application number.
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -426,7 +812,7 @@ export default function AdmissionsWorkspace() {
                 Back
               </Button>
             )}
-            {step < 3 ? (
+            {step < steps.length - 1 ? (
               <Button onClick={() => setStep((s) => s + 1)}>
                 Continue
                 <ArrowRight />
@@ -443,11 +829,77 @@ export default function AdmissionsWorkspace() {
     </AppLayout>
   );
 }
-function Field({ l, children }: { l: string; children: React.ReactNode }) {
+
+function Section({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="space-y-2">
-      <Label>{l}</Label>
+    <div className="sm:col-span-2 border-b pb-2 pt-2 first:pt-0">
+      <h2 className="text-sm font-semibold uppercase tracking-[.12em] text-muted-foreground">
+        {title}
+      </h2>
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function Field({
+  l,
+  required,
+  wide,
+  children,
+}: {
+  l: string;
+  required?: boolean;
+  wide?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`space-y-2 ${wide ? "sm:col-span-2" : ""}`}>
+      <Label>
+        {l}
+        {required && <span className="ml-1 text-destructive">*</span>}
+      </Label>
       {children}
+    </div>
+  );
+}
+
+/** Radix rejects "" as an item value, so an empty list renders no items at all. */
+function Picker({
+  value,
+  onChange,
+  options,
+  placeholder = "Select",
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<[string, string]>;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options
+          .filter(([v]) => v)
+          .map(([v, label]) => (
+            <SelectItem key={v} value={v}>
+              {label}
+            </SelectItem>
+          ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between gap-3 border-b border-dashed py-1">
+      <dt className="text-muted-foreground">{k}</dt>
+      <dd className="text-right font-medium">{v || "—"}</dd>
     </div>
   );
 }

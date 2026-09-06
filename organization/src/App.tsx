@@ -76,6 +76,7 @@ import LiveClassSetup from "./pages/live-class/LiveClassSetup";
 import IDCardTemplate from "./pages/cards/IDCardTemplate";
 import GenerateIDCards from "./pages/cards/GenerateIDCards";
 import AdmitCardTemplate from "./pages/cards/AdmitCardTemplate";
+import DocumentDesigner from "./pages/documents/DocumentDesigner";
 import GenerateAdmitCards from "./pages/cards/GenerateAdmitCards";
 
 // Settings
@@ -203,14 +204,15 @@ const App = () => (
           <Route path="/cards/id-template" element={<IDCardTemplate />} />
           <Route path="/cards/generate-id" element={<GenerateIDCards />} />
           <Route path="/cards/admit-template" element={<AdmitCardTemplate />} />
+          <Route path="/documents/designer" element={<DocumentDesigner />} />
           <Route path="/cards/generate-admit" element={<GenerateAdmitCards />} />
           
           {/* Certificates */}
-          <Route path="/certificate/template" element={<AssessmentsWorkspace />} />
+          <Route path="/certificate/template" element={<DocumentDesigner />} />
           <Route path="/certificate/generate" element={<AssessmentsWorkspace />} />
           
           {/* Marksheets */}
-          <Route path="/marksheet/template" element={<AssessmentsWorkspace />} />
+          <Route path="/marksheet/template" element={<DocumentDesigner />} />
           <Route path="/marksheet/generate" element={<AssessmentsWorkspace />} />
           
           {/* Settings */}
