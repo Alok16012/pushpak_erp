@@ -1,4 +1,4 @@
-import { supabase } from "./client";
+import { supabase, supabaseUrl } from "./client";
 import {
   createInvoiceRow,
   listInvoices,
@@ -1284,6 +1284,27 @@ export async function updateBranch(id: string, organizationId: string, input: Re
   return { success: true, data };
 }
 
+const FUNCTION_NOT_DEPLOYED =
+  'The "create-branch-user" function has not been deployed to this Supabase project, so there was nothing to mint the login. ' +
+  "Run `supabase functions deploy create-branch-user`; until then the account has to be added under Authentication in the Supabase dashboard.";
+
+/**
+ * Separates "never deployed" from "deployed but unreachable".
+ *
+ * Sent with no headers and no body on purpose: that makes it a simple request,
+ * so the browser skips the preflight that hides the real status, and the
+ * gateway's `Access-Control-Allow-Origin: *` lets us read what came back.
+ */
+async function describeUnreachableFunction(): Promise<string> {
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/create-branch-user`, { method: "POST" });
+    if (res.status === 404) return FUNCTION_NOT_DEPLOYED;
+  } catch {
+    // no network at all, or the project is unreachable - say so below
+  }
+  return "Could not reach the create-branch-user function. Check the connection and that the Supabase project is running, then add the login again.";
+}
+
 /**
  * Creates the branch's login. The account itself is minted by the
  * create-branch-user edge function, which holds the service-role key -
@@ -1299,9 +1320,19 @@ export async function createBranchLogin(input: {
 }) {
   const { data, error } = await supabase.functions.invoke("create-branch-user", { body: input });
   if (error) {
+    const response = (error as { context?: Response }).context;
     // the function replies with { error } on 4xx, which is more useful than "non-2xx"
-    const detail = await (error as { context?: Response }).context?.json?.().catch(() => null);
-    throw new Error(detail?.error || error.message);
+    const detail = await response?.json?.().catch(() => null);
+    if (detail?.error) throw new Error(detail.error);
+    if (response?.status === 404) throw new Error(FUNCTION_NOT_DEPLOYED);
+    // A function that was never deployed is invisible from the browser. Its
+    // preflight 404 comes back allowing only `authorization, x-client-info,
+    // apikey`, so the POST - which carries a content-type - is blocked before
+    // it is ever sent, and supabase-js can say nothing more useful than
+    // "Failed to send a request to the Edge Function". Ask the gateway
+    // ourselves rather than passing that on.
+    if (error.name === "FunctionsFetchError") throw new Error(await describeUnreachableFunction());
+    throw new Error(error.message);
   }
   if (data?.error) throw new Error(data.error);
   return { success: true, data } as { success: true; data: { loginEmail: string; username: string } };

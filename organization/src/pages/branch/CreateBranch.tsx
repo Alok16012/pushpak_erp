@@ -186,7 +186,7 @@ export default function CreateBranch() {
       } catch (error) {
         toast({
           title: "Branch created, login was not",
-          description: `${error instanceof Error ? error.message : "Could not create the branch login"}. Add it from Supabase Authentication.`,
+          description: error instanceof Error ? error.message : "Could not create the branch login.",
           variant: "destructive",
         });
       }
