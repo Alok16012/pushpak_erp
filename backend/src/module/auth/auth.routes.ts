@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
+import { Prisma } from "../../../generated/prisma/client/client";
 import { prisma } from "../../db";
 import { config } from "../../config";
 import { asyncHandler } from "../../utils/async.utils";
@@ -19,7 +20,7 @@ router.post("/bootstrap", asyncHandler(async (req, res) => {
   if (await prisma.user.count()) return res.status(409).json({ success: false, message: "System has already been initialized" });
   const input = z.object({ organizationName: z.string().min(2), adminName: z.string().min(2), email: z.string().email(), phone: z.string().min(10), branchName: z.string().min(2), city: z.string().min(2), state: z.string().min(2), pincode: z.string().min(6) }).parse(req.body);
   const passwordHash = await bcrypt.hash("admin123", 12);
-  const result = await prisma.$transaction(async tx => {
+  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const owner = await tx.user.create({ data: { userType: "ORGANIZATION", role: "ORGANIZATION_ADMIN", name: input.adminName, email: input.email, phone: input.phone, username: "admin", password: passwordHash } });
     const org = await tx.organization.create({ data: { userId: owner.id, name: input.organizationName, code: `ORG-${Date.now()}`, email: input.email, phone: input.phone, streetAddress: "To be updated", city: input.city, state: input.state, district: input.city, pincode: input.pincode } });
     const branchUser = await tx.user.create({ data: { userType: "BRANCH", role: "BRANCH_ADMIN", name: `${input.branchName} Admin`, email: `branch.${input.email}`, username: `branch.${input.email}`, password: passwordHash } });

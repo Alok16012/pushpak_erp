@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client"
-  output   = "../generated/prisma"
+  output   = "../generated/prisma/client"
 }
 
 datasource db {
@@ -499,8 +499,15 @@ model Course {
   name            String
   code            String   @unique
   description     String?  @db.Text
-  durationMonths  Int
+  category        CourseCategory
+  durationValue   Int
+  durationUnit    DurationUnit
+  durationMonths  Int?
+  baseFee         Float
+  registrationFee Float     @default(0)
+  examFee         Float     @default(0)
   isActive        Boolean  @default(true)
+  deletedAt       DateTime?
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -509,6 +516,7 @@ model Course {
   branchCourses   BranchCourse[]
   batches         Batch[]
   students        Student[]
+  exams           Exam[]
 
   @@index([organizationId])
   @@index([code])
@@ -540,6 +548,7 @@ model Batch {
   batchTimings    BatchTiming[]
   students        Student[]
   examAssignments ExamAssignment[]
+  exams           Exam[]
 
   @@index([branchId])
   @@index([courseId])
@@ -554,12 +563,12 @@ model BatchTiming {
   batch           Batch    @relation(fields: [batchId], references: [id])
 
   // Timing Info
-  dayOfWeek       Int      // 0=Sunday, 1=Monday, etc.
+  day             String   // MONDAY, TUESDAY, ...
   startTime       String   // HH:mm format
   endTime         String   // HH:mm format
   subject         String?
-  teacherName     String?
-  roomNumber      String?
+  instructor      String?
+  roomNo          String?
   isActive        Boolean  @default(true)
 
   createdAt       DateTime @default(now())
@@ -635,10 +644,6 @@ model Student {
   // Academic
   admissionDate   DateTime @default(now())
   academicYear    String?
-  courseId        String?
-  course          Course?  @relation(fields: [courseId], references: [id])
-  batchId         String?
-  batch           Batch?   @relation(fields: [batchId], references: [id])
 
   // Previous Education - 10th Standard
   tenthSchoolName    String?
@@ -716,14 +721,17 @@ model FeeInvoice {
   // Relations
   studentId       String
   student         Student  @relation(fields: [studentId], references: [id])
+  branchId        String
 
   // Invoice Info
-  invoiceNumber   String   @unique
-  totalAmount     Float
+  invoiceNo       String   @unique
+  invoiceNumber   String?  @unique
+  amount          Float
   discountAmount  Float    @default(0)
-  netAmount       Float
+  netAmount       Float    @default(0)
+  totalAmount     Float    @default(0)
   dueDate         DateTime
-  status          InvoiceStatus @default(PENDING)
+  status          InvoiceStatus @default(DUE)
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -733,6 +741,8 @@ model FeeInvoice {
   payments        FeePayment[]
 
   @@index([studentId])
+  @@index([branchId])
+  @@index([status])
   @@map("fee_invoices")
 }
 
@@ -766,9 +776,11 @@ model FeePayment {
   paymentMethod   PaymentMethod
   transactionId   String?   @unique
   referenceNumber String?
+  receiptNo       String?
   notes           String?   @db.Text
   paidAt          DateTime  @default(now())
-  receivedBy      String?
+  receivedById    String?
+  reversedAt      DateTime?
 
   createdAt       DateTime @default(now())
 
@@ -787,6 +799,7 @@ model AttendanceRecord {
   // Relations
   studentId       String
   student         Student  @relation(fields: [studentId], references: [id])
+  branchId        String
 
   // Attendance Info
   date            DateTime @db.Date
@@ -794,12 +807,15 @@ model AttendanceRecord {
   checkInTime     String?
   checkOutTime    String?
   remarks         String?  @db.Text
+  markedById      String?
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@unique([studentId, date])
   @@index([studentId])
+  @@index([branchId])
+  @@index([date])
   @@map("attendance_records")
 }
 
@@ -813,14 +829,20 @@ model Exam {
   branchId        String
   branch          Branch   @relation(fields: [branchId], references: [id])
 
+  courseId        String
+  course          Course   @relation(fields: [courseId], references: [id])
+  batchId         String?
+  batch           Batch?   @relation(fields: [batchId], references: [id])
+
   // Exam Info
   name            String
   examType        ExamType
   subject         String?
-  totalMarks      Float
-  passingMarks    Float
+  maxMarks        Int      @default(100)
+  passMarks       Int      @default(40)
   examDate        DateTime
   durationMinutes Int?
+  status          ExamStatus @default(MARKS_ENTRY)
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -830,6 +852,8 @@ model Exam {
   results         ExamResult[]
 
   @@index([branchId])
+  @@index([courseId])
+  @@index([examDate])
   @@map("exams")
 }
 
@@ -855,7 +879,7 @@ model ExamResult {
   studentId       String
   student         Student  @relation(fields: [studentId], references: [id])
 
-  marksObtained   Float?
+  marks           Float?
   grade           String?
   remarks         String?  @db.Text
 
@@ -919,10 +943,12 @@ enum TransactionStatus {
 }
 
 enum PaymentMethod {
+  CASH
   UPI
   CARD
+  BANK_TRANSFER
+  CHEQUE
   NET_BANKING
-  CASH
 }
 
 enum NoticeType {
@@ -995,6 +1021,7 @@ enum CourierService {
 }
 
 enum InvoiceStatus {
+  DUE
   PENDING
   PAID
   PARTIAL
@@ -1008,6 +1035,7 @@ enum AttendanceStatus {
   LATE
   HALF_DAY
   LEAVE
+  EXCUSED
 }
 
 enum ExamType {
@@ -1016,4 +1044,34 @@ enum ExamType {
   FINAL
   PRACTICAL
   ONLINE
+}
+
+enum CourseCategory {
+  COMPUTER
+  OTHER
+  VOCATIONAL
+  ACADEMIC
+  LANGUAGE
+  PROFESSIONAL
+  SKILL_DEVELOPMENT
+}
+
+enum DurationUnit {
+  DAYS
+  WEEKS
+  MONTHS
+  YEARS
+}
+
+enum ExamStatus {
+  MARKS_ENTRY
+  PUBLISHED
+}
+
+enum AdmissionStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_PAYMENT
+  APPROVED
+  REJECTED
 }

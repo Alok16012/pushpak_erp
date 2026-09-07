@@ -7,111 +7,127 @@ import { ThemeProvider } from "next-themes";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { viewForRole } from "@/lib/roles";
-import Login from "./pages/Login";
+import { lazy, Suspense } from "react";
 
 // Pages
-import Index from "./pages/Index";
-import NotFound from "./pages/NotFound";
+import Login from "./pages/Login";
+const Index = lazy(() => import("./pages/Index"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Franchise / branch
-import FranchiseDashboard from "./pages/franchise/FranchiseDashboard";
+const FranchiseDashboard = lazy(() => import("./pages/franchise/FranchiseDashboard"));
 
 // Student portal
-import StudentDashboard from "./pages/portal/StudentDashboard";
-import MyAttendance from "./pages/portal/MyAttendance";
-import MyFees from "./pages/portal/MyFees";
-import MyResults from "./pages/portal/MyResults";
-import MyClasses from "./pages/portal/MyClasses";
-import MyDocuments from "./pages/portal/MyDocuments";
-import MyProfile from "./pages/portal/MyProfile";
+const StudentDashboard = lazy(() => import("./pages/portal/StudentDashboard"));
+const MyAttendance = lazy(() => import("./pages/portal/MyAttendance"));
+const MyFees = lazy(() => import("./pages/portal/MyFees"));
+const MyResults = lazy(() => import("./pages/portal/MyResults"));
+const MyClasses = lazy(() => import("./pages/portal/MyClasses"));
+const MyDocuments = lazy(() => import("./pages/portal/MyDocuments"));
+const MyProfile = lazy(() => import("./pages/portal/MyProfile"));
 
 // Reception
-import EnquiriesWorkspace from "./pages/reception/EnquiriesWorkspace";
-import ItemMovementWorkspace from "./pages/reception/ItemMovementWorkspace";
+const EnquiriesWorkspace = lazy(() => import("./pages/reception/EnquiriesWorkspace"));
+const ItemMovementWorkspace = lazy(() => import("./pages/reception/ItemMovementWorkspace"));
 
 // Branch Management
-import CreateBranch from "./pages/branch/CreateBranch";
-import ViewBranch from "./pages/branch/ViewBranch";
-import WalletRecharge from "./pages/branch/WalletRecharge";
-import BranchTransactions from "./pages/branch/BranchTransactions";
-import BranchNoticeBoard from "./pages/branch/BranchNoticeBoard";
-import BranchWebsiteSettings from "./pages/branch/BranchWebsiteSettings";
+const CreateBranch = lazy(() => import("./pages/branch/CreateBranch"));
+const ViewBranch = lazy(() => import("./pages/branch/ViewBranch"));
+const WalletRecharge = lazy(() => import("./pages/branch/WalletRecharge"));
+const BranchTransactions = lazy(() => import("./pages/branch/BranchTransactions"));
+const BranchNoticeBoard = lazy(() => import("./pages/branch/BranchNoticeBoard"));
+const BranchWebsiteSettings = lazy(() => import("./pages/branch/BranchWebsiteSettings"));
 
 // Enquiry Management
-import BranchEnquiry from "./pages/enquiry/BranchEnquiry";
-import OnlineBranchEnquiry from "./pages/enquiry/OnlineBranchEnquiry";
-import OnlineStudentEnquiry from "./pages/enquiry/OnlineStudentEnquiry";
+const BranchEnquiry = lazy(() => import("./pages/enquiry/BranchEnquiry"));
+const OnlineBranchEnquiry = lazy(() => import("./pages/enquiry/OnlineBranchEnquiry"));
+const OnlineStudentEnquiry = lazy(() => import("./pages/enquiry/OnlineStudentEnquiry"));
 
 // Student Management
-import ViewStudents from "./pages/student/ViewStudents";
-import OnlineAdmissionList from "./pages/student/OnlineAdmissionList";
-import AdmissionsWorkspace from "./pages/student/AdmissionsWorkspace";
+const ViewStudents = lazy(() => import("./pages/student/ViewStudents"));
+const OnlineAdmissionList = lazy(() => import("./pages/student/OnlineAdmissionList"));
+const AdmissionsWorkspace = lazy(() => import("./pages/student/AdmissionsWorkspace"));
 
 // Fee Management
-import FeeCollection from "./pages/fee/FeeCollection";
-import FeeTypes from "./pages/fee/FeeTypes";
-import FeeGroups from "./pages/fee/FeeGroups";
-import FeeAllocation from "./pages/fee/FeeAllocation";
-import DueFeeCollection from "./pages/fee/DueFeeCollection";
+const FeeCollection = lazy(() => import("./pages/fee/FeeCollection"));
+const FeeTypes = lazy(() => import("./pages/fee/FeeTypes"));
+const FeeGroups = lazy(() => import("./pages/fee/FeeGroups"));
+const FeeAllocation = lazy(() => import("./pages/fee/FeeAllocation"));
+const DueFeeCollection = lazy(() => import("./pages/fee/DueFeeCollection"));
 
 // Course Management
-import BatchTiming from "./pages/course/BatchTiming";
-import AssignCourseToBatch from "./pages/course/AssignCourseToBatch";
-import AcademicsWorkspace from "./pages/course/AcademicsWorkspace";
+const BatchTiming = lazy(() => import("./pages/course/BatchTiming"));
+const AssignCourseToBatch = lazy(() => import("./pages/course/AssignCourseToBatch"));
+const AcademicsWorkspace = lazy(() => import("./pages/course/AcademicsWorkspace"));
 
 // Exam Management
-import AssessmentsWorkspace from "./pages/exam/AssessmentsWorkspace";
+const AssessmentsWorkspace = lazy(() => import("./pages/exam/AssessmentsWorkspace"));
 
 // Online Exam
-import CreateOnlineExam from "./pages/online-exam/CreateOnlineExam";
-import QuestionPaperBuilder from "./pages/online-exam/QuestionPaperBuilder";
-import AddQuestions from "./pages/online-exam/AddQuestions";
-import OnlineExamMarks from "./pages/online-exam/OnlineExamMarks";
+const CreateOnlineExam = lazy(() => import("./pages/online-exam/CreateOnlineExam"));
+const QuestionPaperBuilder = lazy(() => import("./pages/online-exam/QuestionPaperBuilder"));
+const AddQuestions = lazy(() => import("./pages/online-exam/AddQuestions"));
+const OnlineExamMarks = lazy(() => import("./pages/online-exam/OnlineExamMarks"));
 
 // Live Class
-import ViewLiveClasses from "./pages/live-class/ViewLiveClasses";
-import LiveClassSetup from "./pages/live-class/LiveClassSetup";
+const ViewLiveClasses = lazy(() => import("./pages/live-class/ViewLiveClasses"));
+const LiveClassSetup = lazy(() => import("./pages/live-class/LiveClassSetup"));
 
 // Cards
-import IDCardTemplate from "./pages/cards/IDCardTemplate";
-import GenerateIDCards from "./pages/cards/GenerateIDCards";
-import AdmitCardTemplate from "./pages/cards/AdmitCardTemplate";
-import DocumentDesigner from "./pages/documents/DocumentDesigner";
-import GenerateAdmitCards from "./pages/cards/GenerateAdmitCards";
+const IDCardTemplate = lazy(() => import("./pages/cards/IDCardTemplate"));
+const GenerateIDCards = lazy(() => import("./pages/cards/GenerateIDCards"));
+const AdmitCardTemplate = lazy(() => import("./pages/cards/AdmitCardTemplate"));
+const DocumentDesigner = lazy(() => import("./pages/documents/DocumentDesigner"));
+const GenerateAdmitCards = lazy(() => import("./pages/cards/GenerateAdmitCards"));
 
 // Settings
-import GeneralSettings from "./pages/settings/GeneralSettings";
-import PaymentGateway from "./pages/settings/PaymentGateway";
-import PaymentQRCode from "./pages/settings/PaymentQRCode";
-import BatchPaymentQR from "./pages/settings/BatchPaymentQR";
+const GeneralSettings = lazy(() => import("./pages/settings/GeneralSettings"));
+const PaymentGateway = lazy(() => import("./pages/settings/PaymentGateway"));
+const PaymentQRCode = lazy(() => import("./pages/settings/PaymentQRCode"));
+const BatchPaymentQR = lazy(() => import("./pages/settings/BatchPaymentQR"));
 
 // Partner Management
-import AddPartner from "./pages/partners/AddPartner";
-import AllPartners from "./pages/partners/AllPartners";
-import PartnerTransactions from "./pages/partners/PartnerTransactions";
+const AddPartner = lazy(() => import("./pages/partners/AddPartner"));
+const AllPartners = lazy(() => import("./pages/partners/AllPartners"));
+const PartnerTransactions = lazy(() => import("./pages/partners/PartnerTransactions"));
 
 // Expense Management
-import VoucherHead from "./pages/expense/VoucherHead";
-import VoucherHeads from "./pages/expense/VoucherHeads";
-import DepositVoucher from "./pages/expense/DepositVoucher";
-import ExpenseVoucher from "./pages/expense/ExpenseVoucher";
+const VoucherHead = lazy(() => import("./pages/expense/VoucherHead"));
+const VoucherHeads = lazy(() => import("./pages/expense/VoucherHeads"));
+const DepositVoucher = lazy(() => import("./pages/expense/DepositVoucher"));
+const ExpenseVoucher = lazy(() => import("./pages/expense/ExpenseVoucher"));
 
 // Attendance Management
-import Attendance from "./pages/attendance/Attendance";
-import AttendanceReport from "./pages/attendance/AttendanceReport";
-import AttendanceLogs from "./pages/attendance/AttendanceLogs";
-import HolidayApply from "./pages/attendance/HolidayApply";
+const Attendance = lazy(() => import("./pages/attendance/Attendance"));
+const AttendanceReport = lazy(() => import("./pages/attendance/AttendanceReport"));
+const AttendanceLogs = lazy(() => import("./pages/attendance/AttendanceLogs"));
+const HolidayApply = lazy(() => import("./pages/attendance/HolidayApply"));
 
 // User Management
-import AllUsers from "./pages/user/AllUsers";
-import UserRoles from "./pages/user/UserRoles";
-import AccessControl from "./pages/user/AccessControl";
+const AllUsers = lazy(() => import("./pages/user/AllUsers"));
+const UserRoles = lazy(() => import("./pages/user/UserRoles"));
+const AccessControl = lazy(() => import("./pages/user/AccessControl"));
 
 // Session Year Management
-import AddSessionYear from "./pages/session/AddSessionYear";
-import AllSessionYears from "./pages/session/AllSessionYears";
+const AddSessionYear = lazy(() => import("./pages/session/AddSessionYear"));
+const AllSessionYears = lazy(() => import("./pages/session/AllSessionYears"));
 
 const queryClient = new QueryClient();
+
+function LoadingFallback() {
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      height: "100vh",
+      fontSize: "14px",
+      color: "#888",
+    }}>
+      Loading…
+    </div>
+  );
+}
 
 /** The root path belongs to whichever workspace the signed-in authorisation
  *  owns: the organisation roll-up, one branch, or the student's own portal. */
@@ -129,6 +145,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <Suspense fallback={<LoadingFallback />}>
           <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute />}>
@@ -149,7 +166,7 @@ const App = () => (
           <Route path="/reception/visitors" element={<EnquiriesWorkspace />} />
           <Route path="/reception/dispatch" element={<ItemMovementWorkspace />} />
           <Route path="/reception/receive" element={<ItemMovementWorkspace />} />
-          
+
           {/* Branch Management */}
           <Route path="/branch/create" element={<CreateBranch />} />
           <Route path="/branch/view" element={<ViewBranch />} />
@@ -157,100 +174,101 @@ const App = () => (
           <Route path="/branch/transactions" element={<BranchTransactions />} />
           <Route path="/branch/notice-board" element={<BranchNoticeBoard />} />
           <Route path="/branch/website-settings" element={<BranchWebsiteSettings />} />
-          
+
           {/* Enquiry Management */}
           <Route path="/enquiry/branch" element={<BranchEnquiry />} />
           <Route path="/enquiry/online-branch" element={<OnlineBranchEnquiry />} />
           <Route path="/enquiry/online-student" element={<OnlineStudentEnquiry />} />
-          
+
           {/* Student Management */}
           <Route path="/student/view" element={<ViewStudents />} />
           <Route path="/student/add" element={<AdmissionsWorkspace />} />
           <Route path="/student/online-admissions" element={<OnlineAdmissionList />} />
           <Route path="/student/admission-form" element={<AdmissionsWorkspace />} />
-          
+
           {/* Fee Management */}
           <Route path="/fee/types" element={<FeeTypes />} />
           <Route path="/fee/groups" element={<FeeGroups />} />
           <Route path="/fee/allocation" element={<FeeAllocation />} />
           <Route path="/fee/collection" element={<FeeCollection />} />
           <Route path="/fee/due-collection" element={<DueFeeCollection />} />
-          
+
           {/* Course Management */}
           <Route path="/course/create" element={<AcademicsWorkspace />} />
           <Route path="/course/view" element={<AcademicsWorkspace />} />
           <Route path="/course/batch/create" element={<AcademicsWorkspace />} />
           <Route path="/course/batch/timing" element={<BatchTiming />} />
           <Route path="/course/batch/assign" element={<AssignCourseToBatch />} />
-          
+
           {/* Exam Management */}
           <Route path="/exam/create" element={<AssessmentsWorkspace />} />
           <Route path="/exam/schedule" element={<AssessmentsWorkspace />} />
           <Route path="/exam/assign-marks" element={<AssessmentsWorkspace />} />
           <Route path="/exam/marks-list" element={<AssessmentsWorkspace />} />
           <Route path="/exam/grade-management" element={<AssessmentsWorkspace />} />
-          
+
           {/* Online Exam */}
           <Route path="/online-exam/create" element={<CreateOnlineExam />} />
           <Route path="/online-exam/question-paper-builder" element={<QuestionPaperBuilder />} />
           <Route path="/online-exam/add-questions" element={<AddQuestions />} />
           <Route path="/online-exam/marks" element={<OnlineExamMarks />} />
-          
+
           {/* Live Class */}
           <Route path="/live-class/view" element={<ViewLiveClasses />} />
           <Route path="/live-class/setup" element={<LiveClassSetup />} />
-          
+
           {/* Cards */}
           <Route path="/cards/id-template" element={<IDCardTemplate />} />
           <Route path="/cards/generate-id" element={<GenerateIDCards />} />
           <Route path="/cards/admit-template" element={<AdmitCardTemplate />} />
           <Route path="/documents/designer" element={<DocumentDesigner />} />
           <Route path="/cards/generate-admit" element={<GenerateAdmitCards />} />
-          
+
           {/* Certificates */}
           <Route path="/certificate/template" element={<DocumentDesigner />} />
           <Route path="/certificate/generate" element={<AssessmentsWorkspace />} />
-          
+
           {/* Marksheets */}
           <Route path="/marksheet/template" element={<DocumentDesigner />} />
           <Route path="/marksheet/generate" element={<AssessmentsWorkspace />} />
-          
+
           {/* Settings */}
           <Route path="/settings/general" element={<GeneralSettings />} />
           <Route path="/settings/payment-gateway" element={<PaymentGateway />} />
           <Route path="/settings/payment-qr" element={<PaymentQRCode />} />
           <Route path="/settings/batch-qr" element={<BatchPaymentQR />} />
-          
+
           {/* Partner Management */}
           <Route path="/partners/add" element={<AddPartner />} />
           <Route path="/partners/all" element={<AllPartners />} />
           <Route path="/partners/transactions" element={<PartnerTransactions />} />
-          
+
           {/* Expense Management */}
           <Route path="/expense/voucher-head" element={<VoucherHead />} />
           <Route path="/expense/voucher-heads" element={<VoucherHeads />} />
           <Route path="/expense/deposit-voucher" element={<DepositVoucher />} />
           <Route path="/expense/expense-voucher" element={<ExpenseVoucher />} />
-          
+
           {/* Attendance Management */}
           <Route path="/attendance/mark" element={<Attendance />} />
           <Route path="/attendance/report" element={<AttendanceReport />} />
           <Route path="/attendance/logs" element={<AttendanceLogs />} />
           <Route path="/attendance/holiday-apply" element={<HolidayApply />} />
-          
+
           {/* User Management */}
           <Route path="/user/all" element={<AllUsers />} />
           <Route path="/user/roles" element={<UserRoles />} />
           <Route path="/user/access-control" element={<AccessControl />} />
-          
+
           {/* Session Year Management */}
           <Route path="/session/add" element={<AddSessionYear />} />
           <Route path="/session/all" element={<AllSessionYears />} />
-          
+
           </Route>
           {/* Catch-all */}
           <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider></AuthProvider>
