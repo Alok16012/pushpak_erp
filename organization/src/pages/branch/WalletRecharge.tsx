@@ -12,7 +12,15 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getWalletsByOrg, getTransactionsByOrg, rechargeWallet, getBranches } from "@/lib/supabase/data";
+import {
+  getWalletsByOrg,
+  getTransactionsByOrg,
+  rechargeWallet,
+  getBranches,
+  getWallet,
+  getTransactions,
+  getBranchDetails,
+} from "@/lib/supabase/data";
 
 interface Institute {
   id: string;
@@ -45,7 +53,10 @@ const newRechargeId = () => `rch-${Date.now()}-${Math.random().toString(36).slic
 
 export default function WalletRecharge() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  // `branchId` is set for a franchise/branch login and null for an org admin.
+  // Everything below is scoped by it: a branch account must see its own wallet
+  // and its own transactions, never the rest of the organisation's.
+  const { user, branchId } = useAuth();
   const navigate = useNavigate();
   const [walletData, setWalletData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,23 +73,33 @@ export default function WalletRecharge() {
     async function loadWallet() {
       try {
         const orgId = user?.organizationId || null;
-        const [branchesRes, walletsRes, txsRes] = await Promise.all([
-          getBranches(orgId),
-          getWalletsByOrg(orgId),
-          getTransactionsByOrg(orgId),
-        ]);
+        // A branch login carries an organizationId too, so the branch has to be
+        // checked first - keying off the org alone showed every branch's wallet.
+        const [branches, wallets, txs] = branchId
+          ? await Promise.all([
+              getBranchDetails(orgId || "", branchId)
+                .then((r) => [r.data])
+                .catch(() => []),
+              getWallet(branchId).then((r) => (r.data ? [r.data] : [])),
+              getTransactions(branchId).then((r) => r.data || []),
+            ])
+          : await Promise.all([
+              getBranches(orgId).then((r) => r.data || []),
+              getWalletsByOrg(orgId).then((r) => r.data || []),
+              getTransactionsByOrg(orgId).then((r) => r.data || []),
+            ]);
         if (!cancelled) {
-          const branches = (branchesRes.data || []).filter((b: any) => b.isActive !== false);
-          const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.branchId, Number(w.balance || 0)]));
+          const active = (branches as any[]).filter((b) => b && b.isActive !== false);
+          const walletMap = new Map((wallets as any[]).map((w: any) => [w.branchId, Number(w.balance || 0)]));
           setInstitutes(
-            branches.map((b: any) => ({
+            active.map((b: any) => ({
               id: b.id,
               name: b.name,
               directorName: b.code,
               balance: Number(walletMap.get(b.id) ?? 0),
             }))
           );
-          setHistory((txsRes.data || []).map((tx: any) => ({ ...tx, createdAt: tx.createdAt })));
+          setHistory((txs as any[]).map((tx: any) => ({ ...tx, createdAt: tx.createdAt })));
         }
       } catch (error) {
         if (!cancelled) {
@@ -96,7 +117,12 @@ export default function WalletRecharge() {
     }
     loadWallet();
     return () => { cancelled = true; };
-  }, [user?.organizationId, toast]);
+  }, [user?.organizationId, branchId, toast]);
+
+  // With one branch there is nothing to search for, so it is simply selected.
+  useEffect(() => {
+    if (branchId && institutes.length === 1) setSelectedInstitute(institutes[0]);
+  }, [branchId, institutes]);
 
   const filteredInstitutes = institutes.filter(
     (inst) =>
@@ -151,7 +177,7 @@ export default function WalletRecharge() {
     <AppLayout>
       <PageHeader
         title="Wallet Recharge"
-        description="Recharge branch wallets for transactions"
+        description={branchId ? "Recharge your branch wallet" : "Recharge branch wallets for transactions"}
         breadcrumbs={[
           { label: "Branch Management", href: "/branch/view" },
           { label: "Wallet Recharge" },
@@ -160,9 +186,9 @@ export default function WalletRecharge() {
 
       <div className="grid gap-4 md:grid-cols-4 mb-6">
         <StatsCard
-          title="Total Balance"
+          title={branchId ? "Wallet Balance" : "Total Balance"}
           value={inr(totalBalance)}
-          subtitle="All branches combined"
+          subtitle={branchId ? "This branch" : "All branches combined"}
           icon={Wallet}
           trend={{ value: 15, isPositive: true }}
         />
@@ -180,9 +206,9 @@ export default function WalletRecharge() {
           icon={History}
         />
         <StatsCard
-          title="Active Branches"
-          value={String(institutes.length)}
-          subtitle="With wallet enabled"
+          title={branchId ? "Branch" : "Active Branches"}
+          value={branchId ? institutes[0]?.name ?? "—" : String(institutes.length)}
+          subtitle={branchId ? institutes[0]?.directorName ?? "" : "With wallet enabled"}
           icon={Building2}
         />
       </div>
@@ -200,18 +226,20 @@ export default function WalletRecharge() {
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                   <Label htmlFor="searchInstitute">Search Institute *</Label>
-                   <div className="relative">
-                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                     <Input
-                       id="searchInstitute"
-                       placeholder="Search by name or director..."
-                       className="pl-9"
-                       value={searchQuery}
-                       onChange={(e) => setSearchQuery(e.target.value)}
-                     />
-                   </div>
-                   {searchQuery && filteredInstitutes.length > 0 && (
+                   <Label htmlFor="searchInstitute">{branchId ? "Institute" : "Search Institute *"}</Label>
+                   {!branchId && (
+                     <div className="relative">
+                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                       <Input
+                         id="searchInstitute"
+                         placeholder="Search by name or director..."
+                         className="pl-9"
+                         value={searchQuery}
+                         onChange={(e) => setSearchQuery(e.target.value)}
+                       />
+                     </div>
+                   )}
+                   {!branchId && searchQuery && filteredInstitutes.length > 0 && (
                      <div className="border rounded-md mt-1 max-h-48 overflow-auto bg-background shadow-lg">
                        {filteredInstitutes.map((inst) => (
                          <div

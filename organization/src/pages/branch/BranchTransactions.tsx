@@ -122,7 +122,7 @@ const receiptHtml = (txn: Transaction) => `
 
 export default function BranchTransactions() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, branchId } = useAuth();
   const [details, setDetails] = useState<Transaction | null>(null);
   const [rawRows, setRawRows] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,7 +135,14 @@ export default function BranchTransactions() {
     (async () => {
       try {
         const orgId = (user as any)?.organizationId || (user as any)?.orgId || null;
-        const res = orgId ? await getTransactionsByOrg(orgId) : (user as any)?.branchId ? await getTransactions((user as any).branchId) : { success: true, data: [] };
+        // The branch has to be tested first. A branch login carries an
+        // organizationId as well, so checking the org first handed a franchise
+        // account every branch's transactions.
+        const res = branchId
+          ? await getTransactions(branchId)
+          : orgId
+            ? await getTransactionsByOrg(orgId)
+            : { success: true, data: [] };
         if (!cancelled) setRawRows((res.data || []) as Transaction[]);
       } catch (e: any) {
         if (!cancelled) toast({ title: "Failed to load transactions", description: e?.message || "Unknown error", variant: "destructive" });
@@ -144,7 +151,7 @@ export default function BranchTransactions() {
       }
     })();
     return () => { cancelled = true; };
-  }, [(user as any)?.branchId, (user as any)?.organizationId, (user as any)?.orgId]);
+  }, [branchId, (user as any)?.organizationId, (user as any)?.orgId]);
 
   const filtered = useMemo(() => {
     if (selectedYear === "all" && selectedMonth === "all") return rawRows;
