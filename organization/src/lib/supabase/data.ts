@@ -1419,6 +1419,16 @@ export async function setBranchLogin(input: {
   email?: string;
   phone?: string;
 }) {
+  // The app restores the last account from localStorage so a reload paints
+  // immediately, which means the UI can show you signed in after the Supabase
+  // session behind it has gone. Without this check the function answers the
+  // anon key with its own "Not signed in", which reads like a bug in the
+  // function rather than an expired session.
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session?.access_token) {
+    throw new Error("Your session has expired. Sign out and sign back in, then set the login again.");
+  }
+
   const { data, error } = await supabase.functions.invoke("create-branch-user", { body: input });
   if (error) {
     const response = (error as { context?: Response }).context;
