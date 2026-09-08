@@ -75,9 +75,20 @@ Deno.serve(async (req) => {
   const { data: caller, error: callerError } = await admin.auth.getUser(jwt);
   if (callerError || !caller.user) return json({ error: "Not signed in" }, 401);
 
-  const callerMeta = caller.user.user_metadata ?? {};
-  if (!ADMIN_ROLES.includes(String(callerMeta.role ?? "").toUpperCase())) {
-    return json({ error: "Only an organisation admin can create branch logins" }, 403);
+  // The role is read from app_metadata, never user_metadata: a user can rewrite
+  // their own user_metadata with supabase.auth.updateUser(), so trusting it here
+  // would let a branch account promote itself and mint logins.
+  const callerApp = caller.user.app_metadata ?? {};
+  if (!ADMIN_ROLES.includes(String(callerApp.role ?? "").toUpperCase())) {
+    return json(
+      {
+        error:
+          "Only an organisation admin can create branch logins. If you are an admin, " +
+          "run supabase/schema/branch-scoped-wallet-rls.sql, then sign out and back in " +
+          "so your token carries the role.",
+      },
+      403,
+    );
   }
 
   // 2. Validate the request. `username` may be left out when the branch already
@@ -99,7 +110,7 @@ Deno.serve(async (req) => {
     .single();
   if (branchError || !branch) return json({ error: "Branch not found" }, 404);
 
-  if (callerMeta.organizationId && branch.organizationId !== callerMeta.organizationId) {
+  if (callerApp.organizationId && branch.organizationId !== callerApp.organizationId) {
     return json({ error: "That branch belongs to another organisation" }, 403);
   }
 
@@ -119,6 +130,15 @@ Deno.serve(async (req) => {
     phone: phone || null,
   };
 
+  // The same three claims go into app_metadata, which only the service role can
+  // write. RLS reads them from there; user_metadata is for the UI only, because
+  // a user can rewrite their own with supabase.auth.updateUser().
+  const appMetadata = {
+    role: "BRANCH_ADMIN",
+    branchId: branch.id,
+    organizationId: branch.organizationId,
+  };
+
   let existing;
   try {
     existing = await findBranchUser(admin, branch.id);
@@ -134,6 +154,7 @@ Deno.serve(async (req) => {
       password: String(password),
       email_confirm: true,
       user_metadata: { ...(existing.user_metadata ?? {}), ...metadata },
+      app_metadata: { ...(existing.app_metadata ?? {}), ...appMetadata },
     });
     if (updateError) return json({ error: updateError.message }, 400);
     return json({
@@ -154,6 +175,7 @@ Deno.serve(async (req) => {
     password: String(password),
     email_confirm: true,
     user_metadata: metadata,
+    app_metadata: appMetadata,
   });
 
   if (createError) return json({ error: createError.message }, 400);
