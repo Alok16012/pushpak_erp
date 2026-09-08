@@ -122,11 +122,25 @@ export async function getItemMovements(branchId: string | null) {
   return { success: true, data: (data || []) as unknown as MovementRow[] };
 }
 
+/**
+ * `item_movements.id` is a plain `text primary key` with no database default,
+ * unlike the other tables here, so an insert that omits it fails with
+ * "null value in column id ... violates not-null constraint". The id is
+ * generated here. `crypto.randomUUID` is missing on older Android webviews and
+ * on any non-HTTPS origin, hence the fallback.
+ */
+function newMovementId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `mv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export async function createItemMovement(
   branchId: string | null,
   input: Partial<Omit<MovementRow, "id" | "created_at">>,
 ) {
-  const payload: Record<string, unknown> = {};
+  const payload: Record<string, unknown> = { id: newMovementId() };
   for (const [key, value] of Object.entries(input)) {
     if (value !== undefined && value !== "") payload[key] = value;
   }

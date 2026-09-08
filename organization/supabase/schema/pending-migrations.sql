@@ -62,7 +62,7 @@ alter table public.batch_timings
 -- Table: item_movements
 -- ============================================
 create table if not exists public.item_movements (
-  id text primary key,
+  id text primary key default gen_random_uuid()::text,
   direction text not null,
   item text not null,
   item_id text,
@@ -80,6 +80,13 @@ create table if not exists public.item_movements (
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+-- The table went live without a default on `id`, so every insert that did not
+-- send one failed with "null value in column id ... violates not-null
+-- constraint". `create table if not exists` above is a no-op on the live table,
+-- so the default is set explicitly here. Safe to re-run.
+alter table public.item_movements
+  alter column id set default gen_random_uuid()::text;
 
 alter table public.item_movements enable row level security;
 
