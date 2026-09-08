@@ -193,20 +193,47 @@ export async function nextApplicationNo() {
   return `${prefix}${String(counter + 1).padStart(4, "0")}`;
 }
 
+/**
+ * Columns added after the table went live, which a database that has not run
+ * `supabase/schema/add-student-section-roll.sql` yet will not have. Losing the
+ * section and roll number is a far better outcome than losing the admission.
+ */
+const STUDENT_OPTIONAL_COLUMNS = ["section", "rollNo"];
+
+const withoutOptionalStudentColumns = (input: Record<string, unknown>) => {
+  const out = { ...input };
+  for (const c of STUDENT_OPTIONAL_COLUMNS) delete out[c];
+  return out;
+};
+
+const isMissingStudentColumn = (error: { code?: string; message?: string } | null) =>
+  error?.code === "PGRST204" ||
+  error?.code === "42703" ||
+  STUDENT_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c));
+
 export async function createStudent(branchId: string, input: Record<string, unknown>) {
   // A caller that already carries its own number keeps it; everyone else gets
   // one issued here, so no admission route can save a student without one.
+  let body = { ...input };
   for (let attempt = 0; attempt < 3; attempt++) {
-    const applicationNo = (input.applicationNo as string) || (await nextApplicationNo());
+    const applicationNo = (body.applicationNo as string) || (await nextApplicationNo());
     const { data, error } = await supabase
       .from("students")
-      .insert({ ...input, applicationNo, branchId })
+      .insert({ ...body, applicationNo, branchId })
       .select("*")
       .single();
     if (!error) return { success: true, data };
     // 23505 is a unique violation - another admission took the number first.
-    const raced = error.code === "23505" && !input.applicationNo;
-    if (!raced || attempt === 2) throw new Error(error.message);
+    const raced = error.code === "23505" && !body.applicationNo;
+    if (raced && attempt < 2) continue;
+    // Retry once without the columns the database may not have yet. Guarded on
+    // something actually having been dropped, so this cannot loop.
+    const trimmed = withoutOptionalStudentColumns(body);
+    if (isMissingStudentColumn(error) && Object.keys(trimmed).length < Object.keys(body).length) {
+      body = trimmed;
+      continue;
+    }
+    throw new Error(error.message);
   }
   throw new Error("Could not allocate an application number");
 }
@@ -1376,11 +1403,15 @@ async function describeUnreachableFunction(): Promise<string> {
 }
 
 /**
- * Creates the branch's login. The account itself is minted by the
+ * Sets the branch's login. The account itself is minted by the
  * create-branch-user edge function, which holds the service-role key -
  * signing up from the browser would swap out the admin's own session.
+ *
+ * The function upserts: a branch that already has a login gets its username and
+ * password replaced, one that has none gets an account. `created` in the reply
+ * says which happened, so the caller can word the confirmation correctly.
  */
-export async function createBranchLogin(input: {
+export async function setBranchLogin(input: {
   branchId: string;
   username: string;
   password: string;
@@ -1395,6 +1426,16 @@ export async function createBranchLogin(input: {
     const detail = await response?.json?.().catch(() => null);
     if (detail?.error) throw new Error(detail.error);
     if (response?.status === 404) throw new Error(FUNCTION_NOT_DEPLOYED);
+    // The gateway rejects before the function ever runs - an expired session,
+    // a malformed token - and answers { code, message } rather than { error }.
+    // Without this the caller only ever sees "non-2xx status code".
+    if (detail?.message) {
+      throw new Error(
+        detail.code === "UNAUTHORIZED_INVALID_JWT_FORMAT" || response?.status === 401
+          ? `${detail.message}. Sign out and sign back in, then set the login again.`
+          : String(detail.message),
+      );
+    }
     // A function that was never deployed is invisible from the browser. Its
     // preflight 404 comes back allowing only `authorization, x-client-info,
     // apikey`, so the POST - which carries a content-type - is blocked before
@@ -1405,8 +1446,14 @@ export async function createBranchLogin(input: {
     throw new Error(error.message);
   }
   if (data?.error) throw new Error(data.error);
-  return { success: true, data } as { success: true; data: { loginEmail: string; username: string } };
+  return { success: true, data } as {
+    success: true;
+    data: { loginEmail: string; username: string; created: boolean };
+  };
 }
+
+/** Kept so existing callers read naturally at the create-branch call site. */
+export const createBranchLogin = setBranchLogin;
 
 /** City and state live on branch_addresses, the rest on the branch row itself. */
 export async function updateBranchWithDetails(

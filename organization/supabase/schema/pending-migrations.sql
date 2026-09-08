@@ -298,5 +298,18 @@ end $$;
 -- still references it, and an unused type costs nothing.
 
 
+-- ============================================================
+-- add-student-section-roll.sql
+-- ============================================================
+-- Section and roll number on a student.
+--
+-- The admission form collects both on the Academic step, next to the batch.
+-- `tenthRollNo` already exists but is the class 10 board roll number, which is
+-- a different thing from the roll number the branch assigns on enrolment.
+alter table public.students
+  add column if not exists "section" text,
+  add column if not exists "rollNo" text;
+
+
 -- Make PostgREST pick up the new columns immediately.
 notify pgrst, 'reload schema';

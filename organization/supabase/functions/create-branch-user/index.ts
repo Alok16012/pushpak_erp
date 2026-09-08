@@ -1,29 +1,66 @@
 /**
- * Creates the login for a branch.
+ * Creates or resets the login for a branch.
  *
  * The browser only holds the anon key, and signing a new user up from there
  * would replace the admin's own session. So the account is created here with
  * the service-role key, which never leaves the server.
  *
- * Called from the Create Branch form via supabase.functions.invoke().
+ * The same call covers both cases. If the branch already has a login the
+ * username and password are updated in place; if it has none one is minted.
+ * That matters because a branch created while this function was undeployed has
+ * no login at all, and "reset" has to be able to give it one.
+ *
+ * Called from the Create Branch form and from the Login section of the Edit
+ * Branch dialog, via supabase.functions.invoke().
  */
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const cors = {
+/**
+ * Allow back exactly the headers the browser asked for.
+ *
+ * A fixed list is a trap: the app's Supabase client attaches its own
+ * `x-application-name` to every request, and any header missing from this reply
+ * makes the browser drop the POST after a *successful* preflight. The failure
+ * then looks like the function is unreachable rather than like a CORS problem.
+ */
+const corsFor = (req: Request) => ({
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    req.headers.get("Access-Control-Request-Headers") ??
+    "authorization, x-client-info, apikey, content-type, x-application-name",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+});
 
 const ADMIN_ROLES = ["SUPER_ADMIN", "ORGANIZATION_ADMIN"];
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...cors, "Content-Type": "application/json" },
-  });
+/**
+ * The admin API cannot filter on user_metadata, so the branch's account is
+ * found by walking the list. Capped so a bad page count cannot spin forever.
+ */
+async function findBranchUser(admin: ReturnType<typeof createClient>, branchId: string) {
+  const perPage = 1000;
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) throw new Error(error.message);
+    const users = data?.users ?? [];
+    const match = users.find((u) => {
+      const meta = u.user_metadata ?? {};
+      return meta.branchId === branchId && String(meta.userType ?? "").toUpperCase() === "BRANCH";
+    });
+    if (match) return match;
+    if (users.length < perPage) return null;
+  }
+  return null;
+}
 
 Deno.serve(async (req) => {
+  const cors = corsFor(req);
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
+
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
   const admin = createClient(
@@ -31,7 +68,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // 1. Who is asking? Only an org-level admin may mint branch logins.
+  // 1. Who is asking? Only an org-level admin may mint or reset branch logins.
   const jwt = req.headers.get("Authorization")?.replace("Bearer ", "");
   if (!jwt) return json({ error: "Not signed in" }, 401);
 
@@ -43,10 +80,12 @@ Deno.serve(async (req) => {
     return json({ error: "Only an organisation admin can create branch logins" }, 403);
   }
 
-  // 2. Validate the request.
+  // 2. Validate the request. `username` may be left out when the branch already
+  //    has a login and only the password is being reset -- an admin resetting a
+  //    password should not have to remember the login ID to keep it unchanged.
   const { branchId, username, password, name, email, phone } = await req.json().catch(() => ({}));
-  if (!branchId || !username || !password) {
-    return json({ error: "branchId, username and password are required" }, 400);
+  if (!branchId || !password) {
+    return json({ error: "branchId and password are required" }, 400);
   }
   if (String(password).length < 6) {
     return json({ error: "Password must be at least 6 characters" }, 400);
@@ -65,27 +104,64 @@ Deno.serve(async (req) => {
   }
 
   // 4. The login page turns a bare username into <username>@pushpak.local, so
-  //    the account has to be created under exactly that address.
-  const loginEmail = String(username).includes("@")
-    ? String(username).trim()
-    : `${String(username).trim().toLowerCase()}@pushpak.local`;
+  //    the account has to live under exactly that address.
+  const asked = String(username ?? "").trim();
+  const emailFor = (value: string) =>
+    value.includes("@") ? value : `${value.toLowerCase()}@pushpak.local`;
 
+  const metadata = {
+    name: name || branch.name,
+    role: "BRANCH_ADMIN",
+    userType: "BRANCH",
+    branchId: branch.id,
+    organizationId: branch.organizationId,
+    contactEmail: email || null,
+    phone: phone || null,
+  };
+
+  let existing;
+  try {
+    existing = await findBranchUser(admin, branch.id);
+  } catch (err) {
+    return json({ error: err instanceof Error ? err.message : "Could not look up the branch login" }, 500);
+  }
+
+  if (existing) {
+    // No username sent means "keep the current login ID, change only the password".
+    const loginEmail = asked ? emailFor(asked) : String(existing.email ?? "");
+    const { data: updated, error: updateError } = await admin.auth.admin.updateUserById(existing.id, {
+      email: loginEmail,
+      password: String(password),
+      email_confirm: true,
+      user_metadata: { ...(existing.user_metadata ?? {}), ...metadata },
+    });
+    if (updateError) return json({ error: updateError.message }, 400);
+    return json({
+      userId: updated.user?.id,
+      loginEmail,
+      username: loginEmail.replace(/@pushpak\.local$/, ""),
+      created: false,
+    });
+  }
+
+  if (!asked) {
+    return json({ error: "This branch has no login yet, so a login ID is required" }, 400);
+  }
+
+  const loginEmail = emailFor(asked);
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email: loginEmail,
     password: String(password),
     email_confirm: true,
-    user_metadata: {
-      name: name || branch.name,
-      role: "BRANCH_ADMIN",
-      userType: "BRANCH",
-      branchId: branch.id,
-      organizationId: branch.organizationId,
-      contactEmail: email || null,
-      phone: phone || null,
-    },
+    user_metadata: metadata,
   });
 
   if (createError) return json({ error: createError.message }, 400);
 
-  return json({ userId: created.user?.id, loginEmail, username: String(username).trim() });
+  return json({
+    userId: created.user?.id,
+    loginEmail,
+    username: asked,
+    created: true,
+  });
 });

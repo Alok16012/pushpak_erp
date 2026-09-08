@@ -51,6 +51,9 @@ type Draft = {
   admissionDate: string;
   courseId: string;
   batchId: string;
+  section: string;
+  /** The roll number the branch assigns. Not `tenthRollNo`, which is the board's. */
+  rollNo: string;
   // Previous education
   tenthSchoolName: string;
   tenthBoard: string;
@@ -106,6 +109,8 @@ const blank: Draft = {
   admissionDate: "",
   courseId: "",
   batchId: "",
+  section: "",
+  rollNo: "",
   tenthSchoolName: "",
   tenthBoard: "",
   tenthYearOfPassing: "",
@@ -558,6 +563,20 @@ export default function AdmissionsWorkspace() {
                     placeholder={targetBranchId ? "Choose batch" : "Choose a branch first"}
                   />
                 </Field>
+                <Field l="Section">
+                  <Input
+                    placeholder="e.g. A"
+                    value={draft.section}
+                    onChange={(e) => set("section", e.target.value)}
+                  />
+                </Field>
+                <Field l="Roll no">
+                  <Input
+                    placeholder="e.g. 24"
+                    value={draft.rollNo}
+                    onChange={(e) => set("rollNo", e.target.value)}
+                  />
+                </Field>
 
                 <Section title="Class 10" />
                 <Field l="School name" wide>
@@ -760,6 +779,10 @@ export default function AdmissionsWorkspace() {
                       v={[draft.streetAddress, draft.city, draft.state, draft.pincode]
                         .filter(Boolean)
                         .join(", ")}
+                    />
+                    <Row
+                      k="Section · Roll no"
+                      v={[draft.section, draft.rollNo].filter(Boolean).join(" · ")}
                     />
                     <Row k="Father" v={draft.fatherName} />
                     <Row k="Mother" v={draft.motherName} />

@@ -29,6 +29,7 @@ import {
   X,
   Wallet,
   Hourglass,
+  KeyRound,
   Download,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -36,8 +37,9 @@ import jsPDF from "jspdf";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getBranchesWithStats, updateBranchWithDetails, getBranchDetails, deleteBranch } from "@/lib/supabase/data";
+import { getBranchesWithStats, updateBranchWithDetails, getBranchDetails, deleteBranch, setBranchLogin } from "@/lib/supabase/data";
 import { printHtml, downloadCsv } from "@/lib/export";
+import { isoOrNull, dateInputValue } from "@/lib/dates";
 import { INDIAN_STATES, canonicalState, districtsFor } from "@/data/indianStates";
 import { lookupPincode, geocode } from "@/lib/postal";
 
@@ -228,6 +230,11 @@ export default function ViewBranch() {
   const [loading, setLoading] = useState(true);
   const [details, setDetails] = useState<Branch | null>(null);
   const [editing, setEditing] = useState<BranchEdit | null>(null);
+  // The branch's login lives in Supabase Auth, which the browser cannot read,
+  // so the current login ID cannot be shown here. Leaving the ID blank keeps it
+  // as it is and changes only the password.
+  const [loginDraft, setLoginDraft] = useState({ username: "", password: "" });
+  const [savingLogin, setSavingLogin] = useState(false);
   // Last PIN we resolved, so re-renders of `editing` don't re-trigger a lookup.
   const resolvedPin = useRef("");
   const editingPin = String(editing?.pincode ?? "");
@@ -421,6 +428,7 @@ export default function ViewBranch() {
         const addr = (d.address || {}) as Record<string, unknown>;
         const dir = (d.director || {}) as Record<string, unknown>;
         const lic = (d.license || {}) as Record<string, unknown>;
+        setLoginDraft({ username: "", password: "" });
         setEditing({
           id: d.id as string,
           name: d.name as string,
@@ -456,11 +464,11 @@ export default function ViewBranch() {
           country: (addr.country as string) || "India",
           directorName: (dir.name as string) || "",
           directorGender: (dir.gender as string) || "",
-          directorDOB: dir.dob ? new Date(dir.dob as string).toISOString().split("T")[0] : "",
+          directorDOB: dateInputValue(dir.dob),
           directorBloodGroup: (dir.bloodGroup as string) || "",
-          registrationDate: lic.registrationDate ? new Date(lic.registrationDate as string).toISOString().split("T")[0] : "",
-          validDate: lic.validDate ? new Date(lic.validDate as string).toISOString().split("T")[0] : "",
-          expiryDate: lic.expiryDate ? new Date(lic.expiryDate as string).toISOString().split("T")[0] : "",
+          registrationDate: dateInputValue(lic.registrationDate),
+          validDate: dateInputValue(lic.validDate),
+          expiryDate: dateInputValue(lic.expiryDate),
           referralCode: (lic.referralCode as string) || "",
           adminName: "",
           adminEmail: "",
@@ -481,6 +489,47 @@ export default function ViewBranch() {
     { label: "Delete", onClick: () => setPendingDelete(branch), destructive: true },
   ];
 
+  /**
+   * Sets the branch's login. Separate from Save changes because it goes to an
+   * edge function rather than the branch tables, and because an admin resetting
+   * a password should not have to save the whole form to do it.
+   */
+  const saveLogin = async () => {
+    if (!editing) return;
+    if (loginDraft.password.trim().length < 6) {
+      toast({
+        title: "Password is too short",
+        description: "Use at least 6 characters — this is the branch's login password.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSavingLogin(true);
+    try {
+      const res = await setBranchLogin({
+        branchId: editing.id,
+        username: loginDraft.username.trim(),
+        password: loginDraft.password,
+        name: editing.name,
+        email: editing.email,
+        phone: editing.phone,
+      });
+      toast({
+        title: res.data.created ? "Login created" : "Login updated",
+        description: `${editing.name} signs in with ID: ${res.data.username}`,
+      });
+      setLoginDraft({ username: "", password: "" });
+    } catch (error) {
+      toast({
+        title: "Could not set the login",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingLogin(false);
+    }
+  };
+
   const saveEdit = async () => {
     if (!editing || !user) return;
     if (!editing.name.trim() || !editing.code.trim()) {
@@ -488,6 +537,7 @@ export default function ViewBranch() {
       return;
     }
     setSaving(true);
+    const licenseExpiry = isoOrNull(editing.expiryDate);
     try {
       await updateBranchWithDetails(editing.id, user.organizationId, {
         branch: {
@@ -528,14 +578,19 @@ export default function ViewBranch() {
         director: {
           name: editing.directorName,
           gender: editing.directorGender.toUpperCase(),
-          dob: editing.directorDOB ? new Date(editing.directorDOB).toISOString() : new Date().toISOString(),
+          dob: isoOrNull(editing.directorDOB) ?? new Date().toISOString(),
           bloodGroup: editing.directorBloodGroup || null,
         },
-        license: editing.expiryDate
+        // The registration date is a full `YYYY-MM-DD` from its date input. The
+        // `-01` belongs only to the fallback, which is the expiry's `YYYY-MM`;
+        // appending it to a full date made "2026-09-16-01" and threw.
+        license: licenseExpiry
           ? {
-              registrationDate: new Date(`${editing.registrationDate || editing.expiryDate.slice(0, 7)}-01`).toISOString(),
-              validDate: editing.validDate ? new Date(editing.validDate).toISOString() : null,
-              expiryDate: new Date(editing.expiryDate).toISOString(),
+              registrationDate:
+                isoOrNull(editing.registrationDate) ??
+                isoOrNull(`${editing.expiryDate.slice(0, 7)}-01`),
+              validDate: isoOrNull(editing.validDate),
+              expiryDate: licenseExpiry,
               referralCode: editing.referralCode || null,
             }
           : undefined,
@@ -551,7 +606,7 @@ export default function ViewBranch() {
                 state: editing.state,
                 students: b.students,
                 staff: editing.numFaculty,
-                expiryDate: editing.expiryDate ? new Date(editing.expiryDate).toISOString() : b.expiryDate,
+                expiryDate: licenseExpiry ?? b.expiryDate,
                 status: editing.isActive ? "active" : "inactive",
               }
             : b,
@@ -755,6 +810,7 @@ export default function ViewBranch() {
                 const addr = (d.address || {}) as Record<string, unknown>;
                 const dir = (d.director || {}) as Record<string, unknown>;
                 const lic = (d.license || {}) as Record<string, unknown>;
+                setLoginDraft({ username: "", password: "" });
                 setEditing({
                   id: d.id as string,
                   name: d.name as string,
@@ -790,11 +846,11 @@ export default function ViewBranch() {
                   country: (addr.country as string) || "India",
                   directorName: (dir.name as string) || "",
                   directorGender: (dir.gender as string) || "",
-                  directorDOB: dir.dob ? new Date(dir.dob as string).toISOString().split("T")[0] : "",
+                  directorDOB: dateInputValue(dir.dob),
                   directorBloodGroup: (dir.bloodGroup as string) || "",
-                  registrationDate: lic.registrationDate ? new Date(lic.registrationDate as string).toISOString().split("T")[0] : "",
-                  validDate: lic.validDate ? new Date(lic.validDate as string).toISOString().split("T")[0] : "",
-                  expiryDate: lic.expiryDate ? new Date(lic.expiryDate as string).toISOString().split("T")[0] : "",
+                  registrationDate: dateInputValue(lic.registrationDate),
+                  validDate: dateInputValue(lic.validDate),
+                  expiryDate: dateInputValue(lic.expiryDate),
                   referralCode: (lic.referralCode as string) || "",
                   adminName: "",
                   adminEmail: "",
@@ -813,7 +869,15 @@ export default function ViewBranch() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
+      <Dialog
+        open={!!editing}
+        onOpenChange={(open) => {
+          if (open) return;
+          setEditing(null);
+          // Never leave a typed password sitting in state for the next branch.
+          setLoginDraft({ username: "", password: "" });
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit branch</DialogTitle>
@@ -1112,6 +1176,49 @@ export default function ViewBranch() {
                     <Switch id="edit-parentPortal" checked={editing.parentPortal} onCheckedChange={(checked) => setEditing({ ...editing, parentPortal: checked })} />
                   </div>
                 </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                  <KeyRound className="h-4 w-4" /> Login
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  The ID and password this branch signs in with. Leave the ID blank to keep the
+                  current one and change only the password. A branch that has no login yet needs
+                  an ID here to get one.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-login-username">Login ID</Label>
+                    <Input
+                      id="edit-login-username"
+                      autoComplete="off"
+                      placeholder="Unchanged"
+                      value={loginDraft.username}
+                      onChange={(e) => setLoginDraft({ ...loginDraft, username: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-login-password">New password</Label>
+                    <Input
+                      id="edit-login-password"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="At least 6 characters"
+                      value={loginDraft.password}
+                      onChange={(e) => setLoginDraft({ ...loginDraft, password: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={saveLogin}
+                  disabled={savingLogin || loginDraft.password.trim().length === 0}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  {savingLogin ? "Saving login..." : "Set login"}
+                </Button>
               </div>
             </div>
           )}
