@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { getDashboardStats } from "@/lib/supabase/data";
+import { getDashboardStats, getWallet } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -29,7 +29,7 @@ const batchesToday = [
   { name: "2026-B · Tally & Accounting", time: "11:30 – 13:00", faculty: "Mr. Michael Brown", strength: 26 },
   { name: "2026-C · Spoken English", time: "16:00 – 17:30", faculty: "Ms. Emily Davis", strength: 21 },
 ];
-const WALLET_BALANCE = 18_400;
+/** Below this a branch cannot issue certificates or ID cards. */
 const WALLET_FLOOR = 25_000;
 
 const quickActions = [
@@ -47,6 +47,9 @@ export default function FranchiseDashboard() {
   const branchId = user?.branchId;
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<DashboardData | null>(null);
+  // null until the wallet has been read, so the card and the floor warning can
+  // hold rather than claim a balance the branch does not have.
+  const [wallet, setWallet] = useState<number | null>(null);
   const load = useCallback(
     () =>
       getDashboardStats(branchId)
@@ -64,6 +67,16 @@ export default function FranchiseDashboard() {
   );
   useEffect(() => { load(); }, [load]);
 
+  // A branch with no wallet row yet has a balance of zero, not an error.
+  useEffect(() => {
+    let cancelled = false;
+    if (!branchId) return;
+    getWallet(branchId)
+      .then((r) => { if (!cancelled) setWallet(Number((r.data as { balance?: number } | null)?.balance ?? 0)); })
+      .catch(() => { if (!cancelled) setWallet(null); });
+    return () => { cancelled = true; };
+  }, [branchId]);
+
   const money = (value: number) => (value >= 100000 ? `₹${(value / 100000).toFixed(1)}L` : `₹${Math.round(value / 1000)}K`);
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
@@ -77,7 +90,7 @@ export default function FranchiseDashboard() {
   ];
 
   const alerts = [
-    ...(WALLET_BALANCE < WALLET_FLOOR ? [{ text: `Wallet balance is ₹${WALLET_BALANCE.toLocaleString("en-IN")} — below the ₹${WALLET_FLOOR.toLocaleString("en-IN")} floor for issuing certificates.`, to: "/branch/wallet", action: "Recharge" }] : []),
+    ...(wallet !== null && wallet < WALLET_FLOOR ? [{ text: `Wallet balance is ₹${wallet.toLocaleString("en-IN")} — below the ₹${WALLET_FLOOR.toLocaleString("en-IN")} floor for issuing certificates.`, to: "/branch/wallet", action: "Recharge" }] : []),
     { text: `${funnel[1].count} enquiries are waiting on a follow-up call.`, to: "/reception/enquiry", action: "Open reception" },
     { text: "9 students are below the 75% attendance requirement.", to: "/attendance/report", action: "See report" },
   ];
@@ -141,9 +154,9 @@ export default function FranchiseDashboard() {
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0"><CardTitle className="flex items-center gap-2"><Wallet className="h-4 w-4" />Branch wallet</CardTitle><Button size="sm" asChild><Link to="/branch/wallet">Recharge</Link></Button></CardHeader>
             <CardContent>
-              <p className="metric">₹{WALLET_BALANCE.toLocaleString("en-IN")}</p>
+              <p className="metric">{wallet === null ? "—" : `₹${wallet.toLocaleString("en-IN")}`}</p>
               <p className="mt-1 text-xs text-muted-foreground">Certificates and ID cards are issued against this balance.</p>
-              {WALLET_BALANCE < WALLET_FLOOR && <p className="mt-3 flex gap-2 rounded-xl border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning"><AlertTriangle className="h-3.5 w-3.5 shrink-0" />Below the ₹{WALLET_FLOOR.toLocaleString("en-IN")} working floor.</p>}
+              {wallet !== null && wallet < WALLET_FLOOR && <p className="mt-3 flex gap-2 rounded-xl border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning"><AlertTriangle className="h-3.5 w-3.5 shrink-0" />Below the ₹{WALLET_FLOOR.toLocaleString("en-IN")} working floor.</p>}
             </CardContent>
           </Card>
 
