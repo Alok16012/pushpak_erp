@@ -1,5 +1,6 @@
 import { supabase, supabaseUrl } from "./client";
 import { KNOWN_COURSE_CATEGORIES } from "../courseCategories";
+import { newId, nowIso } from "../id";
 import {
   createInvoiceRow,
   listInvoices,
@@ -1232,11 +1233,12 @@ export async function getBranchesWithStats(organizationId: string | null) {
   const ids = (branches as Record<string, unknown>[]).map((b) => b.id as string);
   if (!ids.length) return { success: true, data: [] as Record<string, unknown>[] };
 
-  const [addresses, licenses, students, invoices] = await Promise.all([
+  const [addresses, licenses, students, invoices, wallets] = await Promise.all([
     supabase.from("branch_addresses").select("branchId, city, state").in("branchId", ids),
     supabase.from("branch_licenses").select("branchId, expiryDate").in("branchId", ids),
     supabase.from("students").select("id, branchId").in("branchId", ids).is("deletedAt", null),
     supabase.from("fee_invoices").select("branchId, totalAmount, paidAmount").in("branchId", ids),
+    supabase.from("branch_wallets").select("branchId, balance").in("branchId", ids),
   ]);
 
   const addressFor = new Map<string, { city?: string; state?: string }>();
@@ -1260,6 +1262,13 @@ export async function getBranchesWithStats(organizationId: string | null) {
     revenueFor.set(key, (revenueFor.get(key) || 0) + paid);
     pendingFor.set(key, (pendingFor.get(key) || 0) + Math.max(total - paid, 0));
   }
+  // Prepaid wallet money, topped up on the Wallet Recharge screen. It is not
+  // revenue and is deliberately kept out of the two totals above -- a branch
+  // that has collected no fees still has whatever it has recharged.
+  const walletFor = new Map<string, number>();
+  for (const row of wallets.data || []) {
+    walletFor.set(row.branchId as string, Number(row.balance) || 0);
+  }
 
   return {
     success: true,
@@ -1274,6 +1283,7 @@ export async function getBranchesWithStats(organizationId: string | null) {
         staff: Number(b.numFaculty) || 0,
         revenue: revenueFor.get(id) || 0,
         pendingRevenue: pendingFor.get(id) || 0,
+        walletBalance: walletFor.get(id) || 0,
         status: b.isActive ? "active" : "inactive",
       };
     }),
@@ -1645,23 +1655,28 @@ export async function rechargeWallet(branchId: string | null, input: { amount: n
   if (wErr && wErr.code !== "PGRST116") throw new Error(wErr.message);
   const currentBalance = Number(wallet?.balance || 0);
   const newBalance = currentBalance + amount;
+  // `id` and `updatedAt` are NOT NULL with no database default -- see lib/id.ts.
   if (wallet?.id) {
     const { error: uErr } = await supabase.from("branch_wallets").update({
       balance: newBalance,
       lastRechargeAmount: amount,
-      lastRechargeDate: new Date().toISOString(),
+      lastRechargeDate: nowIso(),
+      updatedAt: nowIso(),
     }).eq("id", wallet.id);
     if (uErr) throw new Error(uErr.message);
   } else {
     const { error: iErr } = await supabase.from("branch_wallets").insert({
+      id: newId("wal"),
       branchId,
       balance: newBalance,
       lastRechargeAmount: amount,
-      lastRechargeDate: new Date().toISOString(),
+      lastRechargeDate: nowIso(),
+      updatedAt: nowIso(),
     });
     if (iErr) throw new Error(iErr.message);
   }
   const { data: tx, error: tErr } = await supabase.from("branch_transactions").insert({
+    id: newId("txn"),
     branchId,
     amount,
     type: "CREDIT",
@@ -1671,6 +1686,7 @@ export async function rechargeWallet(branchId: string | null, input: { amount: n
     status: "COMPLETED",
     paymentMethod: pm as any,
     balanceAfter: newBalance,
+    updatedAt: nowIso(),
   }).select("*").single();
   if (tErr) throw new Error(tErr.message);
   return { success: true, data: tx };

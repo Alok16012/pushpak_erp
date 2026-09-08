@@ -28,6 +28,7 @@ import {
   Info,
   X,
   Wallet,
+  Hourglass,
   Download,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -55,9 +56,15 @@ interface Branch {
   staff: number;
   revenue: number;
   pendingRevenue: number;
+  /** Prepaid wallet money, topped up on Wallet Recharge. Not part of revenue. */
+  walletBalance: number;
   expiryDate: string;
   status: "active" | "inactive";
 }
+
+/** Wallet money is counted in rupees; revenue is summarised in lakhs. */
+const rupees = (value: number) => `₹${(value ?? 0).toLocaleString("en-IN")}`;
+const lakhs = (value: number) => `Rs.${((value ?? 0) / 100000).toFixed(1)}L`;
 
 const columns: Column<Branch>[] = [
   {
@@ -104,10 +111,23 @@ const columns: Column<Branch>[] = [
     sortable: true,
   },
   {
+    key: "walletBalance",
+    header: "Wallet",
+    sortable: true,
+    cell: (branch) => {
+      const balance = branch.walletBalance ?? 0;
+      return (
+        <span className={balance > 0 ? "font-medium text-success" : "font-medium text-muted-foreground"}>
+          {rupees(balance)}
+        </span>
+      );
+    },
+  },
+  {
     key: "revenue",
     header: "Revenue",
     sortable: true,
-    cell: (branch) => <span className="font-medium text-success">Rs.{((branch.revenue ?? 0) / 100000).toFixed(1)}L</span>,
+    cell: (branch) => <span className="font-medium text-success">{lakhs(branch.revenue)}</span>,
   },
   {
     key: "pendingRevenue",
@@ -117,7 +137,7 @@ const columns: Column<Branch>[] = [
       const pending = branch.pendingRevenue ?? 0;
       return (
         <span className={pending > 0 ? "font-medium text-destructive" : "font-medium text-muted-foreground"}>
-          Rs.{(pending / 100000).toFixed(1)}L
+          {lakhs(pending)}
         </span>
       );
     },
@@ -570,6 +590,7 @@ export default function ViewBranch() {
   const totalStaff = branchesData.reduce((sum, b) => sum + (b.staff ?? 0), 0);
   const totalRevenue = branchesData.reduce((sum, b) => sum + (b.revenue ?? 0), 0);
   const totalPending = branchesData.reduce((sum, b) => sum + (b.pendingRevenue ?? 0), 0);
+  const totalWallet = branchesData.reduce((sum, b) => sum + (b.walletBalance ?? 0), 0);
 
   const exportBranches = () => {
     downloadCsv(
@@ -581,6 +602,7 @@ export default function ViewBranch() {
         State: (b as unknown as { state?: string }).state ?? "",
         Students: b.students ?? 0,
         Staff: b.staff ?? 0,
+        WalletBalance: b.walletBalance ?? 0,
         RevenueReceived: b.revenue ?? 0,
         RevenuePending: b.pendingRevenue ?? 0,
         RevenueTotal: (b.revenue ?? 0) + (b.pendingRevenue ?? 0),
@@ -624,7 +646,7 @@ export default function ViewBranch() {
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 mb-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <StatsCard
           title="Total Branches"
           value={branchesData.length}
@@ -646,21 +668,27 @@ export default function ViewBranch() {
           icon={Users}
         />
         <StatsCard
+          title="Wallet Balance"
+          value={rupees(totalWallet)}
+          subtitle="Recharged across all branches"
+          icon={Wallet}
+        />
+        <StatsCard
           title="Revenue Received"
-          value={`Rs.${(totalRevenue / 100000).toFixed(1)}L`}
-          subtitle="Collected across all branches"
+          value={lakhs(totalRevenue)}
+          subtitle="Fees collected across all branches"
           icon={IndianRupee}
           trend={{ value: 8, isPositive: true }}
         />
         <StatsCard
           title="Pending Revenue"
-          value={`Rs.${(totalPending / 100000).toFixed(1)}L`}
-          subtitle="Still to be collected"
-          icon={Wallet}
+          value={lakhs(totalPending)}
+          subtitle="Fees still to be collected"
+          icon={Hourglass}
         />
         <StatsCard
           title="Total Revenue"
-          value={`Rs.${((totalRevenue + totalPending) / 100000).toFixed(1)}L`}
+          value={lakhs(totalRevenue + totalPending)}
           subtitle="Received plus pending"
           icon={IndianRupee}
         />
@@ -704,9 +732,10 @@ export default function ViewBranch() {
                 ["Location", [details.city, details.state].filter(Boolean).join(", ") || "—"],
                 ["Students", (details.students ?? 0).toLocaleString()],
                 ["Staff", String(details.staff ?? 0)],
-                ["Revenue received", `Rs.${((details.revenue ?? 0) / 100000).toFixed(1)}L`],
-                ["Revenue pending", `Rs.${((details.pendingRevenue ?? 0) / 100000).toFixed(1)}L`],
-                ["Revenue total", `Rs.${(((details.revenue ?? 0) + (details.pendingRevenue ?? 0)) / 100000).toFixed(1)}L`],
+                ["Wallet balance", rupees(details.walletBalance)],
+                ["Revenue received", lakhs(details.revenue)],
+                ["Revenue pending", lakhs(details.pendingRevenue)],
+                ["Revenue total", lakhs((details.revenue ?? 0) + (details.pendingRevenue ?? 0))],
                 ["Status", details.status === "active" ? "Active" : "Inactive"],
               ].map(([label, value]) => (
                 <div key={label}>
