@@ -78,10 +78,21 @@ export async function getDashboardStats(branchId: string | null) {
   const dueQuery = supabase.from("fee_invoices").select("totalAmount,paidAmount").in("status", ["DUE", "PARTIAL"]);
   if (branchId) dueQuery.eq("branchId", branchId);
 
+  // Every other query here is branch-scoped; this one was not, so a branch's
+  // "attendance today" was really the whole organisation's.
   const attendanceQuery = supabase.from("attendance_records").select("status").eq("date", today);
+  if (branchId) attendanceQuery.eq("branchId", branchId);
 
-  const paymentsQuery = supabase.from("fee_payments").select("amount").gte("paidAt", monthStart);
-  if (branchId) paymentsQuery.eq("branchId", branchId);
+  // fee_payments has no branchId of its own - it reaches a branch through its
+  // invoice. Filtering the column directly returned 400 for every branch login,
+  // which took the whole query down and left "Fees collected" reading zero.
+  const paymentsQuery = branchId
+    ? supabase
+        .from("fee_payments")
+        .select("amount, fee_invoices!inner(branchId)")
+        .gte("paidAt", monthStart)
+        .eq("fee_invoices.branchId", branchId)
+    : supabase.from("fee_payments").select("amount").gte("paidAt", monthStart);
 
   const coursesQuery = supabase.from("courses").select("*", { count: "exact", head: true }).eq("isActive", true).is("deletedAt", null);
   if (orgId) coursesQuery.eq("organizationId", orgId);
@@ -1639,7 +1650,10 @@ export async function updateBranchSettings(branchId: string | null, input: Recor
 
 export async function getWallet(branchId: string | null) {
   if (!branchId) return { success: true, data: null };
-  const { data, error } = await supabase.from("branch_wallets").select("*").eq("branchId", branchId).single();
+  // `maybeSingle`, not `single`: a branch that has never been recharged has no
+  // wallet row, and `single` answers that with a 406 that the browser logs as a
+  // failed request even though the caller treats it as a zero balance.
+  const { data, error } = await supabase.from("branch_wallets").select("*").eq("branchId", branchId).maybeSingle();
   if (error && error.code !== "PGRST116") throw new Error(error.message);
   return { success: true, data: data || null };
 }
