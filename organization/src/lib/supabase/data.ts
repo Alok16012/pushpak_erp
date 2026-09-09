@@ -1763,6 +1763,183 @@ export async function rechargeWallet(branchId: string | null, input: { amount: n
   return { success: true, data: tx };
 }
 
+/* ============================
+   WALLET RECHARGE APPROVAL
+
+   A branch no longer credits itself. It pays the organisation's UPI account,
+   files the UTR and a screenshot, and the balance moves only when an admin
+   approves. `rechargeWallet` above is the admin's direct top-up.
+   ============================ */
+
+/** The UPI account a branch is told to pay. One per organisation. */
+export async function getRechargeUpi(organizationId: string | null) {
+  if (!organizationId) return { success: true, data: null };
+  const { data, error } = await supabase
+    .from("organizations")
+    .select('name, "rechargeUpiId", "rechargeUpiName"')
+    .eq("id", organizationId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return { success: true, data: null };
+  const row = data as { name?: string; rechargeUpiId?: string; rechargeUpiName?: string };
+  return {
+    success: true,
+    data: row.rechargeUpiId
+      ? { upiId: row.rechargeUpiId, merchantName: row.rechargeUpiName || row.name || "Recharge" }
+      : null,
+  };
+}
+
+export async function setRechargeUpi(organizationId: string, upiId: string, merchantName: string) {
+  const { error } = await supabase
+    .from("organizations")
+    .update({ rechargeUpiId: upiId || null, rechargeUpiName: merchantName || null })
+    .eq("id", organizationId);
+  if (error) throw new Error(error.message);
+  return { success: true };
+}
+
+/**
+ * The screenshot goes to a private bucket under the branch's own folder, which
+ * is what the storage policy keys on. A signed URL is what anyone reads it by.
+ */
+export async function uploadRechargeProof(branchId: string, file: File) {
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const path = `${branchId}/${newId("proof")}.${ext}`;
+  const { error } = await supabase.storage
+    .from("recharge-proofs")
+    .upload(path, file, { contentType: file.type || "image/jpeg", upsert: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: path };
+}
+
+export async function getRechargeProofUrl(path: string) {
+  const { data, error } = await supabase.storage.from("recharge-proofs").createSignedUrl(path, 600);
+  if (error) throw new Error(error.message);
+  return { success: true, data: data.signedUrl };
+}
+
+/**
+ * Files a recharge for approval. `balanceAfter` is 0 because nothing has moved
+ * yet -- the RLS policy insists on it, so a branch cannot file a row that looks
+ * like a settled one.
+ */
+export async function requestWalletRecharge(
+  branchId: string | null,
+  input: { amount: number; paymentMethod: string; utr: string; proofPath?: string; description?: string },
+) {
+  if (!branchId) return { success: false as const, error: "Missing branch" };
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) return { success: false as const, error: "Invalid amount" };
+  if (!input.utr.trim()) return { success: false as const, error: "Enter the UTR / reference number" };
+
+  const { data, error } = await supabase
+    .from("branch_transactions")
+    .insert({
+      id: newId("txn"),
+      branchId,
+      amount,
+      type: "CREDIT",
+      category: "RECHARGE",
+      description: input.description || "Wallet recharge",
+      reference: input.utr.trim(),
+      status: "PENDING",
+      paymentMethod: (input.paymentMethod || "UPI").toUpperCase() as any,
+      balanceAfter: 0,
+      proofUrl: input.proofPath || null,
+      updatedAt: nowIso(),
+    })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return { success: true as const, data };
+}
+
+export async function getPendingRecharges(organizationId: string | null) {
+  if (!organizationId) return { success: true, data: [] };
+  const { data, error } = await supabase
+    .from("branch_transactions")
+    .select(TRANSACTION_SELECT)
+    .in("branchId", (await getBranchIdsByOrg(organizationId)) || [])
+    .eq("status", "PENDING")
+    .order("createdAt", { ascending: false });
+  if (error) throw new Error(error.message);
+  return { success: true, data: (data || []).map(mapTransaction) };
+}
+
+/**
+ * Approving is the moment the money is real: the wallet is credited and the
+ * request is stamped with the balance it produced. Re-checking the status here
+ * keeps a double click from crediting twice.
+ */
+export async function approveRecharge(transactionId: string, reviewerId?: string) {
+  const { data: tx, error: tErr } = await supabase
+    .from("branch_transactions")
+    .select("*")
+    .eq("id", transactionId)
+    .single();
+  if (tErr) throw new Error(tErr.message);
+  if (tx.status !== "PENDING") return { success: false as const, error: "That request was already reviewed." };
+
+  const branchId = tx.branchId as string;
+  const amount = Number(tx.amount) || 0;
+
+  const { data: wallet, error: wErr } = await supabase
+    .from("branch_wallets")
+    .select("*")
+    .eq("branchId", branchId)
+    .maybeSingle();
+  if (wErr) throw new Error(wErr.message);
+
+  const newBalance = Number(wallet?.balance || 0) + amount;
+  if (wallet?.id) {
+    const { error } = await supabase
+      .from("branch_wallets")
+      .update({ balance: newBalance, lastRechargeAmount: amount, lastRechargeDate: nowIso(), updatedAt: nowIso() })
+      .eq("id", wallet.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase.from("branch_wallets").insert({
+      id: newId("wal"),
+      branchId,
+      balance: newBalance,
+      lastRechargeAmount: amount,
+      lastRechargeDate: nowIso(),
+      updatedAt: nowIso(),
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  const { error } = await supabase
+    .from("branch_transactions")
+    .update({
+      status: "COMPLETED",
+      balanceAfter: newBalance,
+      reviewedAt: nowIso(),
+      reviewedBy: reviewerId || null,
+      updatedAt: nowIso(),
+    })
+    .eq("id", transactionId);
+  if (error) throw new Error(error.message);
+  return { success: true as const, data: { balance: newBalance } };
+}
+
+export async function rejectRecharge(transactionId: string, note: string, reviewerId?: string) {
+  const { error } = await supabase
+    .from("branch_transactions")
+    .update({
+      status: "FAILED",
+      reviewedAt: nowIso(),
+      reviewedBy: reviewerId || null,
+      reviewNote: note || null,
+      updatedAt: nowIso(),
+    })
+    .eq("id", transactionId)
+    .eq("status", "PENDING");
+  if (error) throw new Error(error.message);
+  return { success: true as const };
+}
+
 export async function getFeeTypes() {
   return { success: true, data: [] };
 }
