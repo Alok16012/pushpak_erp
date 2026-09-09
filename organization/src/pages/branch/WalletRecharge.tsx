@@ -1,35 +1,70 @@
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { StatsCard } from "@/components/ui/StatsCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatsCard } from "@/components/ui/StatsCard";
-import { Wallet, CreditCard, Building2, History, Plus, ArrowUpRight, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { qrDataUrl, upiUri } from "@/lib/upi";
 import {
-  getWalletsByOrg,
-  getTransactionsByOrg,
-  rechargeWallet,
+  Wallet,
+  CreditCard,
+  Building2,
+  Clock,
+  Plus,
+  Search,
+  RefreshCw,
+  Download,
+  FilterX,
+  CheckCircle2,
+  XCircle,
+  Eye,
+  History,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Copy,
+  Check,
+  AlertCircle,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ShieldAlert,
+} from "lucide-react";
+import { downloadCsv } from "@/lib/export";
+import {
   getBranches,
-  getWallet,
-  getTransactions,
-  getBranchDetails,
-  getRechargeUpi,
-  setRechargeUpi,
-  requestWalletRecharge,
-  uploadRechargeProof,
-  getPendingRecharges,
-  getRechargeProofUrl,
-  approveRecharge,
-  rejectRecharge,
+  getWalletsByOrg,
+  getWalletTransactions,
+  approveRechargeTransaction,
+  rejectRechargeTransaction,
+  bulkApproveRecharges,
+  bulkRejectRecharges,
+  type WalletTransactionItem,
 } from "@/lib/supabase/data";
+import { RechargeDrawer } from "@/components/branch/RechargeDrawer";
+import { PaymentProofModal } from "@/components/branch/PaymentProofModal";
+import { RejectReasonDialog } from "@/components/branch/RejectReasonDialog";
+import { TransactionAuditDrawer } from "@/components/branch/TransactionAuditDrawer";
 
 interface Institute {
   id: string;
@@ -38,596 +73,1205 @@ interface Institute {
   balance: number;
 }
 
-type Recharge = {
-  id: string;
-  branchId: string;
-  amount: number;
-  paymentMethod: string;
-  createdAt: string;
-  status: "COMPLETED" | "PENDING" | "FAILED";
-  description?: string;
-};
-
-const METHODS = [
-  { id: "upi", label: "UPI Payment", enumValue: "UPI", icon: Wallet },
-  { id: "card", label: "Credit/Debit Card", enumValue: "CARD", icon: CreditCard },
-  { id: "netbanking", label: "Net Banking", enumValue: "NET_BANKING", icon: Building2 },
-];
-
-const quickAmounts = [5000, 10000, 25000, 50000, 100000];
+type TabStatus = "ALL" | "PENDING" | "COMPLETED" | "FAILED";
+type DateFilter = "all" | "today" | "week" | "month";
 
 const inr = (value: number) => `₹${value.toLocaleString("en-IN")}`;
 
-const newRechargeId = () => `rch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
 export default function WalletRecharge() {
   const { toast } = useToast();
-  // `branchId` is set for a franchise/branch login and null for an org admin.
-  // Everything below is scoped by it: a branch account must see its own wallet
-  // and its own transactions, never the rest of the organisation's.
-  const { user, branchId } = useAuth();
-  const navigate = useNavigate();
-  const [walletData, setWalletData] = useState<Record<string, unknown> | null>(null);
+  const { user } = useAuth();
+
+  // Primary Data State
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [institutes, setInstitutes] = useState<Institute[]>([]);
-  const [history, setHistory] = useState<Recharge[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedInstitute, setSelectedInstitute] = useState<Institute | null>(null);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("upi");
-  const [remarks, setRemarks] = useState("");
-  // Branch side of the approval flow: pay the org's UPI, then file proof.
-  const [upi, setUpi] = useState<{ upiId: string; merchantName: string } | null>(null);
-  const [qr, setQr] = useState("");
-  const [utr, setUtr] = useState("");
-  const [proof, setProof] = useState<File | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  // Admin side: what is waiting on a decision.
-  const [pendingRows, setPendingRows] = useState<Recharge[]>([]);
-  const [reviewing, setReviewing] = useState<string | null>(null);
-  const [upiDraft, setUpiDraft] = useState({ upiId: "", merchantName: "" });
-  const [savingUpi, setSavingUpi] = useState(false);
+  const [transactions, setTransactions] = useState<WalletTransactionItem[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [statusCounts, setStatusCounts] = useState({
+    all: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  });
+  const [totals, setTotals] = useState({
+    totalBalance: 0,
+    pendingAmount: 0,
+    approvedAmount: 0,
+  });
+
+  // High-Volume Filter & Search States
+  const [statusTab, setStatusTab] = useState<TabStatus>("PENDING");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState<string>("all");
+  const [selectedMethod, setSelectedMethod] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [sortBy, setSortBy] = useState<"createdAt" | "amount" | "branch" | "status">("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc"); // Default pending oldest-first
+
+  // Selection & Bulk Action States
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+
+  // Modals & Drawers States
+  const [rechargeDrawerOpen, setRechargeDrawerOpen] = useState(false);
+  const [proofModalOpen, setProofModalOpen] = useState(false);
+  const [selectedProofTx, setSelectedProofTx] = useState<WalletTransactionItem | null>(null);
+  const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
+  const [selectedAuditTx, setSelectedAuditTx] = useState<WalletTransactionItem | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectingTx, setRejectingTx] = useState<WalletTransactionItem | null>(null);
+  const [isBulkReject, setIsBulkReject] = useState(false);
+
+  // Copy feedback state
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // 300ms search debounce
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchInput]);
+
+  // Adjust default sort order when switching tabs:
+  // Pending -> oldest first (asc) for FIFO processing. All/Approved/Rejected -> newest first (desc).
+  const handleTabChange = (newTab: TabStatus) => {
+    setStatusTab(newTab);
+    setCurrentPage(1);
+    setSelectedIds([]);
+    if (newTab === "PENDING") {
+      setSortBy("createdAt");
+      setSortOrder("asc");
+    } else {
+      setSortBy("createdAt");
+      setSortOrder("desc");
+    }
+  };
+
+  // Date filter boundaries
+  const dateRange = useMemo(() => {
+    if (dateFilter === "all") return { startDate: null, endDate: null };
+    const now = new Date();
+    if (dateFilter === "today") {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      return { startDate: start, endDate: null };
+    }
+    if (dateFilter === "week") {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      return { startDate: weekAgo, endDate: null };
+    }
+    if (dateFilter === "month") {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      return { startDate: monthStart, endDate: null };
+    }
+    return { startDate: null, endDate: null };
+  }, [dateFilter]);
+
+  // Primary data fetcher
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+
+    try {
+      const orgId = user?.organizationId || null;
+
+      // Parallel fetch: branches + wallets + filtered transactions
+      const [branchesRes, walletsRes, txResult] = await Promise.all([
+        getBranches(orgId),
+        getWalletsByOrg(orgId),
+        getWalletTransactions({
+          organizationId: orgId,
+          branchId: selectedBranch === "all" ? null : selectedBranch,
+          status: statusTab,
+          paymentMethod: selectedMethod === "all" ? null : selectedMethod,
+          search: debouncedSearch,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          page: currentPage,
+          pageSize,
+          sortBy,
+          sortOrder,
+        }),
+      ]);
+
+      const branches = (branchesRes.data || []).filter((b: any) => b.isActive !== false);
+      const walletMap = new Map((walletsRes.data || []).map((w: any) => [w.branchId, Number(w.balance || 0)]));
+
+      const instituteList = branches.map((b: any) => ({
+        id: b.id,
+        name: b.name,
+        directorName: b.code,
+        balance: Number(walletMap.get(b.id) ?? 0),
+      }));
+
+      setInstitutes(instituteList);
+      setTransactions(txResult.data);
+      setTotalCount(txResult.totalCount);
+      setTotalPages(txResult.totalPages);
+      setStatusCounts(txResult.counts);
+      setTotals({
+        totalBalance: instituteList.reduce((sum, i) => sum + i.balance, 0),
+        pendingAmount: txResult.totals.pendingAmount,
+        approvedAmount: txResult.totals.approvedAmount,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to load wallet transactions",
+        description: error instanceof Error ? error.message : "Database connection error.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [
+    user?.organizationId,
+    selectedBranch,
+    statusTab,
+    selectedMethod,
+    debouncedSearch,
+    dateRange.startDate,
+    dateRange.endDate,
+    currentPage,
+    pageSize,
+    sortBy,
+    sortOrder,
+    toast,
+  ]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadWallet() {
-      try {
-        const orgId = user?.organizationId || null;
-        // A branch login carries an organizationId too, so the branch has to be
-        // checked first - keying off the org alone showed every branch's wallet.
-        const [branches, wallets, txs] = branchId
-          ? await Promise.all([
-              getBranchDetails(orgId || "", branchId)
-                .then((r) => [r.data])
-                .catch(() => []),
-              getWallet(branchId).then((r) => (r.data ? [r.data] : [])),
-              getTransactions(branchId).then((r) => r.data || []),
-            ])
-          : await Promise.all([
-              getBranches(orgId).then((r) => r.data || []),
-              getWalletsByOrg(orgId).then((r) => r.data || []),
-              getTransactionsByOrg(orgId).then((r) => r.data || []),
-            ]);
-        if (!cancelled) {
-          const active = (branches as any[]).filter((b) => b && b.isActive !== false);
-          const walletMap = new Map((wallets as any[]).map((w: any) => [w.branchId, Number(w.balance || 0)]));
-          setInstitutes(
-            active.map((b: any) => ({
-              id: b.id,
-              name: b.name,
-              directorName: b.code,
-              balance: Number(walletMap.get(b.id) ?? 0),
-            }))
-          );
-          setHistory((txs as any[]).map((tx: any) => ({ ...tx, createdAt: tx.createdAt })));
+    loadData();
+  }, [loadData]);
+
+  // Single Approve Action
+  const handleApprove = async (tx: WalletTransactionItem) => {
+    try {
+      const res = await approveRechargeTransaction(tx.id, {
+        id: user?.id,
+        name: user?.name,
+        email: user?.email,
+      });
+
+      if (res.success && res.data) {
+        toast({
+          title: "Recharge Approved",
+          description: `₹${tx.amount.toLocaleString("en-IN")} credited to ${tx.branch}. Reference: ${tx.reference}`,
+        });
+
+        // Close proof modal if approving from inside proof viewer
+        if (proofModalOpen && selectedProofTx?.id === tx.id) {
+          setProofModalOpen(false);
         }
-      } catch (error) {
-        if (!cancelled) {
+
+        // Clean from selection
+        setSelectedIds((prev) => prev.filter((id) => id !== tx.id));
+        loadData(true);
+      } else {
+        toast({
+          title: "Approval Failed",
+          description: res.error || "Transaction could not be approved.",
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      toast({
+        title: "Approval Failed",
+        description: err instanceof Error ? err.message : "Error processing approval.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Open single reject dialog
+  const handleOpenReject = (tx: WalletTransactionItem) => {
+    setRejectingTx(tx);
+    setIsBulkReject(false);
+    setRejectDialogOpen(true);
+  };
+
+  // Open bulk reject dialog
+  const handleOpenBulkReject = () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkReject(true);
+    setRejectingTx(null);
+    setRejectDialogOpen(true);
+  };
+
+  // Rejection Execution (Single or Bulk)
+  const handleConfirmReject = async (reason: string) => {
+    if (isBulkReject) {
+      setIsBulkProcessing(true);
+      try {
+        const res = await bulkRejectRecharges(selectedIds, {
+          id: user?.id,
+          name: user?.name,
+          email: user?.email,
+        }, reason);
+
+        if (res.succeeded.length > 0) {
           toast({
-            title: "Failed to load wallet data",
-            description: error instanceof Error ? error.message : undefined,
+            title: `Rejected ${res.succeeded.length} Transactions`,
+            description: `Rejection recorded with reason: "${reason}".`,
+          });
+        }
+        if (res.failed.length > 0) {
+          toast({
+            title: `${res.failed.length} Rejections Failed`,
+            description: res.failed.map((f) => f.error).join(", "),
             variant: "destructive",
           });
         }
+
+        setSelectedIds([]);
+        loadData(true);
       } finally {
-        if (!cancelled) {
-          setLoading(false);
+        setIsBulkProcessing(false);
+      }
+    } else if (rejectingTx) {
+      try {
+        const res = await rejectRechargeTransaction(rejectingTx.id, {
+          id: user?.id,
+          name: user?.name,
+          email: user?.email,
+        }, reason);
+
+        if (res.success) {
+          toast({
+            title: "Transaction Rejected",
+            description: `Recharge for ${rejectingTx.branch} marked as rejected.`,
+          });
+
+          if (proofModalOpen && selectedProofTx?.id === rejectingTx.id) {
+            setProofModalOpen(false);
+          }
+
+          setSelectedIds((prev) => prev.filter((id) => id !== rejectingTx.id));
+          loadData(true);
+        } else {
+          toast({
+            title: "Rejection Failed",
+            description: res.error || "Could not reject transaction.",
+            variant: "destructive",
+          });
         }
+      } catch (err) {
+        toast({
+          title: "Rejection Failed",
+          description: err instanceof Error ? err.message : "Error rejecting transaction.",
+          variant: "destructive",
+        });
       }
     }
-    loadWallet();
-    return () => { cancelled = true; };
-  }, [user?.organizationId, branchId, toast]);
-
-  // With one branch there is nothing to search for, so it is simply selected.
-  useEffect(() => {
-    if (branchId && institutes.length === 1) setSelectedInstitute(institutes[0]);
-  }, [branchId, institutes]);
-
-  // The UPI account the branch is told to pay. Set by an admin on this page.
-  useEffect(() => {
-    const orgId = user?.organizationId;
-    if (!orgId) return;
-    getRechargeUpi(orgId)
-      .then((r) => {
-        setUpi(r.data);
-        if (r.data) setUpiDraft({ upiId: r.data.upiId, merchantName: r.data.merchantName });
-      })
-      .catch(() => setUpi(null));
-  }, [user?.organizationId]);
-
-  // A QR carrying the amount, so the branch cannot mistype it into the app.
-  useEffect(() => {
-    const value = Number(amount);
-    if (!upi || !Number.isFinite(value) || value <= 0) { setQr(""); return; }
-    let live = true;
-    qrDataUrl(upiUri({ upiId: upi.upiId, merchantName: upi.merchantName, amount: value, note: "Wallet recharge" }))
-      .then((img) => { if (live) setQr(img); })
-      .catch(() => { if (live) setQr(""); });
-    return () => { live = false; };
-  }, [upi, amount]);
-
-  const loadPending = useCallback(() => {
-    if (branchId || !user?.organizationId) return;
-    getPendingRecharges(user.organizationId)
-      .then((r) => setPendingRows(r.data as Recharge[]))
-      .catch(() => setPendingRows([]));
-  }, [branchId, user?.organizationId]);
-  useEffect(() => { loadPending(); }, [loadPending]);
-
-  const openProof = async (path?: string) => {
-    if (!path) return;
-    try {
-      const { data } = await getRechargeProofUrl(path);
-      window.open(data, "_blank", "noopener");
-    } catch (e) {
-      toast({ title: "Could not open the screenshot", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
-    }
   };
 
-  const decide = async (id: string, approve: boolean) => {
-    setReviewing(id);
-    try {
-      const res = approve ? await approveRecharge(id, user?.id) : await rejectRecharge(id, "Rejected by admin", user?.id);
-      if (!res.success) {
-        toast({ title: "Could not review", description: (res as any).error, variant: "destructive" });
-        return;
-      }
-      toast({ title: approve ? "Recharge approved" : "Recharge rejected" });
-      setPendingRows((rows) => rows.filter((r) => r.id !== id));
-      if (approve) window.location.reload();
-    } catch (e) {
-      toast({ title: "Could not review", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
-    } finally {
-      setReviewing(null);
-    }
-  };
+  // Bulk Approve Action
+  const handleBulkApprove = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkProcessing(true);
 
-  const saveUpi = async () => {
-    if (!user?.organizationId) return;
-    if (!upiDraft.upiId.trim()) {
-      toast({ title: "Enter the UPI ID", description: "For example pushpak@ybl.", variant: "destructive" });
-      return;
-    }
-    setSavingUpi(true);
     try {
-      await setRechargeUpi(user.organizationId, upiDraft.upiId.trim(), upiDraft.merchantName.trim());
-      setUpi({ upiId: upiDraft.upiId.trim(), merchantName: upiDraft.merchantName.trim() });
-      toast({ title: "UPI account saved", description: "Branches will now see a QR for this account." });
-    } catch (e) {
-      toast({ title: "Could not save", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
-    } finally {
-      setSavingUpi(false);
-    }
-  };
-
-  /** The branch path: pay first, then file the UTR and the screenshot. */
-  const submitForApproval = async () => {
-    const value = Number(amount);
-    if (!Number.isFinite(value) || value <= 0) {
-      toast({ title: "Invalid amount", description: "Enter a recharge amount greater than zero.", variant: "destructive" });
-      return;
-    }
-    if (!utr.trim()) {
-      toast({ title: "UTR is required", description: "Enter the UTR / reference number from your payment app.", variant: "destructive" });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      let proofPath: string | undefined;
-      if (proof) proofPath = (await uploadRechargeProof(branchId!, proof)).data;
-      const res = await requestWalletRecharge(branchId, {
-        amount: value,
-        paymentMethod: METHODS.find((m) => m.id === method)?.enumValue ?? "UPI",
-        utr,
-        proofPath,
-        description: remarks || "Wallet recharge",
+      const res = await bulkApproveRecharges(selectedIds, {
+        id: user?.id,
+        name: user?.name,
+        email: user?.email,
       });
-      if (!res.success) {
-        toast({ title: "Could not send for approval", description: res.error, variant: "destructive" });
-        return;
+
+      if (res.succeeded.length > 0) {
+        const totalCredited = res.succeeded.reduce((sum, item) => sum + item.amount, 0);
+        toast({
+          title: `Bulk Approval Successful`,
+          description: `Approved ${res.succeeded.length} transactions totaling ₹${totalCredited.toLocaleString("en-IN")}.`,
+        });
       }
-      setHistory((list) => [res.data as any, ...list]);
-      toast({ title: "Sent for approval", description: `${inr(value)} is waiting on an admin. The balance moves once it is approved.` });
-      setAmount(""); setUtr(""); setProof(null); setRemarks("");
-    } catch (e) {
-      toast({ title: "Could not send for approval", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
-  const filteredInstitutes = institutes.filter(
-    (inst) =>
-      inst.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inst.directorName.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const totalBalance = institutes.reduce((sum, i) => sum + i.balance, 0);
-  const thisMonth = history.filter((h) => h.createdAt.slice(0, 7) === new Date().toISOString().slice(0, 7));
-  const pending = history.filter((h) => h.status === "PENDING");
-
-  const reset = () => {
-    setSelectedInstitute(null);
-    setSearchQuery("");
-    setAmount("");
-    setRemarks("");
-  };
-
-  const recharge = async () => {
-    const value = Number(amount);
-    if (!selectedInstitute) {
-      toast({ title: "Select an institute", description: "Search for the branch you want to top up.", variant: "destructive" });
-      return;
-    }
-    if (!Number.isFinite(value) || value <= 0) {
-      toast({ title: "Invalid amount", description: "Enter a recharge amount greater than zero.", variant: "destructive" });
-      return;
-    }
-    const methodEnum = METHODS.find((m) => m.id === method)?.enumValue ?? "UPI";
-    try {
-      const res = await rechargeWallet(selectedInstitute.id, {
-        amount: value,
-        paymentMethod: methodEnum,
-        description: remarks || `Wallet recharge for ${selectedInstitute.name}`,
-      });
-      if (res.success && res.data) {
-        setHistory((list) => [res.data as any, ...list]);
-        setInstitutes((list) =>
-          list.map((i) => (i.id === selectedInstitute.id ? { ...i, balance: Number((res.data as any).balanceAfter || i.balance + value) } : i)),
-        );
-        toast({ title: "Recharge successful", description: `${inr(value)} added to ${selectedInstitute.name}.` });
-        reset();
-      } else {
-        toast({ title: "Recharge failed", description: (res as any).error || "Unknown error", variant: "destructive" });
+      if (res.failed.length > 0) {
+        toast({
+          title: `${res.failed.length} Transactions Failed`,
+          description: res.failed.map((f) => f.error).slice(0, 3).join(", "),
+          variant: "destructive",
+        });
       }
+
+      setSelectedIds([]);
+      loadData(true);
     } catch (err) {
-      toast({ title: "Recharge failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+      toast({
+        title: "Bulk Approval Error",
+        description: err instanceof Error ? err.message : "Could not complete bulk approval.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsBulkProcessing(false);
     }
   };
+
+  // Checkbox selection helpers
+  const pendingTransactionsOnPage = transactions.filter((t) => t.status === "PENDING");
+  const allPagePendingSelected =
+    pendingTransactionsOnPage.length > 0 &&
+    pendingTransactionsOnPage.every((t) => selectedIds.includes(t.id));
+
+  const toggleSelectAllPagePending = () => {
+    if (allPagePendingSelected) {
+      const pageIds = new Set(pendingTransactionsOnPage.map((t) => t.id));
+      setSelectedIds((prev) => prev.filter((id) => !pageIds.has(id)));
+    } else {
+      const newIds = new Set([...selectedIds, ...pendingTransactionsOnPage.map((t) => t.id)]);
+      setSelectedIds(Array.from(newIds));
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setSearchInput("");
+    setDebouncedSearch("");
+    setSelectedBranch("all");
+    setSelectedMethod("all");
+    setDateFilter("all");
+    setCurrentPage(1);
+    setSelectedIds([]);
+  };
+
+  const hasActiveFilters =
+    debouncedSearch !== "" ||
+    selectedBranch !== "all" ||
+    selectedMethod !== "all" ||
+    dateFilter !== "all";
+
+  // Sorting helper
+  const handleSort = (column: "createdAt" | "amount" | "branch" | "status") => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(column);
+      setSortOrder("asc");
+    }
+  };
+
+  // CSV Export
+  const handleExport = () => {
+    downloadCsv(
+      `wallet-ledger-${statusTab.toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
+      transactions.map((tx) => ({
+        "Transaction ID": tx.id,
+        Date: tx.formattedDateTime,
+        Branch: tx.branch,
+        "Branch Code": tx.branchCode,
+        Amount: tx.amount,
+        "Payment Method": tx.paymentMethod,
+        "UTR / Reference": tx.reference,
+        "Submitted By": tx.submittedBy,
+        Status: tx.status,
+        "Reviewed By": tx.reviewedBy || "—",
+        "Reviewed At": tx.reviewedAt || "—",
+        "Balance After": tx.balanceAfter,
+        Remarks: tx.remarks || "",
+        "Rejection Reason": tx.rejectionReason || "",
+      }))
+    );
+    toast({
+      title: "Ledger Exported",
+      description: `Downloaded ${transactions.length} rows to CSV.`,
+    });
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Selected totals for bulk toolbar
+  const selectedTotalAmount = useMemo(() => {
+    return transactions
+      .filter((t) => selectedIds.includes(t.id))
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions, selectedIds]);
 
   return (
     <AppLayout>
       <PageHeader
-        title="Wallet Recharge"
-        description={branchId ? "Recharge your branch wallet" : "Recharge branch wallets for transactions"}
+        title="Wallet Recharge & Transaction Ledger"
+        description="High-volume institutional wallet ledger, top-up requests, and audit approvals"
         breadcrumbs={[
           { label: "Branch Management", href: "/branch/view" },
-          { label: "Wallet Recharge" },
+          { label: "Wallet Recharge & Ledger" },
         ]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-xs"
+              onClick={() => loadData(true)}
+              disabled={loading || refreshing}
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
+              />
+              <span>Refresh</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 h-8 text-xs"
+              onClick={handleExport}
+              disabled={transactions.length === 0}
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export CSV</span>
+            </Button>
+
+            <Button
+              size="sm"
+              className="gap-1.5 h-8 text-xs bg-primary text-primary-foreground shadow-sm"
+              onClick={() => setRechargeDrawerOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>+ New Recharge</span>
+            </Button>
+          </div>
+        }
       />
 
-      <div className="grid gap-4 md:grid-cols-4 mb-6">
+      {/* Executive Compact KPI Summary */}
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-4">
         <StatsCard
-          title={branchId ? "Wallet Balance" : "Total Balance"}
-          value={inr(totalBalance)}
-          subtitle={branchId ? "This branch" : "All branches combined"}
+          title="Total Wallet Balance"
+          value={inr(totals.totalBalance)}
+          subtitle={`${institutes.length} active branches`}
           icon={Wallet}
-          trend={{ value: 15, isPositive: true }}
         />
         <StatsCard
-          title="This Month Recharge"
-          value={inr(thisMonth.reduce((sum, h) => sum + h.amount, 0))}
-          subtitle={`${thisMonth.length} transactions`}
+          title="Approved This Month"
+          value={inr(totals.approvedAmount)}
+          subtitle={`${statusCounts.approved} recharges credited`}
           icon={CreditCard}
-          trend={{ value: 8, isPositive: true }}
+          trend={{ value: 12, isPositive: true }}
         />
         <StatsCard
-          title="Pending Recharges"
-          value={String(pending.length)}
-          subtitle={`${inr(pending.reduce((sum, h) => sum + h.amount, 0))} pending`}
+          title="Pending Approval"
+          value={String(statusCounts.pending)}
+          subtitle={`${inr(totals.pendingAmount)} awaiting review`}
+          icon={Clock}
+          className={
+            statusCounts.pending > 0
+              ? "border-amber-300 bg-amber-50/30 dark:bg-amber-950/10"
+              : ""
+          }
+        />
+        <StatsCard
+          title="Total Transactions"
+          value={String(statusCounts.all)}
+          subtitle={`${statusCounts.rejected} rejected requests`}
           icon={History}
         />
-        <StatsCard
-          title={branchId ? "Branch" : "Active Branches"}
-          value={branchId ? institutes[0]?.name ?? "—" : String(institutes.length)}
-          subtitle={branchId ? institutes[0]?.directorName ?? "" : "With wallet enabled"}
-          icon={Building2}
-        />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                New Recharge
-              </CardTitle>
-              <CardDescription>{branchId ? "Pay the amount below, then send it for approval" : "Add funds to a branch wallet"}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                   <Label htmlFor="searchInstitute">{branchId ? "Institute" : "Search Institute *"}</Label>
-                   {!branchId && (
-                     <div className="relative">
-                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                       <Input
-                         id="searchInstitute"
-                         placeholder="Search by name or director..."
-                         className="pl-9"
-                         value={searchQuery}
-                         onChange={(e) => setSearchQuery(e.target.value)}
-                       />
-                     </div>
-                   )}
-                   {!branchId && searchQuery && filteredInstitutes.length > 0 && (
-                     <div className="border rounded-md mt-1 max-h-48 overflow-auto bg-background shadow-lg">
-                       {filteredInstitutes.map((inst) => (
-                         <div
-                           key={inst.id}
-                           className="p-3 hover:bg-muted cursor-pointer border-b last:border-b-0"
-                           onClick={() => {
-                             setSelectedInstitute(inst);
-                             setSearchQuery(inst.name);
-                           }}
-                         >
-                           <p className="font-medium text-sm">{inst.name}</p>
-                           <p className="text-xs text-muted-foreground">Director: {inst.directorName}</p>
-                           <p className="text-xs text-success">Balance: ₹{inst.balance.toLocaleString()}</p>
-                         </div>
-                       ))}
-                     </div>
-                   )}
-                   {selectedInstitute && (
-                     <div className="bg-muted/50 p-3 rounded-md mt-2">
-                       <p className="text-sm font-medium">{selectedInstitute.name}</p>
-                       <p className="text-xs text-muted-foreground">Director: {selectedInstitute.directorName}</p>
-                       <p className="text-xs text-success">Current Balance: ₹{selectedInstitute.balance.toLocaleString()}</p>
-                     </div>
-                   )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="amount">Recharge Amount *</Label>
-                  <Input id="amount" type="number" placeholder="Enter amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Quick Select Amount</Label>
-                <div className="flex flex-wrap gap-2">
-                  {quickAmounts.map((value) => (
-                    <Button
-                      key={value}
-                      variant={Number(amount) === value ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setAmount(String(value))}
-                    >
-                      {inr(value)}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Payment Method</Label>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {METHODS.map(({ id, label, icon: Icon }) => (
-                    <Card
-                      key={id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setMethod(id)}
-                      onKeyDown={(e) => e.key === "Enter" && setMethod(id)}
-                      className={`cursor-pointer border-2 transition-colors ${
-                        method === id ? "border-primary" : "hover:border-primary"
-                      }`}
-                    >
-                      <CardContent className="p-4 text-center">
-                        <Icon className="h-6 w-6 mx-auto mb-2 text-primary" />
-                        <p className="font-medium text-sm">{label}</p>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              </div>
-
-              {branchId && (
-                <div className="space-y-4 rounded-xl border p-4">
-                  <div>
-                    <p className="text-sm font-medium">Pay {Number(amount) > 0 ? inr(Number(amount)) : "the amount"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {upi
-                        ? "Scan with any UPI app. The amount is already set in the code."
-                        : "No UPI account has been set yet — ask an admin to add one on this page."}
-                    </p>
-                  </div>
-                  {qr ? (
-                    <div className="flex flex-col items-center gap-2">
-                      <img src={qr} alt="UPI QR code" className="h-52 w-52 rounded-lg border bg-white p-2" />
-                      <p className="text-xs text-muted-foreground">{upi?.merchantName} · {upi?.upiId}</p>
-                    </div>
-                  ) : (
-                    upi && <p className="text-xs text-muted-foreground">Enter an amount to get the QR code.</p>
-                  )}
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="utr">UTR / Reference no *</Label>
-                      <Input id="utr" placeholder="From your payment app" value={utr} onChange={(e) => setUtr(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="proof">Payment screenshot</Label>
-                      <Input id="proof" type="file" accept="image/*" onChange={(e) => setProof(e.target.files?.[0] ?? null)} />
-                    </div>
-                  </div>
-                </div>
+      {/* Full Width Ledger Console Container */}
+      <div className="space-y-3">
+        {/* Status Tabs Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2">
+          <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-lg border text-xs">
+            <button
+              type="button"
+              onClick={() => handleTabChange("PENDING")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                statusTab === "PENDING"
+                  ? "bg-background text-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>Pending Approval</span>
+              {statusCounts.pending > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white">
+                  {statusCounts.pending}
+                </span>
               )}
+            </button>
 
-              <div className="space-y-2">
-                <Label htmlFor="remarks">Remarks (Optional)</Label>
-                <Input id="remarks" placeholder="Add a note for this recharge" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-              </div>
+            <button
+              type="button"
+              onClick={() => handleTabChange("ALL")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                statusTab === "ALL"
+                  ? "bg-background text-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>All Transactions</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-muted font-semibold text-muted-foreground">
+                {statusCounts.all}
+              </span>
+            </button>
 
-              <div className="flex justify-end gap-3 pt-4">
-                <Button variant="outline" onClick={reset}>Cancel</Button>
-                {branchId ? (
-                  <Button className="gap-2" onClick={submitForApproval} disabled={submitting}>
-                    <ArrowUpRight className="h-4 w-4" />
-                    {submitting ? "Sending..." : "Send for approval"}
-                  </Button>
-                ) : (
-                  <Button className="gap-2" onClick={recharge}>
-                    <ArrowUpRight className="h-4 w-4" />
-                    Proceed to Payment
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+            <button
+              type="button"
+              onClick={() => handleTabChange("COMPLETED")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                statusTab === "COMPLETED"
+                  ? "bg-background text-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>Approved</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                {statusCounts.approved}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleTabChange("FAILED")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all ${
+                statusTab === "FAILED"
+                  ? "bg-background text-foreground shadow-sm font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span>Rejected</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300">
+                {statusCounts.rejected}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {statusTab === "PENDING" && (
+              <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                <Clock className="h-3.5 w-3.5" /> Showing oldest pending first
+              </span>
+            )}
+            <span className="hidden sm:inline">
+              Showing {transactions.length} of {totalCount} records
+            </span>
+          </div>
         </div>
 
-        <div className="space-y-6">
-          {!branchId && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
-                  Recharge UPI account
-                </CardTitle>
-                <CardDescription>The account branches are shown a QR for.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-2">
-                  <Label htmlFor="upi-id">UPI ID</Label>
-                  <Input id="upi-id" placeholder="name@ybl" value={upiDraft.upiId} onChange={(e) => setUpiDraft({ ...upiDraft, upiId: e.target.value })} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="upi-name">Account name</Label>
-                  <Input id="upi-name" placeholder="Pushpak Kumar" value={upiDraft.merchantName} onChange={(e) => setUpiDraft({ ...upiDraft, merchantName: e.target.value })} />
-                </div>
-                <Button size="sm" onClick={saveUpi} disabled={savingUpi}>{savingUpi ? "Saving..." : "Save"}</Button>
-              </CardContent>
-            </Card>
-          )}
+        {/* High-Volume Filter Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 p-2.5 rounded-lg border bg-card/60">
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search TXN ID, branch, UTR, submitter..."
+                className="pl-8 h-8 text-xs"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+              />
+            </div>
 
-          {!branchId && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Wallet className="h-5 w-5" />
-                  Awaiting approval
-                </CardTitle>
-                <CardDescription>
-                  {pendingRows.length
-                    ? "A branch has paid and filed proof. The balance moves when you approve."
-                    : "Nothing is waiting on a decision."}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {pendingRows.map((row) => {
-                  const name = institutes.find((i) => i.id === row.branchId)?.name ?? row.branchId;
-                  const proofPath = (row as any).proofUrl as string | undefined;
-                  return (
-                    <div key={row.id} className="rounded-lg border p-3 space-y-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium">{name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            UTR: {(row as any).reference || "—"} · {(row.createdAt || "").slice(0, 10)}
-                          </p>
-                        </div>
-                        <p className="text-sm font-semibold">{inr(row.amount)}</p>
+            {/* Branch Filter */}
+            <Select value={selectedBranch} onValueChange={(v) => { setSelectedBranch(v); setCurrentPage(1); }}>
+              <SelectTrigger className="h-8 w-[160px] text-xs">
+                <SelectValue placeholder="All Branches" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Branches</SelectItem>
+                {institutes.map((inst) => (
+                  <SelectItem key={inst.id} value={inst.id}>
+                    {inst.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Payment Method Filter */}
+            <Select value={selectedMethod} onValueChange={(v) => { setSelectedMethod(v); setCurrentPage(1); }}>
+              <SelectTrigger className="h-8 w-[130px] text-xs">
+                <SelectValue placeholder="All Methods" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Methods</SelectItem>
+                <SelectItem value="UPI">UPI</SelectItem>
+                <SelectItem value="CARD">Credit/Debit Card</SelectItem>
+                <SelectItem value="NET_BANKING">Net Banking</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Date Range Filter */}
+            <Select value={dateFilter} onValueChange={(v) => { setDateFilter(v as DateFilter); setCurrentPage(1); }}>
+              <SelectTrigger className="h-8 w-[120px] text-xs">
+                <SelectValue placeholder="All Time" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="week">Last 7 Days</SelectItem>
+                <SelectItem value="month">This Month</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                onClick={clearAllFilters}
+              >
+                <FilterX className="h-3.5 w-3.5" />
+                <span>Clear</span>
+              </Button>
+            )}
+          </div>
+
+          {/* Rows Per Page */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Rows:</span>
+            <Select
+              value={String(pageSize)}
+              onValueChange={(v) => {
+                setPageSize(Number(v));
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="h-8 w-[70px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* Sticky Bulk Actions Toolbar (Active when >=1 row selected) */}
+        {selectedIds.length > 0 && (
+          <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border bg-primary/10 border-primary/30 shadow-md backdrop-blur">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+              <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground font-mono">
+                {selectedIds.length}
+              </span>
+              <span>Recharge requests selected</span>
+              <span className="text-muted-foreground font-normal">
+                (Total: <strong className="text-foreground font-mono">₹{selectedTotalAmount.toLocaleString("en-IN")}</strong>)
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setSelectedIds([])}
+                disabled={isBulkProcessing}
+              >
+                Deselect All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs border-destructive/40 text-destructive hover:bg-destructive hover:text-white"
+                onClick={handleOpenBulkReject}
+                disabled={isBulkProcessing}
+              >
+                <XCircle className="h-3.5 w-3.5 mr-1" />
+                Reject Selected
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={handleBulkApprove}
+                disabled={isBulkProcessing}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                Approve Selected ({selectedIds.length})
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Dense Ledger Data Grid (1 Row Per Transaction) */}
+        <div className="rounded-lg border bg-card overflow-hidden shadow-sm">
+          <div className="relative overflow-x-auto max-h-[640px]">
+            <Table className="w-full text-xs">
+              <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur z-10 border-b">
+                <TableRow className="hover:bg-transparent">
+                  {/* Bulk Select Checkbox Header */}
+                  <TableHead className="w-10 text-center px-3">
+                    <Checkbox
+                      checked={allPagePendingSelected}
+                      onCheckedChange={toggleSelectAllPagePending}
+                      aria-label="Select all pending transactions on this page"
+                      disabled={pendingTransactionsOnPage.length === 0}
+                    />
+                  </TableHead>
+
+                  {/* Date & Time */}
+                  <TableHead
+                    className="cursor-pointer hover:text-foreground whitespace-nowrap min-w-[130px]"
+                    onClick={() => handleSort("createdAt")}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Date & Time</span>
+                      {sortBy === "createdAt" ? (
+                        sortOrder === "asc" ? (
+                          <ArrowUp className="h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="h-3 w-3" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 opacity-40" />
+                      )}
+                    </div>
+                  </TableHead>
+
+                  {/* Institute / Branch */}
+                  <TableHead
+                    className="cursor-pointer hover:text-foreground whitespace-nowrap min-w-[160px]"
+                    onClick={() => handleSort("branch")}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Institute / Branch</span>
+                      {sortBy === "branch" && (
+                        sortOrder === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                      )}
+                    </div>
+                  </TableHead>
+
+                  {/* Transaction ID */}
+                  <TableHead className="whitespace-nowrap min-w-[100px]">
+                    Transaction ID
+                  </TableHead>
+
+                  {/* Amount */}
+                  <TableHead
+                    className="cursor-pointer hover:text-foreground text-right whitespace-nowrap min-w-[90px]"
+                    onClick={() => handleSort("amount")}
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      <span>Amount</span>
+                      {sortBy === "amount" && (
+                        sortOrder === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                      )}
+                    </div>
+                  </TableHead>
+
+                  {/* Payment Method */}
+                  <TableHead className="whitespace-nowrap min-w-[90px]">
+                    Method
+                  </TableHead>
+
+                  {/* UTR / Reference */}
+                  <TableHead className="whitespace-nowrap min-w-[130px]">
+                    UTR / Reference No.
+                  </TableHead>
+
+                  {/* Payment Proof */}
+                  <TableHead className="text-center whitespace-nowrap min-w-[80px]">
+                    Proof
+                  </TableHead>
+
+                  {/* Submitted By */}
+                  <TableHead className="whitespace-nowrap min-w-[110px]">
+                    Submitted By
+                  </TableHead>
+
+                  {/* Status */}
+                  <TableHead
+                    className="cursor-pointer hover:text-foreground whitespace-nowrap min-w-[90px]"
+                    onClick={() => handleSort("status")}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Status</span>
+                      {sortBy === "status" && (
+                        sortOrder === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                      )}
+                    </div>
+                  </TableHead>
+
+                  {/* Approved / Rejected By */}
+                  <TableHead className="whitespace-nowrap min-w-[130px]">
+                    Reviewed By
+                  </TableHead>
+
+                  {/* Action */}
+                  <TableHead className="text-right whitespace-nowrap min-w-[150px] pr-4">
+                    Action
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="h-36 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="h-5 w-5 animate-spin text-primary" />
+                        <span>Loading transactions from ledger...</span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {proofPath && (
-                          <Button size="sm" variant="outline" onClick={() => openProof(proofPath)}>
-                            View screenshot
+                    </TableCell>
+                  </TableRow>
+                ) : transactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="h-36 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center gap-1.5 py-4">
+                        <AlertCircle className="h-7 w-7 text-muted-foreground/50" />
+                        <span className="font-semibold text-sm text-foreground">
+                          No transactions found
+                        </span>
+                        <span className="text-xs max-w-sm">
+                          {hasActiveFilters
+                            ? "No recharge records matched the current filters. Try resetting the filters."
+                            : statusTab === "PENDING"
+                            ? "There are currently no pending recharge requests awaiting approval."
+                            : "No transaction records exist for this view."}
+                        </span>
+                        {hasActiveFilters && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 text-xs h-7"
+                            onClick={clearAllFilters}
+                          >
+                            Clear Filters
                           </Button>
                         )}
-                        <Button size="sm" onClick={() => decide(row.id, true)} disabled={reviewing === row.id}>
-                          Approve
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={() => decide(row.id, false)} disabled={reviewing === row.id}>
-                          Reject
-                        </Button>
                       </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          )}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  transactions.map((tx) => {
+                    const isPending = tx.status === "PENDING";
+                    const isApproved = tx.status === "COMPLETED";
+                    const isRejected = tx.status === "FAILED";
+                    const isSelected = selectedIds.includes(tx.id);
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
-                Recent Recharges
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {history.slice(0, 5).map((item) => {
-                  const branchName = institutes.find((i) => i.id === item.branchId)?.name ?? item.branchId;
-                  const itemDate = item.createdAt ?? "";
-                  // `branch_transactions` stores this as `paymentMethod`; there is no `method`.
-                  const itemMethod = item.paymentMethod ?? "—";
-                  return (
-                    <div key={item.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                      <div>
-                        <p className="font-medium text-sm">{branchName}</p>
-                        <p className="text-xs text-muted-foreground">{itemDate} · {itemMethod}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium text-sm">₹{item.amount.toLocaleString()}</p>
-                        <Badge
-                          variant={item.status === "COMPLETED" ? "default" : item.status === "PENDING" ? "secondary" : "destructive"}
-                          className="text-xs"
-                        >
-                          {item.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <Button variant="ghost" className="w-full mt-4" size="sm" onClick={() => navigate("/branch/transactions")}>
-                View All Transactions
+                    return (
+                      <TableRow
+                        key={tx.id}
+                        className={`transition-colors h-11 ${
+                          isSelected
+                            ? "bg-primary/5 hover:bg-primary/10"
+                            : isPending
+                            ? "hover:bg-amber-50/40 dark:hover:bg-amber-950/20"
+                            : "hover:bg-muted/40"
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <TableCell className="text-center px-3 py-1.5">
+                          {isPending ? (
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleSelectRow(tx.id)}
+                              aria-label={`Select transaction ${tx.id}`}
+                            />
+                          ) : (
+                            <span className="inline-block w-4 h-4 text-muted-foreground/30 font-mono text-[10px]">
+                              —
+                            </span>
+                          )}
+                        </TableCell>
+
+                        {/* Date & Time */}
+                        <TableCell className="whitespace-nowrap py-1.5 font-medium">
+                          {tx.formattedDateTime}
+                        </TableCell>
+
+                        {/* Institute / Branch */}
+                        <TableCell className="py-1.5 whitespace-nowrap">
+                          <div className="font-semibold text-foreground truncate max-w-[180px]">
+                            {tx.branch}
+                          </div>
+                          {tx.branchCode && (
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {tx.branchCode}
+                            </span>
+                          )}
+                        </TableCell>
+
+                        {/* Transaction ID */}
+                        <TableCell className="py-1.5 whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(tx.id, tx.id)}
+                            className="font-mono text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1 group"
+                            title="Click to copy ID"
+                          >
+                            <span>{tx.id.length > 12 ? `${tx.id.slice(0, 10)}...` : tx.id}</span>
+                            {copiedId === tx.id ? (
+                              <Check className="h-3 w-3 text-emerald-600" />
+                            ) : (
+                              <Copy className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            )}
+                          </button>
+                        </TableCell>
+
+                        {/* Amount */}
+                        <TableCell className="text-right py-1.5 whitespace-nowrap">
+                          <span className="font-mono font-bold text-foreground text-xs">
+                            ₹{tx.amount.toLocaleString("en-IN")}
+                          </span>
+                        </TableCell>
+
+                        {/* Payment Method */}
+                        <TableCell className="py-1.5 whitespace-nowrap">
+                          <Badge variant="outline" className="text-[10px] uppercase font-medium px-1.5 py-0">
+                            {tx.paymentMethod}
+                          </Badge>
+                        </TableCell>
+
+                        {/* UTR / Reference */}
+                        <TableCell className="py-1.5 whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-[11px] font-medium text-foreground">
+                              {tx.reference}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(tx.reference, `utr-${tx.id}`)}
+                              className="text-muted-foreground hover:text-foreground"
+                              title="Copy UTR"
+                            >
+                              {copiedId === `utr-${tx.id}` ? (
+                                <Check className="h-3 w-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="h-2.5 w-2.5 opacity-60 hover:opacity-100" />
+                              )}
+                            </button>
+                          </div>
+                        </TableCell>
+
+                        {/* Payment Proof */}
+                        <TableCell className="text-center py-1.5 whitespace-nowrap">
+                          {tx.proofUrl ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[11px] text-primary hover:text-primary gap-1"
+                              onClick={() => {
+                                setSelectedProofTx(tx);
+                                setProofModalOpen(true);
+                              }}
+                            >
+                              <Eye className="h-3 w-3" />
+                              <span>View</span>
+                            </Button>
+                          ) : (
+                            <span className="text-muted-foreground text-[10px] italic">
+                              None
+                            </span>
+                          )}
+                        </TableCell>
+
+                        {/* Submitted By */}
+                        <TableCell className="py-1.5 whitespace-nowrap">
+                          <span className="text-foreground">{tx.submittedBy}</span>
+                        </TableCell>
+
+                        {/* Status */}
+                        <TableCell className="py-1.5 whitespace-nowrap">
+                          <Badge
+                            variant={
+                              isApproved
+                                ? "default"
+                                : isPending
+                                ? "secondary"
+                                : "destructive"
+                            }
+                            className={`text-[10px] font-semibold px-2 py-0 ${
+                              isApproved
+                                ? "bg-emerald-600 hover:bg-emerald-600 text-white"
+                                : isPending
+                                ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300"
+                                : "bg-rose-600 hover:bg-rose-600 text-white"
+                            }`}
+                          >
+                            {isApproved ? "Approved" : isPending ? "Pending" : "Rejected"}
+                          </Badge>
+                        </TableCell>
+
+                        {/* Approved / Rejected By */}
+                        <TableCell className="py-1.5 whitespace-nowrap text-muted-foreground text-[11px]">
+                          {tx.reviewedBy ? (
+                            <div>
+                              <span className="font-medium text-foreground block">
+                                {tx.reviewedBy}
+                              </span>
+                              {tx.reviewedAt && (
+                                <span className="text-[10px] font-mono">
+                                  {new Date(tx.reviewedAt).toLocaleDateString("en-IN")}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground/60">—</span>
+                          )}
+                        </TableCell>
+
+                        {/* Actions Column */}
+                        <TableCell className="text-right py-1.5 whitespace-nowrap pr-4">
+                          {isPending ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs border-destructive/40 text-destructive hover:bg-destructive hover:text-white"
+                                onClick={() => handleOpenReject(tx)}
+                              >
+                                <XCircle className="h-3.5 w-3.5 mr-1" />
+                                Reject
+                              </Button>
+
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                                onClick={() => handleApprove(tx)}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                                Approve
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground gap-1"
+                                onClick={() => {
+                                  setSelectedAuditTx(tx);
+                                  setAuditDrawerOpen(true);
+                                }}
+                              >
+                                <History className="h-3 w-3" />
+                                <span>Audit</span>
+                              </Button>
+                              {tx.proofUrl && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => {
+                                    setSelectedProofTx(tx);
+                                    setProofModalOpen(true);
+                                  }}
+                                >
+                                  Proof
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 border-t bg-muted/20 text-xs">
+            <div className="text-muted-foreground">
+              Page <span className="font-semibold text-foreground">{currentPage}</span> of{" "}
+              <span className="font-semibold text-foreground">{totalPages}</span> (
+              {totalCount} total transactions)
+            </div>
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage <= 1 || loading}
+                title="First Page"
+              >
+                <ChevronsLeft className="h-3.5 w-3.5" />
               </Button>
-            </CardContent>
-          </Card>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage <= 1 || loading}
+                title="Previous Page"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Branch Balances</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                 {institutes.map((inst) => (
-                   <div key={inst.id} className="flex items-center justify-between">
-                     <div>
-                       <span className="text-sm">{inst.name}</span>
-                       <p className="text-xs text-muted-foreground">{inst.directorName}</p>
-                     </div>
-                     <span className="font-medium text-success">₹{inst.balance.toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+              <span className="px-2 text-xs font-medium font-mono">
+                {currentPage} / {totalPages}
+              </span>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages || loading}
+                title="Next Page"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage >= totalPages || loading}
+                title="Last Page"
+              >
+                <ChevronsRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Modal / Drawer Integrations */}
+      <RechargeDrawer
+        open={rechargeDrawerOpen}
+        onOpenChange={setRechargeDrawerOpen}
+        institutes={institutes}
+        user={user}
+        onSuccess={() => {
+          setStatusTab("PENDING");
+          setSortBy("createdAt");
+          setSortOrder("asc");
+          setCurrentPage(1);
+          loadData(true);
+        }}
+      />
+
+      <PaymentProofModal
+        open={proofModalOpen}
+        onOpenChange={setProofModalOpen}
+        transaction={selectedProofTx}
+        onApprove={handleApprove}
+        onReject={handleOpenReject}
+      />
+
+      <RejectReasonDialog
+        open={rejectDialogOpen}
+        onOpenChange={setRejectDialogOpen}
+        onConfirm={handleConfirmReject}
+        count={isBulkReject ? selectedIds.length : 1}
+        transactionReference={rejectingTx?.reference}
+        isProcessing={isBulkProcessing}
+      />
+
+      <TransactionAuditDrawer
+        open={auditDrawerOpen}
+        onOpenChange={setAuditDrawerOpen}
+        transaction={selectedAuditTx}
+      />
     </AppLayout>
   );
 }

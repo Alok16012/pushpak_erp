@@ -1663,28 +1663,114 @@ export async function getWallet(branchId: string | null) {
  * enum type, while the transactions table renders `date`, `branch`, `balance`
  * and a lowercase type. Without this mapping those columns render empty.
  */
-const TRANSACTION_SELECT = "*, branch:branches(name)";
+const TRANSACTION_SELECT = "*, branch:branches(id, name, code)";
 
-function mapTransaction(row: Record<string, unknown>): Record<string, any> {
-  const branch = row.branch as { name?: string } | null;
+export interface WalletTransactionItem {
+  id: string;
+  branchId: string;
+  branch: string;
+  branchCode: string;
+  amount: number;
+  type: "credit" | "debit";
+  category: string;
+  description: string;
+  reference: string;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  uiStatus: "pending" | "approved" | "rejected";
+  paymentMethod: string;
+  balanceAfter: number;
+  balance: number;
+  date: string;
+  formattedDateTime: string;
+  createdAt: string;
+  proofUrl: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  submittedBy: string;
+  rejectionReason: string | null;
+  remarks: string;
+}
+
+function extractSubmittedBy(desc: string | null | undefined): string {
+  if (!desc) return "Staff";
+  const match = desc.match(/Submitted by:\s*([^•\n]+)/i);
+  if (match && match[1]) return match[1].trim();
+  return "Staff";
+}
+
+function extractRejectionReason(desc: string | null | undefined): string | null {
+  if (!desc) return null;
+  const match = desc.match(/\[Rejected:\s*([^\]]+)\]/i);
+  if (match && match[1]) return match[1].trim();
+  return null;
+}
+
+function extractRemarks(desc: string | null | undefined): string {
+  if (!desc) return "";
+  let clean = desc.replace(/Submitted by:[^•\n]+/gi, "").replace(/\[Rejected:[^\]]+\]/gi, "");
+  clean = clean.replace(/•\s*$/, "").replace(/^\s*•/, "").trim();
+  return clean === "Wallet recharge" || clean === "Wallet recharge request" ? "" : clean;
+}
+
+function mapTransaction(row: Record<string, unknown>): WalletTransactionItem {
+  const branch = row.branch as { name?: string; code?: string } | null;
   const created = (row.createdAt as string) || "";
   const at = created ? new Date(created) : null;
+  const rawStatus = String(row.status || "COMPLETED").toUpperCase() as "PENDING" | "COMPLETED" | "FAILED";
+  const uiStatus: "pending" | "approved" | "rejected" =
+    rawStatus === "PENDING" ? "pending" : rawStatus === "COMPLETED" ? "approved" : "rejected";
+
+  const formattedDateTime = at && !Number.isNaN(at.getTime())
+    ? at.toLocaleString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+    : "—";
+
+  const rawDesc = (row.description as string) || (row.category as string) || "";
+  const desc = rawDesc || "—";
+  const submittedBy = (row.submittedBy as string) || extractSubmittedBy(rawDesc);
+  const rejectionReason = (row.rejectionReason as string) || extractRejectionReason(rawDesc);
+  const remarks = extractRemarks(rawDesc);
+
   return {
-    ...row,
+    id: String(row.id || ""),
+    branchId: String(row.branchId || ""),
     branch: branch?.name || "—",
-    date: at && !Number.isNaN(at.getTime()) ? at.toISOString().slice(0, 10) : "—",
-    createdAt: created,
-    type: String(row.type || "").toUpperCase() === "DEBIT" ? "debit" : "credit",
+    branchCode: branch?.code || "",
     amount: Number(row.amount) || 0,
+    type: String(row.type || "").toUpperCase() === "DEBIT" ? "debit" : "credit",
+    category: String(row.category || "RECHARGE"),
+    description: desc,
+    reference: (row.reference as string) || (row.id as string) || "—",
+    status: rawStatus,
+    uiStatus,
+    paymentMethod: String(row.paymentMethod || "UPI"),
+    balanceAfter: Number(row.balanceAfter) || 0,
     balance: Number(row.balanceAfter) || 0,
-    description: (row.description as string) || (row.category as string) || "—",
-    reference: (row.reference as string) || (row.id as string),
+    date: at && !Number.isNaN(at.getTime()) ? at.toISOString().slice(0, 10) : "—",
+    formattedDateTime,
+    createdAt: created,
+    proofUrl: (row.proofUrl as string) || null,
+    reviewedBy: (row.reviewedBy as string) || null,
+    reviewedAt: (row.reviewedAt as string) || null,
+    submittedBy,
+    rejectionReason,
+    remarks,
   };
 }
 
 export async function getTransactions(branchId: string | null) {
   if (!branchId) return { success: true, data: [] };
-  const { data, error } = await supabase.from("branch_transactions").select(TRANSACTION_SELECT).eq("branchId", branchId).order("createdAt", { ascending: false });
+  const { data, error } = await supabase
+    .from("branch_transactions")
+    .select(TRANSACTION_SELECT)
+    .eq("branchId", branchId)
+    .order("createdAt", { ascending: false });
   if (error) throw new Error(error.message);
   return { success: true, data: (data || []).map(mapTransaction) };
 }
@@ -1710,6 +1796,170 @@ export async function getTransactionsByOrg(organizationId: string | null) {
   return { success: true, data: (data || []).map(mapTransaction) };
 }
 
+export interface WalletTransactionFilters {
+  organizationId?: string | null;
+  branchId?: string | null;
+  status?: "ALL" | "PENDING" | "COMPLETED" | "FAILED";
+  paymentMethod?: string | null;
+  search?: string;
+  startDate?: string | null;
+  endDate?: string | null;
+  page?: number;
+  pageSize?: number;
+  sortBy?: "createdAt" | "amount" | "branch" | "status";
+  sortOrder?: "asc" | "desc";
+}
+
+export interface WalletTransactionsResult {
+  success: boolean;
+  data: WalletTransactionItem[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  counts: {
+    all: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  };
+  totals: {
+    totalBalance: number;
+    pendingAmount: number;
+    approvedAmount: number;
+  };
+}
+
+export async function getWalletTransactions(
+  filters: WalletTransactionFilters = {}
+): Promise<WalletTransactionsResult> {
+  const {
+    organizationId,
+    branchId,
+    status = "ALL",
+    paymentMethod,
+    search,
+    startDate,
+    endDate,
+    page = 1,
+    pageSize = 25,
+    sortBy = "createdAt",
+    sortOrder = "desc",
+  } = filters;
+
+  let branchIds: string[] = [];
+  if (branchId) {
+    branchIds = [branchId];
+  } else if (organizationId) {
+    branchIds = await getBranchIdsByOrg(organizationId);
+  }
+
+  // Fetch all transactions in scope to compute exact summary counts and filtered pagination
+  let query = supabase
+    .from("branch_transactions")
+    .select(TRANSACTION_SELECT)
+    .order("createdAt", { ascending: false });
+
+  if (branchIds.length > 0) {
+    query = query.in("branchId", branchIds);
+  }
+
+  const { data: rawRows, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const mapped = (rawRows || []).map(mapTransaction);
+
+  // Compute breakdown counts across the entire scoped dataset
+  const counts = {
+    all: mapped.length,
+    pending: mapped.filter((t) => t.status === "PENDING").length,
+    approved: mapped.filter((t) => t.status === "COMPLETED").length,
+    rejected: mapped.filter((t) => t.status === "FAILED").length,
+  };
+
+  const totals = {
+    totalBalance: 0,
+    pendingAmount: mapped
+      .filter((t) => t.status === "PENDING")
+      .reduce((sum, t) => sum + t.amount, 0),
+    approvedAmount: mapped
+      .filter((t) => t.status === "COMPLETED")
+      .reduce((sum, t) => sum + t.amount, 0),
+  };
+
+  // Filter in memory for maximum responsiveness & search flexibility
+  let filtered = mapped;
+
+  if (status && status !== "ALL") {
+    filtered = filtered.filter((t) => t.status === status);
+  }
+
+  if (branchId) {
+    filtered = filtered.filter((t) => t.branchId === branchId);
+  }
+
+  if (paymentMethod && paymentMethod !== "ALL") {
+    const pmNormalized = paymentMethod.toUpperCase();
+    filtered = filtered.filter(
+      (t) => t.paymentMethod.toUpperCase() === pmNormalized
+    );
+  }
+
+  if (startDate) {
+    filtered = filtered.filter((t) => t.createdAt >= startDate);
+  }
+
+  if (endDate) {
+    filtered = filtered.filter((t) => t.createdAt <= endDate);
+  }
+
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    filtered = filtered.filter(
+      (t) =>
+        t.id.toLowerCase().includes(q) ||
+        t.reference.toLowerCase().includes(q) ||
+        t.branch.toLowerCase().includes(q) ||
+        t.branchCode.toLowerCase().includes(q) ||
+        t.submittedBy.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q) ||
+        String(t.amount).includes(q)
+    );
+  }
+
+  // Sort
+  filtered.sort((a, b) => {
+    let comparison = 0;
+    if (sortBy === "createdAt") {
+      comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    } else if (sortBy === "amount") {
+      comparison = a.amount - b.amount;
+    } else if (sortBy === "branch") {
+      comparison = a.branch.localeCompare(b.branch);
+    } else if (sortBy === "status") {
+      comparison = a.status.localeCompare(b.status);
+    }
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+
+  const totalCount = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const fromIndex = (safePage - 1) * pageSize;
+  const pagedData = filtered.slice(fromIndex, fromIndex + pageSize);
+
+  return {
+    success: true,
+    data: pagedData,
+    totalCount,
+    page: safePage,
+    pageSize,
+    totalPages,
+    counts,
+    totals,
+  };
+}
+
 async function getBranchIdsByOrg(organizationId: string | null): Promise<string[]> {
   if (!organizationId) return [];
   const { data, error } = await supabase.from("branches").select("id").eq("organizationId", organizationId);
@@ -1717,7 +1967,440 @@ async function getBranchIdsByOrg(organizationId: string | null): Promise<string[
   return ((data || []) as any[]).map((b) => b.id);
 }
 
-export async function rechargeWallet(branchId: string | null, input: { amount: number; paymentMethod: string; description?: string; reference?: string }) {
+/**
+ * Submits a new wallet recharge request in PENDING state.
+ * Validates branch, amount, payment method, duplicate UTR, and logs immutable audit event.
+ */
+export async function submitRechargeRequest(input: {
+  branchId: string;
+  amount: number;
+  paymentMethod: string;
+  reference: string;
+  proofUrl?: string | null;
+  remarks?: string;
+  submittedBy?: { id?: string; name?: string; email?: string };
+  organizationId?: string | null;
+}) {
+  if (!input.branchId) {
+    return { success: false, error: "Please select a branch / institute." };
+  }
+
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { success: false, error: "Enter a valid recharge amount greater than zero." };
+  }
+
+  const reference = (input.reference || "").trim();
+  if (!reference) {
+    return { success: false, error: "Transaction Reference / UTR number is required." };
+  }
+
+  // Duplicate UTR / reference check across active transactions
+  const { data: existingTx, error: checkErr } = await supabase
+    .from("branch_transactions")
+    .select("id, reference, status, createdAt")
+    .eq("reference", reference)
+    .neq("status", "FAILED")
+    .limit(1);
+
+  if (checkErr) throw new Error(checkErr.message);
+  if (existingTx && existingTx.length > 0) {
+    const existing = existingTx[0];
+    return {
+      success: false,
+      error: `Duplicate UTR / Reference: A transaction with reference "${reference}" already exists (${existing.status} on ${existing.createdAt?.slice(0, 10)}).`,
+    };
+  }
+
+  // Fetch current branch wallet balance so pending transaction preserves the snapshot
+  const { data: wallet } = await supabase
+    .from("branch_wallets")
+    .select("balance")
+    .eq("branchId", input.branchId)
+    .maybeSingle();
+
+  const currentBalance = Number(wallet?.balance || 0);
+  const pm = (input.paymentMethod || "UPI").toUpperCase();
+
+  const submitterName = input.submittedBy?.name || input.submittedBy?.email || "Staff";
+  const descParts: string[] = [];
+  if (input.remarks && input.remarks.trim()) {
+    descParts.push(input.remarks.trim());
+  }
+  descParts.push(`Submitted by: ${submitterName}`);
+  const description = descParts.join(" • ");
+
+  const { data: tx, error: tErr } = await supabase
+    .from("branch_transactions")
+    .insert({
+      branchId: input.branchId,
+      amount,
+      type: "CREDIT",
+      category: "RECHARGE",
+      description,
+      reference,
+      status: "PENDING",
+      paymentMethod: pm as any,
+      balanceAfter: currentBalance,
+      proofUrl: input.proofUrl || null,
+    })
+    .select(TRANSACTION_SELECT)
+    .single();
+
+  if (tErr) throw new Error(tErr.message);
+
+  // Write immutable audit log
+  try {
+    await supabase.from("audit_events").insert({
+      actorId: input.submittedBy?.id || null,
+      organizationId: input.organizationId || null,
+      branchId: input.branchId,
+      action: "RECHARGE_SUBMITTED",
+      entityType: "BranchTransaction",
+      entityId: tx.id,
+      after: {
+        amount,
+        paymentMethod: pm,
+        reference,
+        submittedBy: submitterName,
+        proofUrl: input.proofUrl || null,
+        remarks: input.remarks || null,
+      },
+    });
+  } catch (auditError) {
+    console.warn("Audit log creation warning:", auditError);
+  }
+
+  return { success: true, data: mapTransaction(tx) };
+}
+
+/**
+ * Atomically approves a pending recharge request.
+ * - Idempotency & race-condition check (aborts if not PENDING).
+ * - Credits wallet balance exactly once.
+ * - Transitions status to COMPLETED.
+ * - Records reviewer name and timestamp.
+ * - Writes immutable audit event.
+ */
+export async function approveRechargeTransaction(
+  transactionId: string,
+  reviewer: { id?: string; name?: string; role?: string; email?: string }
+) {
+  if (!transactionId) {
+    return { success: false, error: "Transaction ID is required." };
+  }
+
+  // 1. Fetch current transaction record and verify status is PENDING
+  const { data: tx, error: txErr } = await supabase
+    .from("branch_transactions")
+    .select("*, branch:branches(id, name, code)")
+    .eq("id", transactionId)
+    .single();
+
+  if (txErr || !tx) {
+    return { success: false, error: "Transaction not found." };
+  }
+
+  if (tx.status === "COMPLETED") {
+    return {
+      success: false,
+      error: `Transaction ${transactionId} has already been approved and credited.`,
+    };
+  }
+
+  if (tx.status === "FAILED") {
+    return {
+      success: false,
+      error: `Transaction ${transactionId} has already been rejected.`,
+    };
+  }
+
+  if (tx.status !== "PENDING") {
+    return {
+      success: false,
+      error: `Transaction status is "${tx.status}"; only PENDING transactions can be approved.`,
+    };
+  }
+
+  const amount = Number(tx.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { success: false, error: "Invalid transaction amount." };
+  }
+
+  const branchId = tx.branchId;
+  const reviewerName = reviewer.name || reviewer.email || reviewer.id || "Administrator";
+  const now = new Date().toISOString();
+
+  // 2. Fetch current wallet balance
+  const { data: wallet, error: wErr } = await supabase
+    .from("branch_wallets")
+    .select("*")
+    .eq("branchId", branchId)
+    .maybeSingle();
+
+  if (wErr) throw new Error(wErr.message);
+
+  const currentBalance = Number(wallet?.balance || 0);
+  const newBalance = currentBalance + amount;
+
+  // 3. Atomically update wallet
+  if (wallet?.id) {
+    const { error: uErr } = await supabase
+      .from("branch_wallets")
+      .update({
+        balance: newBalance,
+        lastRechargeAmount: amount,
+        lastRechargeDate: now,
+        updatedAt: now,
+      })
+      .eq("id", wallet.id);
+
+    if (uErr) throw new Error(`Failed to update branch wallet: ${uErr.message}`);
+  } else {
+    const { error: iErr } = await supabase.from("branch_wallets").insert({
+      branchId,
+      balance: newBalance,
+      lastRechargeAmount: amount,
+      lastRechargeDate: now,
+      updatedAt: now,
+    });
+
+    if (iErr) throw new Error(`Failed to initialize branch wallet: ${iErr.message}`);
+  }
+
+  // 4. Update transaction status to COMPLETED
+  const { data: updatedTx, error: upErr } = await supabase
+    .from("branch_transactions")
+    .update({
+      status: "COMPLETED",
+      balanceAfter: newBalance,
+      reviewedBy: reviewerName,
+      reviewedAt: now,
+      updatedAt: now,
+    })
+    .eq("id", transactionId)
+    .select(TRANSACTION_SELECT)
+    .single();
+
+  if (upErr) throw new Error(`Failed to update transaction status: ${upErr.message}`);
+
+  // 5. Write immutable audit log
+  try {
+    await supabase.from("audit_events").insert({
+      actorId: reviewer.id || null,
+      branchId,
+      action: "RECHARGE_APPROVED",
+      entityType: "BranchTransaction",
+      entityId: transactionId,
+      before: {
+        status: "PENDING",
+        balance: currentBalance,
+      },
+      after: {
+        status: "COMPLETED",
+        balanceBefore: currentBalance,
+        balanceAfter: newBalance,
+        amount,
+        reference: tx.reference,
+        paymentMethod: tx.paymentMethod,
+        reviewedBy: reviewerName,
+        reviewedAt: now,
+      },
+    });
+  } catch (auditErr) {
+    console.warn("Audit logging warning:", auditErr);
+  }
+
+  return {
+    success: true,
+    data: mapTransaction(updatedTx),
+    newBalance,
+  };
+}
+
+/**
+ * Rejects a pending recharge request.
+ * - Idempotency & race-condition check.
+ * - Requires mandatory rejection reason.
+ * - Transitions status to FAILED.
+ * - Wallet balance is untouched.
+ * - Writes immutable audit event.
+ */
+export async function rejectRechargeTransaction(
+  transactionId: string,
+  reviewer: { id?: string; name?: string; role?: string; email?: string },
+  reason: string
+) {
+  if (!transactionId) {
+    return { success: false, error: "Transaction ID is required." };
+  }
+
+  const cleanReason = (reason || "").trim();
+  if (!cleanReason) {
+    return { success: false, error: "Please provide a reason for rejecting this recharge request." };
+  }
+
+  // 1. Fetch current transaction and verify PENDING status
+  const { data: tx, error: txErr } = await supabase
+    .from("branch_transactions")
+    .select("*, branch:branches(id, name, code)")
+    .eq("id", transactionId)
+    .single();
+
+  if (txErr || !tx) {
+    return { success: false, error: "Transaction not found." };
+  }
+
+  if (tx.status !== "PENDING") {
+    return {
+      success: false,
+      error: `Transaction status is "${tx.status}"; only PENDING transactions can be rejected.`,
+    };
+  }
+
+  const reviewerName = reviewer.name || reviewer.email || reviewer.id || "Administrator";
+  const now = new Date().toISOString();
+
+  const existingDesc = tx.description || "";
+  const updatedDesc = existingDesc
+    ? `${existingDesc} • [Rejected: ${cleanReason}]`
+    : `[Rejected: ${cleanReason}]`;
+
+  // 2. Update transaction status to FAILED
+  const { data: updatedTx, error: upErr } = await supabase
+    .from("branch_transactions")
+    .update({
+      status: "FAILED",
+      description: updatedDesc,
+      reviewedBy: reviewerName,
+      reviewedAt: now,
+      updatedAt: now,
+    })
+    .eq("id", transactionId)
+    .select(TRANSACTION_SELECT)
+    .single();
+
+  if (upErr) throw new Error(`Failed to reject transaction: ${upErr.message}`);
+
+  // 3. Write immutable audit log
+  try {
+    await supabase.from("audit_events").insert({
+      actorId: reviewer.id || null,
+      branchId: tx.branchId,
+      action: "RECHARGE_REJECTED",
+      entityType: "BranchTransaction",
+      entityId: transactionId,
+      before: {
+        status: "PENDING",
+      },
+      after: {
+        status: "FAILED",
+        rejectionReason: cleanReason,
+        reviewedBy: reviewerName,
+        reviewedAt: now,
+        amount: tx.amount,
+        reference: tx.reference,
+      },
+    });
+  } catch (auditErr) {
+    console.warn("Audit logging warning:", auditErr);
+  }
+
+  return { success: true, data: mapTransaction(updatedTx) };
+}
+
+/**
+ * Bulk approves multiple pending transactions safely with error isolation.
+ */
+export async function bulkApproveRecharges(
+  transactionIds: string[],
+  reviewer: { id?: string; name?: string; role?: string; email?: string }
+) {
+  const succeeded: WalletTransactionItem[] = [];
+  const failed: { id: string; error: string }[] = [];
+
+  for (const id of transactionIds) {
+    try {
+      const res = await approveRechargeTransaction(id, reviewer);
+      if (res.success && res.data) {
+        succeeded.push(res.data);
+      } else {
+        failed.push({ id, error: res.error || "Approval failed" });
+      }
+    } catch (err) {
+      failed.push({
+        id,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    success: failed.length === 0,
+    succeeded,
+    failed,
+    totalProcessed: transactionIds.length,
+  };
+}
+
+/**
+ * Bulk rejects multiple pending transactions safely with error isolation.
+ */
+export async function bulkRejectRecharges(
+  transactionIds: string[],
+  reviewer: { id?: string; name?: string; role?: string; email?: string },
+  reason: string
+) {
+  const succeeded: WalletTransactionItem[] = [];
+  const failed: { id: string; error: string }[] = [];
+
+  for (const id of transactionIds) {
+    try {
+      const res = await rejectRechargeTransaction(id, reviewer, reason);
+      if (res.success && res.data) {
+        succeeded.push(res.data);
+      } else {
+        failed.push({ id, error: res.error || "Rejection failed" });
+      }
+    } catch (err) {
+      failed.push({
+        id,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    success: failed.length === 0,
+    succeeded,
+    failed,
+    totalProcessed: transactionIds.length,
+  };
+}
+
+/**
+ * Fetches the immutable audit trail for a transaction from audit_events.
+ */
+export async function getTransactionAuditTrail(transactionId: string) {
+  if (!transactionId) return { success: true, data: [] };
+  const { data, error } = await supabase
+    .from("audit_events")
+    .select("*")
+    .eq("entityType", "BranchTransaction")
+    .eq("entityId", transactionId)
+    .order("createdAt", { ascending: true });
+
+  if (error) throw new Error(error.message);
+  return { success: true, data: data || [] };
+}
+
+/**
+ * Backward-compatible wrapper for legacy direct recharge calls.
+ */
+export async function rechargeWallet(
+  branchId: string | null,
+  input: { amount: number; paymentMethod: string; description?: string; reference?: string }
+) {
   if (!branchId) return { success: false, error: "Missing branch" };
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) return { success: false, error: "Invalid amount" };
@@ -1758,9 +2441,9 @@ export async function rechargeWallet(branchId: string | null, input: { amount: n
     paymentMethod: pm as any,
     balanceAfter: newBalance,
     updatedAt: nowIso(),
-  }).select("*").single();
+  }).select(TRANSACTION_SELECT).single();
   if (tErr) throw new Error(tErr.message);
-  return { success: true, data: tx };
+  return { success: true, data: mapTransaction(tx) };
 }
 
 /* ============================
