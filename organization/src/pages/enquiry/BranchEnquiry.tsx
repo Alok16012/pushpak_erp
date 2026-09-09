@@ -114,7 +114,8 @@ export default function BranchEnquiry() {
       const nextDate = followUpNext || new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
       await updateEnquiry(followingUp.id, user?.branchId, {
         followUpDate: nextDate,
-        followUpNote: followUpNote.trim(),
+        // The column is `followUpNotes`; the local state is what is singular.
+        followUpNotes: followUpNote.trim(),
       });
       setEnquiries((list) =>
         list.map((e) =>

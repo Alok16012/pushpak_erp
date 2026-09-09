@@ -45,15 +45,17 @@ type DbVisitor = {
   location: string | null;
   source: string | null;
   remarks: string | null;
-  callType: string | null;
   followUpDate: string | null;
   followUpTime: string | null;
   followUpNotes: string | null;
   status: string;
   createdAt: string;
   registrationDate: string | null;
-  checkIn: string | null;
-  checkOut: string | null;
+  // visit_enquiries is mixed case: most columns are camelCase, these three are
+  // not. Declaring them the camelCase way is what let the reads go unnoticed.
+  call_type: string | null;
+  check_in: string | null;
+  check_out: string | null;
 };
 
 type Visitor = {
@@ -101,7 +103,9 @@ const mapDbToVisitor = (db: DbVisitor): Visitor => ({
   personToMeet: db.personToMeet,
   department: db.department,
   checkIn: `${db.visitDate.split("T")[0]} ${db.visitTime}`,
-  checkOut: db.checkOut ? new Date(db.checkOut).toISOString() : null,
+  // `check_out` and `call_type` are snake_case on visit_enquiries; reading the
+  // camelCase spelling silently returned undefined for every visitor.
+  checkOut: db.check_out ? new Date(db.check_out).toISOString() : null,
   status: db.status === "CLOSED" || db.status === "CONVERTED" ? "completed" : "active",
   idType: db.idType,
   idNumber: db.idNumber || "",
@@ -109,7 +113,7 @@ const mapDbToVisitor = (db: DbVisitor): Visitor => ({
   location: db.location || "",
   source: db.source || "",
   remarks: db.remarks || "",
-  callType: db.callType || "",
+  callType: db.call_type || "",
   followUpDate: db.followUpDate ? db.followUpDate.split("T")[0] : null,
   followUpTime: db.followUpTime || null,
   followUpNotes: db.followUpNotes || null,
@@ -158,7 +162,7 @@ export default function VisitorsInformation() {
     try {
       await updateEnquiry(selectedVisitor.id, branchId, {
         status: "CLOSED",
-        checkOut: new Date().toISOString(),
+        check_out: new Date().toISOString(),
       });
       toast({ title: "Checked Out", description: "Visitor has been checked out." });
       setIsCheckoutDialogOpen(false);
