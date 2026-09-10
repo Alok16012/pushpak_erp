@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, Column } from "@/components/ui/DataTable";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,185 +15,33 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Download, Upload } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Plus, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getStudents, getStudent, deleteStudent } from "@/lib/supabase/data";
+import { StudentRoster, formatAdmissionDate } from "@/components/student/StudentRoster";
+import { StudentLoginDialog } from "@/components/student/StudentLoginDialog";
+import { StudentContact } from "@/components/student/StudentContact";
+import { canIssueStudentLogin } from "@/lib/roles";
+import { formatPhone } from "@/lib/phone";
+import { getStudentRoster, getStudent, deleteStudent, type StudentRosterRow } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
-interface Student {
-  id: string;
-  name: string;
-  rollNo: string;
-  email: string;
-  phone: string;
-  course: string;
-  batch: string;
-  status: "active" | "inactive" | "pending";
-  admissionDate: string;
-  avatar?: string;
-}
-
-const studentsData: Student[] = [
-  {
-    id: "1",
-    name: "John Doe",
-    rollNo: "STU001",
-    email: "john.doe@email.com",
-    phone: "+91 98765 43210",
-    course: "Computer Science",
-    batch: "2024-A",
-    status: "active",
-    admissionDate: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Sarah Smith",
-    rollNo: "STU002",
-    email: "sarah.smith@email.com",
-    phone: "+91 98765 43211",
-    course: "Commerce",
-    batch: "2024-B",
-    status: "active",
-    admissionDate: "2024-01-18",
-  },
-  {
-    id: "3",
-    name: "Mike Johnson",
-    rollNo: "STU003",
-    email: "mike.j@email.com",
-    phone: "+91 98765 43212",
-    course: "Arts",
-    batch: "2024-A",
-    status: "pending",
-    admissionDate: "2024-01-20",
-  },
-  {
-    id: "4",
-    name: "Emily Brown",
-    rollNo: "STU004",
-    email: "emily.b@email.com",
-    phone: "+91 98765 43213",
-    course: "Science",
-    batch: "2024-C",
-    status: "active",
-    admissionDate: "2024-01-22",
-  },
-  {
-    id: "5",
-    name: "David Wilson",
-    rollNo: "STU005",
-    email: "david.w@email.com",
-    phone: "+91 98765 43214",
-    course: "Engineering",
-    batch: "2024-A",
-    status: "inactive",
-    admissionDate: "2024-01-10",
-  },
-  {
-    id: "6",
-    name: "Lisa Anderson",
-    rollNo: "STU006",
-    email: "lisa.a@email.com",
-    phone: "+91 98765 43215",
-    course: "Medical",
-    batch: "2024-B",
-    status: "active",
-    admissionDate: "2024-01-25",
-  },
-  {
-    id: "7",
-    name: "James Taylor",
-    rollNo: "STU007",
-    email: "james.t@email.com",
-    phone: "+91 98765 43216",
-    course: "Computer Science",
-    batch: "2024-C",
-    status: "active",
-    admissionDate: "2024-01-28",
-  },
-  {
-    id: "8",
-    name: "Emma Martinez",
-    rollNo: "STU008",
-    email: "emma.m@email.com",
-    phone: "+91 98765 43217",
-    course: "Commerce",
-    batch: "2024-A",
-    status: "pending",
-    admissionDate: "2024-02-01",
-  },
-];
-
-const columns: Column<Student>[] = [
-  {
-    key: "name",
-    header: "Student",
-    sortable: true,
-    cell: (student) => (
-      <div className="flex items-center gap-3">
-        <Avatar className="h-9 w-9">
-          <AvatarImage src={student.avatar} />
-          <AvatarFallback className="bg-primary/10 text-primary text-sm">
-            {student.name.split(" ").map((n) => n[0]).join("")}
-          </AvatarFallback>
-        </Avatar>
-        <div>
-          <p className="font-medium">{student.name}</p>
-          <p className="text-xs text-muted-foreground">{student.rollNo}</p>
-        </div>
-      </div>
-    ),
-  },
-  {
-    key: "email",
-    header: "Contact",
-    cell: (student) => (
-      <div>
-        <p className="text-sm">{student.email}</p>
-        <p className="text-xs text-muted-foreground">{student.phone}</p>
-      </div>
-    ),
-  },
-  {
-    key: "course",
-    header: "Course",
-    sortable: true,
-  },
-  {
-    key: "batch",
-    header: "Batch",
-    sortable: true,
-  },
-  {
-    key: "admissionDate",
-    header: "Admission Date",
-    sortable: true,
-    cell: (student) => (
-      <span className="text-sm">
-        {new Date(student.admissionDate).toLocaleDateString("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        })}
-      </span>
-    ),
-  },
-  {
-    key: "status",
-    header: "Status",
-    cell: (student) => <StatusBadge status={student.status} />,
-  },
-];
-
-/** Shape of the `/core/students/:id` detail response we actually read. */
+/** Shape of the student detail response the profile / fee dialogs read. */
 interface StudentDetail {
   id: string;
   firstName: string;
   middleName?: string;
   lastName: string;
   phone: string;
+  whatsappNumber?: string;
   email?: string;
   gender?: string;
   dateOfBirth?: string;
@@ -205,6 +50,7 @@ interface StudentDetail {
   state?: string;
   pincode?: string;
   fatherName?: string;
+  fatherPhone?: string;
   motherName?: string;
   admissionStatus?: string;
   course?: { name: string };
@@ -222,32 +68,78 @@ interface StudentDetail {
 
 export default function ViewStudents() {
   const navigate = useNavigate();
-  const {toast}=useToast();
+  const { toast } = useToast();
   const { user } = useAuth();
   const branchId = user?.branchId;
-  const [students,setStudents]=useState<Student[]>([]);
-  useEffect(()=>{getStudents(branchId,1,100).then(result=>setStudents(result.data.map(s=>({id:s.id,name:[s.firstName,s.middleName,s.lastName].filter(Boolean).join(" "),rollNo:s.enrollmentNo||s.applicationNo||"Pending",email:s.email||"—",phone:s.phone,course:typeof s.course==="string"?s.course:"Not assigned",batch:typeof s.batch==="string"?s.batch:"Not assigned",status:!s.isActive?"inactive":s.admissionStatus==="APPROVED"?"active":"pending",admissionDate:s.admissionDate})))).catch(error=>{
-    // Offline / API down: fall back to the sample roll so the screen is still usable.
-    setStudents(studentsData);
-    toast({title:"Showing sample students",description:error.message,variant:"destructive"});
-  })},[]);
-  const exportCsv=()=>{const csv=["Name,Enrollment,Email,Phone,Course,Batch,Status",...students.map(s=>[s.name,s.rollNo,s.email,s.phone,s.course,s.batch,s.status].map(v=>`"${String(v).replaceAll('"','""')}"`).join(","))].join("\n");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));const a=document.createElement("a");a.href=url;a.download="idealdigiskills-students.csv";a.click();URL.revokeObjectURL(url)};
 
-  const [details, setDetails] = useState<Student | null>(null);
+  const [students, setStudents] = useState<StudentRosterRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loginFor, setLoginFor] = useState<StudentRosterRow | null>(null);
+
+  // Both an organisation admin and the branch that enrolled the student may
+  // issue the portal login; other branch staff may not. The edge function
+  // enforces this too -- here it only decides whether to offer the action.
+  const mayIssueLogin = canIssueStudentLogin(user?.role);
+
+  useEffect(() => {
+    setLoading(true);
+    getStudentRoster(branchId)
+      .then((result) => setStudents(result.data))
+      .catch((error) =>
+        toast({
+          title: "Could not load students",
+          description: error instanceof Error ? error.message : "Database connection error.",
+          variant: "destructive",
+        }),
+      )
+      .finally(() => setLoading(false));
+  }, [branchId, toast]);
+
+  /** Exports whatever the roster is currently showing, not the whole branch. */
+  const exportCsv = (rows: StudentRosterRow[]) => {
+    const csv = [
+      "Name,Admission No,Admission Date,Course,Father,Father Phone,Phone,WhatsApp,Address,Fee,Status",
+      ...rows.map((s) =>
+        [
+          s.name,
+          s.admissionNo,
+          formatAdmissionDate(s.admissionDate),
+          s.course,
+          s.fatherName,
+          formatPhone(s.fatherPhone),
+          formatPhone(s.phone),
+          formatPhone(s.whatsapp),
+          s.address,
+          s.fee,
+          s.status,
+        ]
+          .map((v) => `"${String(v).replaceAll('"', '""')}"`)
+          .join(","),
+      ),
+    ].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "students.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported", description: `${rows.length} students downloaded to CSV.` });
+  };
+
+  const [details, setDetails] = useState<StudentRosterRow | null>(null);
   const [detail, setDetail] = useState<StudentDetail | null>(null);
   const [detailTab, setDetailTab] = useState<"profile" | "fees">("profile");
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Student | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<Student | null>(null);
+  const [editing, setEditing] = useState<StudentRosterRow | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<StudentRosterRow | null>(null);
 
-  /** Both "View Details" and "Fee Details" hang off the same detail fetch. */
-  const openDetail = (student: Student, tab: "profile" | "fees") => {
+  const openDetail = (student: StudentRosterRow, tab: "profile" | "fees") => {
     setDetails(student);
     setDetailTab(tab);
     setDetail(null);
     setDetailError(null);
     getStudent(student.id, branchId)
-      .then((result) => setDetail(result.data))
+      .then((result) => setDetail(result.data as unknown as StudentDetail))
       .catch((error) => setDetailError(error.message));
   };
 
@@ -281,13 +173,6 @@ export default function ViewStudents() {
     setPendingDelete(null);
   };
 
-  const handleActions = (student: Student) => [
-    { label: "View Details", onClick: () => openDetail(student, "profile") },
-    { label: "Edit", onClick: () => setEditing({ ...student }) },
-    { label: "Fee Details", onClick: () => openDetail(student, "fees") },
-    { label: "Delete", onClick: () => setPendingDelete(student), destructive: true },
-  ];
-
   const invoices = detail?.feeInvoices ?? [];
   const invoiceTotals = invoices.map((invoice) => {
     const billed = Number(invoice.amount) || 0;
@@ -309,13 +194,11 @@ export default function ViewStudents() {
         ]}
         actions={
           <>
-            <Button variant="outline" className="gap-2" asChild><a href="/import-templates/students.csv" download>
-              <Upload className="h-4 w-4" />
-              Import template
-            </a></Button>
-            <Button variant="outline" className="gap-2" onClick={exportCsv}>
-              <Download className="h-4 w-4" />
-              Export
+            <Button variant="outline" className="gap-2" asChild>
+              <a href="/import-templates/students.csv" download>
+                <Upload className="h-4 w-4" />
+                Import template
+              </a>
             </Button>
             <Button onClick={() => navigate("/student/add")} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -325,12 +208,24 @@ export default function ViewStudents() {
         }
       />
 
-      <DataTable
-        data={students}
-        columns={columns}
-        selectable
-        searchPlaceholder="Search students..."
-        actions={handleActions}
+      <StudentRoster
+        rows={students}
+        loading={loading}
+        onView={(student) => openDetail(student, "profile")}
+        onEdit={(student) => setEditing({ ...student })}
+        onDelete={setPendingDelete}
+        onExport={exportCsv}
+        onSetLogin={mayIssueLogin ? setLoginFor : undefined}
+      />
+
+      <StudentLoginDialog
+        student={loginFor}
+        onOpenChange={() => setLoginFor(null)}
+        onSaved={(studentId) =>
+          setStudents((list) =>
+            list.map((s) => (s.id === studentId ? { ...s, hasLogin: true } : s)),
+          )
+        }
       />
 
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
@@ -338,7 +233,7 @@ export default function ViewStudents() {
           <DialogHeader>
             <DialogTitle>{details?.name}</DialogTitle>
             <DialogDescription>
-              {details?.rollNo} · {details?.course} · {details?.batch}
+              {details?.admissionNo} · {details?.course}
             </DialogDescription>
           </DialogHeader>
 
@@ -351,31 +246,39 @@ export default function ViewStudents() {
 
           {detailTab === "profile" && details && (
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              {[
+              {([
                 ["Email", detail?.email ?? details.email],
-                ["Phone", detail?.phone ?? details.phone],
+                [
+                  "Phone / WhatsApp",
+                  <StudentContact
+                    name={details.name}
+                    phone={detail?.phone ?? details.phone}
+                    whatsapp={detail?.whatsappNumber ?? details.whatsapp}
+                  />,
+                ],
                 ["Gender", detail?.gender ?? "—"],
                 ["Date of birth", detail?.dateOfBirth ? new Date(detail.dateOfBirth).toLocaleDateString() : "—"],
-                ["Father", detail?.fatherName ?? "—"],
+                ["Father", detail?.fatherName ?? details.fatherName],
+                ["Father's phone", formatPhone(detail?.fatherPhone ?? details.fatherPhone)],
                 ["Mother", detail?.motherName ?? "—"],
                 [
                   "Address",
                   detail?.streetAddress
                     ? [detail.streetAddress, detail.city, detail.state, detail.pincode].filter(Boolean).join(", ")
-                    : "—",
+                    : details.address,
                 ],
                 ["Admission status", detail?.admissionStatus ?? details.status],
-                ["Admitted on", new Date(details.admissionDate).toLocaleDateString()],
+                ["Admitted on", formatAdmissionDate(details.admissionDate)],
                 [
                   "Attendance (last 30)",
                   Array.isArray(detail?.attendance) && detail.attendance.length
                     ? `${detail.attendance.filter((a) => a.status === "PRESENT" || a.status === "LATE").length}/${detail.attendance.length} present`
                     : "—",
                 ],
-              ].map(([label, value]) => (
+              ] as [string, React.ReactNode][]).map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-xs text-muted-foreground">{label}</dt>
-                  <dd className="font-medium break-words">{value}</dd>
+                  <dd className="break-words font-medium">{value}</dd>
                 </div>
               ))}
             </dl>
@@ -415,10 +318,7 @@ export default function ViewStudents() {
           )}
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDetailTab(detailTab === "profile" ? "fees" : "profile")}
-            >
+            <Button variant="outline" onClick={() => setDetailTab(detailTab === "profile" ? "fees" : "profile")}>
               {detailTab === "profile" ? "Fee details" : "Profile"}
             </Button>
             <Button onClick={() => navigate("/fee/collection")}>Collect fee</Button>
@@ -430,7 +330,7 @@ export default function ViewStudents() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit {editing?.name}</DialogTitle>
-            <DialogDescription>{editing?.rollNo}</DialogDescription>
+            <DialogDescription>{editing?.admissionNo}</DialogDescription>
           </DialogHeader>
           {editing && (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -459,6 +359,14 @@ export default function ViewStudents() {
                 />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="student-father">Father / Guardian</Label>
+                <Input
+                  id="student-father"
+                  value={editing.fatherName}
+                  onChange={(e) => setEditing({ ...editing, fatherName: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="student-course">Course</Label>
                 <Input
                   id="student-course"
@@ -466,18 +374,12 @@ export default function ViewStudents() {
                   onChange={(e) => setEditing({ ...editing, course: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="student-batch">Batch</Label>
-                <Input
-                  id="student-batch"
-                  value={editing.batch}
-                  onChange={(e) => setEditing({ ...editing, batch: e.target.value })}
-                />
-              </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
             <Button onClick={saveEdit}>Save changes</Button>
           </DialogFooter>
         </DialogContent>
@@ -487,9 +389,7 @@ export default function ViewStudents() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {pendingDelete?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently removes the student record.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This permanently removes the student record.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

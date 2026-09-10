@@ -169,6 +169,113 @@ export async function getStudents(branchId: string | null, page = 1, limit = 20,
   return { success: true, data: data || [], meta: { page, limit, total: count || 0 } };
 }
 
+export interface StudentRosterRow {
+  id: string;
+  name: string;
+  initials: string;
+  address: string;
+  mapQuery: string;
+  admissionNo: string;
+  admissionDate: string;
+  course: string;
+  fatherName: string;
+  fatherPhone: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  fee: number;
+  status: "Active" | "Pending" | "Completed" | "Inactive";
+  batch: string;
+  /** True once `students.userId` points at an auth account -- the link every
+   *  portal query resolves the signed-in student through. */
+  hasLogin: boolean;
+}
+
+/**
+ * The roster the View Students table renders: one row per student with the
+ * course name and fee already resolved, so the table does not have to fetch
+ * per row. Fee is what the student has actually been invoiced; a student with
+ * no invoice yet falls back to the course's base fee, which is what the
+ * admission quoted them.
+ */
+export async function getStudentRoster(branchId: string | null, limit = 500) {
+  let query = supabase
+    .from("students")
+    .select("*, course:courses(id, name, baseFee)")
+    .is("deletedAt", null)
+    .order("createdAt", { ascending: false })
+    .limit(limit);
+  if (branchId) query = query.eq("branchId", branchId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const rows = data || [];
+  const ids = rows.map((r: Record<string, unknown>) => String(r.id));
+
+  // One invoice query for the whole page rather than one per student.
+  const invoiceTotals = new Map<string, number>();
+  if (ids.length > 0) {
+    const { data: invoices } = await supabase
+      .from("fee_invoices")
+      .select("studentId, totalAmount")
+      .in("studentId", ids);
+    for (const inv of invoices || []) {
+      const sid = String((inv as Record<string, unknown>).studentId);
+      const amt = Number((inv as Record<string, unknown>).totalAmount) || 0;
+      invoiceTotals.set(sid, (invoiceTotals.get(sid) || 0) + amt);
+    }
+  }
+
+  const mapped: StudentRosterRow[] = rows.map((row: Record<string, unknown>) => {
+    const first = String(row.firstName || "");
+    const last = String(row.lastName || "");
+    const name = [first, row.middleName, last].filter(Boolean).join(" ").trim() || "Unnamed";
+    const course = row.course as { name?: string; baseFee?: number } | null;
+
+    // Street is deliberately left out: the column shows where the student is
+    // from, and a full street line wraps the row onto three lines.
+    const address =
+      [row.city, row.district, row.state].filter(Boolean).join(", ") || "Address not recorded";
+
+    const admissionStatus = String(row.admissionStatus || "").toUpperCase();
+    const status: StudentRosterRow["status"] =
+      row.isActive === false
+        ? "Inactive"
+        : admissionStatus === "COMPLETED"
+        ? "Completed"
+        : admissionStatus === "APPROVED"
+        ? "Active"
+        : "Pending";
+
+    const phone = String(row.phone || "");
+
+    return {
+      id: String(row.id || ""),
+      name,
+      initials: `${first[0] || ""}${last[0] || ""}`.toUpperCase() || "ST",
+      address,
+      mapQuery: [row.streetAddress, row.city, row.district, row.state, row.pincode]
+        .filter(Boolean)
+        .join(", "),
+      admissionNo: String(row.enrollmentNo || row.applicationNo || "Pending"),
+      admissionDate: String(row.admissionDate || ""),
+      course: course?.name || "Not assigned",
+      fatherName: String(row.fatherName || "—"),
+      fatherPhone: String(row.fatherPhone || phone),
+      phone,
+      whatsapp: String(row.whatsappNumber || phone),
+      email: String(row.email || "—"),
+      fee: invoiceTotals.get(String(row.id)) ?? Number(course?.baseFee) ?? 0,
+      status,
+      batch: "Not assigned",
+      hasLogin: Boolean(row.userId),
+    };
+  });
+
+  return { success: true as const, data: mapped };
+}
+
 export async function getStudent(id: string, branchId: string | null) {
   // `.single()` returns a builder with no `.eq`, so every branch-scoped filter
   // has to be applied before it or the call throws "query.eq is not a function".
@@ -1467,9 +1574,9 @@ export async function updateBranch(id: string, organizationId: string, input: Re
   return { success: true, data };
 }
 
-const FUNCTION_NOT_DEPLOYED =
-  'The "create-branch-user" function has not been deployed to this Supabase project, so there was nothing to mint the login. ' +
-  "Run `supabase functions deploy create-branch-user`; until then the account has to be added under Authentication in the Supabase dashboard.";
+const functionNotDeployed = (name: string) =>
+  `The "${name}" function has not been deployed to this Supabase project, so there was nothing to mint the login. ` +
+  `Run \`supabase functions deploy ${name}\`; until then the account has to be added under Authentication in the Supabase dashboard.`;
 
 /**
  * Separates "never deployed" from "deployed but unreachable".
@@ -1478,14 +1585,55 @@ const FUNCTION_NOT_DEPLOYED =
  * so the browser skips the preflight that hides the real status, and the
  * gateway's `Access-Control-Allow-Origin: *` lets us read what came back.
  */
-async function describeUnreachableFunction(): Promise<string> {
+async function describeUnreachableFunction(name: string): Promise<string> {
   try {
-    const res = await fetch(`${supabaseUrl}/functions/v1/create-branch-user`, { method: "POST" });
-    if (res.status === 404) return FUNCTION_NOT_DEPLOYED;
+    const res = await fetch(`${supabaseUrl}/functions/v1/${name}`, { method: "POST" });
+    if (res.status === 404) return functionNotDeployed(name);
   } catch {
     // no network at all, or the project is unreachable - say so below
   }
-  return "Could not reach the create-branch-user function. Check the connection and that the Supabase project is running, then add the login again.";
+  return `Could not reach the ${name} function. Check the connection and that the Supabase project is running, then add the login again.`;
+}
+
+/**
+ * Turns whatever supabase-js reports about an edge-function call into a
+ * sentence that names the actual cause. Shared by the branch and student login
+ * calls, which fail in exactly the same handful of ways.
+ */
+async function throwFunctionError(name: string, error: { name?: string; message: string }): Promise<never> {
+  const response = (error as { context?: Response }).context;
+  // the function replies with { error } on 4xx, which is more useful than "non-2xx"
+  const detail = await response?.json?.().catch(() => null);
+  if (detail?.error) throw new Error(detail.error);
+  if (response?.status === 404) throw new Error(functionNotDeployed(name));
+  // The gateway rejects before the function ever runs - an expired session, a
+  // malformed token - and answers { code, message } rather than { error }.
+  if (detail?.message) {
+    throw new Error(
+      detail.code === "UNAUTHORIZED_INVALID_JWT_FORMAT" || response?.status === 401
+        ? `${detail.message}. Sign out and sign back in, then set the login again.`
+        : String(detail.message),
+    );
+  }
+  // A function that was never deployed is invisible from the browser: its
+  // preflight 404 allows only `authorization, x-client-info, apikey`, so the
+  // POST is blocked before it is sent and supabase-js can say nothing more
+  // useful than "Failed to send a request to the Edge Function".
+  if (error.name === "FunctionsFetchError") throw new Error(await describeUnreachableFunction(name));
+  throw new Error(error.message);
+}
+
+/** Every edge-function login call needs a live session, not a restored one. */
+async function requireLiveSession() {
+  // The app restores the last account from localStorage so a reload paints
+  // immediately, which means the UI can show you signed in after the Supabase
+  // session behind it has gone. Without this check the function answers the
+  // anon key with its own "Not signed in", which reads like a bug in the
+  // function rather than an expired session.
+  const { data: session } = await supabase.auth.getSession();
+  if (!session.session?.access_token) {
+    throw new Error("Your session has expired. Sign out and sign back in, then set the login again.");
+  }
 }
 
 /**
@@ -1505,46 +1653,42 @@ export async function setBranchLogin(input: {
   email?: string;
   phone?: string;
 }) {
-  // The app restores the last account from localStorage so a reload paints
-  // immediately, which means the UI can show you signed in after the Supabase
-  // session behind it has gone. Without this check the function answers the
-  // anon key with its own "Not signed in", which reads like a bug in the
-  // function rather than an expired session.
-  const { data: session } = await supabase.auth.getSession();
-  if (!session.session?.access_token) {
-    throw new Error("Your session has expired. Sign out and sign back in, then set the login again.");
-  }
+  await requireLiveSession();
 
   const { data, error } = await supabase.functions.invoke("create-branch-user", { body: input });
-  if (error) {
-    const response = (error as { context?: Response }).context;
-    // the function replies with { error } on 4xx, which is more useful than "non-2xx"
-    const detail = await response?.json?.().catch(() => null);
-    if (detail?.error) throw new Error(detail.error);
-    if (response?.status === 404) throw new Error(FUNCTION_NOT_DEPLOYED);
-    // The gateway rejects before the function ever runs - an expired session,
-    // a malformed token - and answers { code, message } rather than { error }.
-    // Without this the caller only ever sees "non-2xx status code".
-    if (detail?.message) {
-      throw new Error(
-        detail.code === "UNAUTHORIZED_INVALID_JWT_FORMAT" || response?.status === 401
-          ? `${detail.message}. Sign out and sign back in, then set the login again.`
-          : String(detail.message),
-      );
-    }
-    // A function that was never deployed is invisible from the browser. Its
-    // preflight 404 comes back allowing only `authorization, x-client-info,
-    // apikey`, so the POST - which carries a content-type - is blocked before
-    // it is ever sent, and supabase-js can say nothing more useful than
-    // "Failed to send a request to the Edge Function". Ask the gateway
-    // ourselves rather than passing that on.
-    if (error.name === "FunctionsFetchError") throw new Error(await describeUnreachableFunction());
-    throw new Error(error.message);
-  }
+  if (error) await throwFunctionError("create-branch-user", error);
   if (data?.error) throw new Error(data.error);
   return { success: true, data } as {
     success: true;
     data: { loginEmail: string; username: string; created: boolean };
+  };
+}
+
+/**
+ * Sets the login a student signs in to the portal with.
+ *
+ * Deliberately callable by a branch as well as an organisation admin -- the
+ * branch enrolled the student, so it is the branch that hands them their
+ * login. Which students a caller may touch is decided inside the
+ * create-student-user function from the caller's own token, not from anything
+ * sent here.
+ *
+ * Leaving `username` out keeps the current login ID and changes only the
+ * password, so a reset does not require remembering the ID.
+ */
+export async function setStudentLogin(input: {
+  studentId: string;
+  username?: string;
+  password: string;
+}) {
+  await requireLiveSession();
+
+  const { data, error } = await supabase.functions.invoke("create-student-user", { body: input });
+  if (error) await throwFunctionError("create-student-user", error);
+  if (data?.error) throw new Error(data.error);
+  return { success: true, data } as {
+    success: true;
+    data: { userId: string; loginEmail: string; username: string; created: boolean };
   };
 }
 
@@ -1614,15 +1758,31 @@ export async function deleteBranch(id: string) {
    PORTAL (Student Self-Service)
    ============================ */
 
+/**
+ * The signed-in student's own row, with the three names the profile page shows
+ * resolved. The row itself only carries `courseId`, `batchId` and `branchId`,
+ * so without these embeds the page has ids where it wants "ADCA", "2026-A" and
+ * "Kothrud Branch".
+ *
+ * `.maybeSingle()` rather than `.single()`: a student whose row was deleted, or
+ * whose token carries a different branch, is a case worth naming. `.single()`
+ * reports it as "Cannot coerce the result to a single JSON object", which sends
+ * the reader looking for a query bug instead of a missing link.
+ */
 export async function getStudentProfile(userId: string, branchId: string) {
   const { data, error } = await supabase
     .from("students")
-    .select("*")
+    .select("*, course:courses(name), batch:batches(name), branch:branches(name)")
     .eq("userId", userId)
     .eq("branchId", branchId)
     .is("deletedAt", null)
-    .single();
+    .maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data) {
+    throw new Error(
+      "No student record is linked to this login. Ask the branch office to issue it again.",
+    );
+  }
   return { success: true, data };
 }
 

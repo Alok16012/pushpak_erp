@@ -28,7 +28,10 @@ export interface StudentProfile {
   branch: string;
   email: string;
   phone: string;
+  /** The student's own WhatsApp number — `students.whatsappNumber`. */
+  whatsapp: string;
   guardian: string;
+  /** The father's / guardian's number — `students.fatherPhone`, never the student's. */
   guardianPhone: string;
   address: string;
   dob: string;
@@ -110,6 +113,7 @@ export const PROFILE_SEED: StudentProfile = {
   branch: "Kothrud Branch",
   email: "aarav.sharma@student.idealdigiskills.com",
   phone: "+91 98220 41100",
+  whatsapp: "+91 98220 41100",
   guardian: "Meera Sharma",
   guardianPhone: "+91 98220 41199",
   address: "24 Shivaji Nagar, Pune - 411005",

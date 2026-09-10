@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { format } from "date-fns";
 import { Camera, KeyRound, RotateCcw, Save, Trash2 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -24,27 +25,111 @@ const READ_ONLY: { label: string; key: keyof StudentProfile }[] = [
   { label: "Blood group", key: "bloodGroup" },
 ];
 
-interface ApiStudentProfile {
+/**
+ * A `students` row as Supabase returns it, with the three lookups
+ * `getStudentProfile` embeds.
+ *
+ * The columns are the table's own -- `firstName`/`lastName` rather than a
+ * `name`, `streetAddress`/`city`/... rather than an `address`, `courseId`
+ * rather than a course name. This used to be typed as the flat response the
+ * old api-server sent, which meant every field below arrived undefined and the
+ * page died on `form.name.split(" ")`.
+ */
+export interface StudentRow {
   id: string;
-  enrollmentNo: string;
-  applicationNo: string;
-  name: string;
-  email: string;
-  phone: string;
-  whatsappNumber: string;
-  course: string;
-  batch: string;
-  branch: string;
-  academicYear: string;
-  admissionDate: string;
-  photo: string | null;
-  gender: string;
-  dateOfBirth: string;
-  bloodGroup: string;
-  fatherName: string;
-  motherName: string;
-  address: string;
-  admissionStatus: string;
+  enrollmentNo?: string | null;
+  applicationNo?: string | null;
+  firstName?: string | null;
+  middleName?: string | null;
+  lastName?: string | null;
+  rollNo?: string | null;
+  section?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  whatsappNumber?: string | null;
+  streetAddress?: string | null;
+  city?: string | null;
+  district?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  dateOfBirth?: string | null;
+  bloodGroup?: string | null;
+  admissionDate?: string | null;
+  photo?: unknown;
+  fatherName?: string | null;
+  fatherPhone?: string | null;
+  course?: { name?: string | null } | null;
+  batch?: { name?: string | null } | null;
+  branch?: { name?: string | null } | null;
+}
+
+const text = (value: unknown) => (value == null ? "" : String(value));
+
+/**
+ * `students.photo` is a JSONB column, so it can hold a bare data URL from an
+ * older upload or an object from a newer one. The avatar needs a string or
+ * nothing -- handing it an object renders `[object Object]` as the image src.
+ */
+function photoSrc(value: unknown): string | null {
+  if (typeof value === "string") return value || null;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of ["url", "dataUrl", "src", "path"]) {
+      const found = record[key];
+      if (typeof found === "string" && found) return found;
+    }
+  }
+  return null;
+}
+
+/** The date columns are timestamps; the profile shows a day, not an instant. */
+function asDay(value: unknown): string {
+  const raw = text(value);
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? raw : format(parsed, "d MMM yyyy");
+}
+
+/**
+ * The students row as the portal reads it.
+ *
+ * Which column feeds which field is the whole point of this function, so it is
+ * separate and tested: `whatsappNumber` used to be mapped onto `guardianPhone`,
+ * which put the student's own line under "Guardian mobile" here and printed it
+ * as the parent contact on their ID card, since `asIdCardStudent` reads that
+ * same field.
+ */
+export function toStudentProfile(row: StudentRow): StudentProfile {
+  const name =
+    [row.firstName, row.middleName, row.lastName].filter(Boolean).join(" ").trim() || "Student";
+  const phone = text(row.phone);
+
+  return {
+    id: text(row.id),
+    name,
+    // A student admitted but not yet enrolled has only an application number,
+    // and that is what their paperwork carries until the enrolment is issued.
+    enrollmentNo: text(row.enrollmentNo) || text(row.applicationNo),
+    rollNo: text(row.rollNo),
+    course: text(row.course?.name),
+    batch: text(row.batch?.name),
+    section: text(row.section),
+    branch: text(row.branch?.name),
+    email: text(row.email),
+    phone,
+    // A student who left the WhatsApp box blank still uses WhatsApp on the
+    // mobile they gave at admission.
+    whatsapp: text(row.whatsappNumber) || phone,
+    guardian: text(row.fatherName),
+    guardianPhone: text(row.fatherPhone),
+    address: [row.streetAddress, row.city, row.district, row.state, row.pincode]
+      .filter(Boolean)
+      .join(", "),
+    dob: asDay(row.dateOfBirth),
+    bloodGroup: text(row.bloodGroup),
+    admissionDate: asDay(row.admissionDate),
+    photo: photoSrc(row.photo),
+  };
 }
 
 export default function MyProfile() {
@@ -60,31 +145,16 @@ export default function MyProfile() {
 
   useEffect(() => {
     let cancelled = false;
+    // The signed-in student arrives a render after the page mounts, so a fetch
+    // that does not wait for it queries `userId = undefined`, fails, and — with
+    // no dependency on the id — never runs again once the session resolves.
+    if (!userId || !branchId) return;
     setLoading(true);
     setError(null);
     getStudentProfile(userId, branchId)
       .then((result) => {
         if (cancelled) return;
-        const data = result.data;
-        const profile: StudentProfile = {
-          id: data.id,
-          name: data.name,
-          enrollmentNo: data.enrollmentNo,
-          rollNo: data.id,
-          course: data.course,
-          batch: data.batch,
-          section: "",
-          branch: data.branch,
-          email: data.email,
-          phone: data.phone,
-          guardian: data.fatherName || "",
-          guardianPhone: data.whatsappNumber || "",
-          address: data.address,
-          dob: data.dateOfBirth,
-          bloodGroup: data.bloodGroup,
-          admissionDate: data.admissionDate,
-          photo: data.photo,
-        };
+        const profile = toStudentProfile(result.data as unknown as StudentRow);
         setProfile(profile);
         setForm(profile);
       })
@@ -95,7 +165,7 @@ export default function MyProfile() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, userId, branchId]);
 
   const set = <K extends keyof StudentProfile>(key: K, value: StudentProfile[K]) => {
     if (!form) return;
@@ -158,11 +228,12 @@ export default function MyProfile() {
               <CardContent className="p-6 text-center">
                 <Avatar className="mx-auto h-24 w-24">
                   {form.photo && <AvatarImage src={form.photo} alt="" />}
-                  <AvatarFallback className="bg-foreground text-2xl text-background">{form.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}</AvatarFallback>
+                  <AvatarFallback className="bg-foreground text-2xl text-background">{form.name.split(" ").filter(Boolean).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <h2 className="mt-4 text-lg font-semibold">{form.name}</h2>
-                <p className="text-sm text-muted-foreground">{form.course}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{form.batch} · {form.branch}</p>
+                <p className="text-sm text-muted-foreground">{form.course || "Course not assigned"}</p>
+                {/* A student with no batch yet would otherwise read " · Kothrud". */}
+                <p className="mt-1 text-xs text-muted-foreground">{[form.batch, form.branch].filter(Boolean).join(" · ")}</p>
                 <div className="mt-4 flex justify-center gap-2">
                   <Button size="sm" variant="outline" onClick={photo}><Camera className="mr-1.5 h-3.5 w-3.5" />{form.photo ? "Replace photo" : "Upload photo"}</Button>
                   {form.photo && <Button size="sm" variant="ghost" onClick={() => set("photo", null)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Remove</Button>}
@@ -176,7 +247,7 @@ export default function MyProfile() {
                 {READ_ONLY.map((field) => (
                   <div key={field.key} className="flex items-start justify-between gap-3 border-b pb-3 last:border-0 last:pb-0">
                     <span className="text-xs text-muted-foreground">{field.label}</span>
-                    <span className="text-right text-sm font-medium">{String(form[field.key] ?? "—")}</span>
+                    <span className="text-right text-sm font-medium">{String(form[field.key] ?? "").trim() || "—"}</span>
                   </div>
                 ))}
                 <p className="pt-1 text-xs text-muted-foreground">Something wrong here? Raise it from ID &amp; admit card → Request a document.</p>
@@ -189,6 +260,11 @@ export default function MyProfile() {
               <CardHeader><CardTitle>Contact details</CardTitle></CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2"><Label htmlFor="phone">Mobile</Label><Input id="phone" value={form.phone} onChange={(event) => set("phone", event.target.value)} /></div>
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp">WhatsApp</Label>
+                  <Input id="whatsapp" value={form.whatsapp} onChange={(event) => set("whatsapp", event.target.value)} />
+                  <p className="text-xs text-muted-foreground">The branch messages you here. Leave it the same as your mobile if you use WhatsApp on that number.</p>
+                </div>
                 <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={form.email} onChange={(event) => set("email", event.target.value)} /></div>
                 <div className="space-y-2"><Label htmlFor="guardian">Guardian</Label><Input id="guardian" value={form.guardian} onChange={(event) => set("guardian", event.target.value)} /></div>
                 <div className="space-y-2"><Label htmlFor="guardianPhone">Guardian mobile</Label><Input id="guardianPhone" value={form.guardianPhone} onChange={(event) => set("guardianPhone", event.target.value)} /></div>

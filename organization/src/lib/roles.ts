@@ -49,3 +49,17 @@ const ROLE_VIEWS: Record<string, View> = {
 
 export const viewForRole = (role?: string | null): View =>
   ROLE_VIEWS[(role ?? "").toUpperCase()] ?? "student";
+
+/**
+ * Who may hand a student their portal login. The branch that enrolled the
+ * student can, as well as the organisation — but not the rest of the branch
+ * staff, who share the franchise view without owning admissions.
+ *
+ * This list mirrors the check inside the create-student-user edge function. The
+ * function is the authority; this only decides whether the button is worth
+ * showing, so nobody is offered an action the server will refuse.
+ */
+const LOGIN_ISSUING_ROLES = ["SUPER_ADMIN", "ORGANIZATION_ADMIN", "BRANCH_ADMIN", "FRANCHISE"];
+
+export const canIssueStudentLogin = (role?: string | null): boolean =>
+  LOGIN_ISSUING_ROLES.includes((role ?? "").toUpperCase());

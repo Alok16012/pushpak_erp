@@ -79,6 +79,10 @@ export default function MyResults() {
 
   useEffect(() => {
     let cancelled = false;
+    // The signed-in student arrives a render after the page mounts, so a fetch
+    // that does not wait for it queries `userId = undefined`, fails, and — with
+    // no dependency on the id — never runs again once the session resolves.
+    if (!userId || !branchId) return;
     setLoading(true);
     setError(null);
     Promise.all([
@@ -104,7 +108,7 @@ export default function MyResults() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, userId, branchId]);
 
   const exams = useMemo(() => [...new Set(results.map((result) => result.exam))], [results]);
 
