@@ -23,7 +23,16 @@ import { BookOpen, Users, Link2, CheckCircle } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { getCourses, getBatches, getInstructorNames, updateBatch } from "@/lib/supabase/data";
+import {
+  getCourses,
+  getBatches,
+  getBatchesByOrg,
+  getBranches,
+  getBranchCourseIds,
+  getInstructorNames,
+  setBranchCourseOffered,
+  updateBatch,
+} from "@/lib/supabase/data";
 import { newId } from "@/hooks/use-local-collection";
 
 interface CourseAssignment {
@@ -49,6 +58,13 @@ interface Batch {
   instructor?: string;
   /** `batches` stores the course as a foreign key, not a name. */
   courseId?: string | null;
+  branchId?: string | null;
+}
+
+interface BranchOption {
+  id: string;
+  name: string;
+  code?: string;
 }
 
 const availableSubjects = [
@@ -121,16 +137,21 @@ const columns: Column<CourseAssignment>[] = [
 ];
 
 export default function AssignCourseToBatch() {
-  const { user } = useAuth();
+  const { user, view } = useAuth();
   const orgId = user?.organizationId || null;
   const branchId = user?.branchId || null;
+  // A branch assigns courses to itself and nowhere else, so it is not offered a
+  // choice of branch. An administrator picks from the real list.
+  const canChooseBranch = view === "admin";
   const { toast } = useToast();
   const [assignments, setAssignments] = useState<CourseAssignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [branchOptions, setBranchOptions] = useState<BranchOption[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [offeredCourseIds, setOfferedCourseIds] = useState<Set<string>>(new Set());
   const [subjectsList, setSubjectsList] = useState<string[]>(availableSubjects);
   const [loading, setLoading] = useState(true);
-  const [selectedBranch, setSelectedBranch] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState(canChooseBranch ? "" : branchId || "");
   const [selectedCourse, setSelectedCourse] = useState("");
   const [selectedBatch, setSelectedBatch] = useState("");
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
@@ -146,13 +167,28 @@ export default function AssignCourseToBatch() {
     let cancelled = false;
     async function loadReferenceData() {
       try {
-        const [coursesRes, batchesRes, teacherRes] = await Promise.all([
+        // The whole organisation catalogue, on purpose: this screen is where a
+        // course is handed to a branch, so it cannot be narrowed to what the
+        // branch already has.
+        const [coursesRes, branchesRes, batchesRes, teacherRes] = await Promise.all([
           getCourses(orgId),
-          getBatches(branchId),
+          getBranches(orgId),
+          // getBatches(null) is every batch in the database, other
+          // organisations included; an administrator wants its own.
+          branchId ? getBatches(branchId) : getBatchesByOrg(orgId),
           getInstructorNames(branchId),
         ]);
         if (!cancelled) {
           setCourses(coursesRes.data as Course[]);
+          setBranchOptions(
+            (branchesRes.data as Record<string, unknown>[])
+              .filter((row) => row.isActive !== false)
+              .map((row) => ({
+                id: String(row.id),
+                name: String(row.name ?? ""),
+                code: row.code ? String(row.code) : undefined,
+              })),
+          );
           setBatches(batchesRes.data as Batch[]);
           setTeacherList(teacherRes.data);
         }
@@ -172,7 +208,27 @@ export default function AssignCourseToBatch() {
     }
     loadReferenceData();
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [orgId, branchId, toast]);
+
+  // Which courses the chosen branch already runs, so the form can say so
+  // instead of letting the same course be handed over twice.
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedBranch) {
+      setOfferedCourseIds(new Set());
+      return;
+    }
+    getBranchCourseIds(selectedBranch)
+      .then((ids) => { if (!cancelled) setOfferedCourseIds(ids); })
+      .catch(() => { if (!cancelled) setOfferedCourseIds(new Set()); });
+    return () => { cancelled = true; };
+  }, [selectedBranch]);
+
+  // Batches belong to a branch, so picking a branch decides which are on offer.
+  // An administrator who has picked none sees them all.
+  const branchBatches = selectedBranch
+    ? batches.filter((batch) => !batch.branchId || batch.branchId === selectedBranch)
+    : batches;
 
   const addAssignment = useCallback((assignment: Omit<CourseAssignment, "id">) => {
     const newItem: CourseAssignment = { ...assignment, id: newId("ca") };
@@ -246,7 +302,9 @@ export default function AssignCourseToBatch() {
   };
 
   const resetForm = () => {
-    setSelectedBranch("");
+    // A branch login has only one branch to file against, so clearing it would
+    // leave the form unusable until the page was reloaded.
+    setSelectedBranch(canChooseBranch ? "" : branchId || "");
     setSelectedCourse("");
     setSelectedBatch("");
     setSelectedSubjects([]);
@@ -283,9 +341,23 @@ export default function AssignCourseToBatch() {
       return;
     }
 
-    // The teacher is the one part of an assignment with somewhere to live:
-    // `batches.instructor`. The rest of this screen is still in memory only.
+    // Two parts of an assignment have somewhere to live: the branch keeps the
+    // course in `branch_courses`, which is what every branch-side course list
+    // reads, and the teacher goes on `batches.instructor`. Subjects have no
+    // table yet, so they stay in this session.
     const teachers = [...selectedTeachers];
+    try {
+      await setBranchCourseOffered(selectedBranch, course.id);
+      setOfferedCourseIds((prev) => new Set(prev).add(course.id));
+    } catch (err) {
+      toast({
+        title: "Could not give this course to the branch",
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       await updateBatch(batch.id, { instructor: teachers.join(", ") });
       setBatches((prev) => prev.map((b) => (b.id === batch.id ? { ...b, instructor: teachers.join(", ") } : b)));
@@ -304,11 +376,12 @@ export default function AssignCourseToBatch() {
       batch: batch.name,
       subjects: [...selectedSubjects],
       instructors: teachers,
-      status: "pending",
+      status: "assigned",
     });
+    const branchName = branchOptions.find((b) => b.id === selectedBranch)?.name || "the branch";
     toast({
       title: "Course assigned",
-      description: `${course.name} → ${batch.name}, taught by ${teachers.join(", ")}.`,
+      description: `${course.name} → ${batch.name}, taught by ${teachers.join(", ")}. ${branchName} now sees this course.`,
     });
     resetForm();
   };
@@ -343,6 +416,44 @@ export default function AssignCourseToBatch() {
       />
 
       <div className="grid gap-6 lg:grid-cols-3 mb-6">
+        {/* Which courses a branch runs is the organisation's decision -- the
+            policy on branch_courses only accepts writes from an admin -- so a
+            branch is shown what it has rather than a form the database would
+            refuse. */}
+        {!canChooseBranch ? (
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                Courses assigned to your branch
+              </CardTitle>
+              <CardDescription>
+                The organisation office decides which courses your branch runs. Ask them to add one
+                if something is missing.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              ) : offeredCourseIds.size === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No course has been assigned to your branch yet, so every course in the
+                  organisation is available to you for now.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {courses
+                    .filter((course) => offeredCourseIds.has(course.id))
+                    .map((course) => (
+                      <Badge key={course.id} variant="secondary">
+                        {course.name} ({course.code})
+                      </Badge>
+                    ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -355,17 +466,33 @@ export default function AssignCourseToBatch() {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label>Select Branch *</Label>
-                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <Select
+                  value={selectedBranch}
+                  onValueChange={(value) => {
+                    setSelectedBranch(value);
+                    // The batch belongs to a branch; keeping one from the
+                    // previous branch selected would file the assignment
+                    // against a batch the new branch does not own.
+                    setSelectedBatch("");
+                  }}
+                  disabled={!canChooseBranch || loading}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose a branch" />
+                    <SelectValue placeholder={loading ? "Loading branches…" : "Choose a branch"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="main">Main Branch</SelectItem>
-                    <SelectItem value="north">North Campus</SelectItem>
-                    <SelectItem value="south">South Campus</SelectItem>
-                    <SelectItem value="east">East Campus</SelectItem>
+                    {branchOptions.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}{branch.code ? ` (${branch.code})` : ""}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                {!loading && branchOptions.length === 0 && (
+                  <p className="text-xs text-destructive">
+                    No active branches found. Create one under Branch first.
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Select Course *</Label>
@@ -377,6 +504,7 @@ export default function AssignCourseToBatch() {
                     {courses.map((course) => (
                       <SelectItem key={course.id} value={course.id}>
                         {course.name} ({course.code})
+                        {offeredCourseIds.has(course.id) ? " · already assigned" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -384,18 +512,23 @@ export default function AssignCourseToBatch() {
               </div>
               <div className="space-y-2">
                 <Label>Select Batch *</Label>
-                <Select value={selectedBatch} onValueChange={setSelectedBatch}>
+                <Select value={selectedBatch} onValueChange={setSelectedBatch} disabled={!selectedBranch}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Choose a batch" />
+                    <SelectValue placeholder={selectedBranch ? "Choose a batch" : "Choose a branch first"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {batches.map((batch) => (
+                    {branchBatches.map((batch) => (
                       <SelectItem key={batch.id} value={batch.id}>
                         {batch.name}{batch.courseId ? ` - ${courses.find((c) => c.id === batch.courseId)?.name ?? ""}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedBranch && !loading && branchBatches.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    This branch has no batches yet. Create one under Create Batch.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -484,13 +617,14 @@ export default function AssignCourseToBatch() {
 
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="outline" onClick={resetForm}>Cancel</Button>
-              <Button disabled={loading || !selectedCourse || !selectedBatch} onClick={assign}>
+              <Button disabled={loading || !selectedBranch || !selectedCourse || !selectedBatch} onClick={assign}>
                 <Link2 className="h-4 w-4 mr-2" />
                 Assign Course
               </Button>
             </div>
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardHeader>
@@ -510,8 +644,12 @@ export default function AssignCourseToBatch() {
               <span className="font-bold text-warning">{assignments.filter(a => a.status === "pending").length}</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <span className="text-sm">Courses at this branch</span>
+              <span className="font-bold">{offeredCourseIds.size}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
               <span className="text-sm">Total Batches</span>
-              <span className="font-bold">{batches.length}</span>
+              <span className="font-bold">{branchBatches.length}</span>
             </div>
           </CardContent>
         </Card>

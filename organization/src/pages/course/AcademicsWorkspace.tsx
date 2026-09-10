@@ -95,7 +95,7 @@ export default function AcademicsWorkspace() {
     setLoading(true);
     try {
       const [c, b, br] = await Promise.all([
-        getCourses(orgId),
+        getCourses(orgId, branchId),
         branchId ? getBatches(branchId) : getBatchesByOrg(orgId),
         orgId ? getBranches(orgId) : Promise.resolve({ success: true, data: [] }),
       ]);

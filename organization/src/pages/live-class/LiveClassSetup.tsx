@@ -121,7 +121,7 @@ export default function LiveClassSetup() {
     const fetchLookups = async () => {
       try {
         const [coursesRes, batchesRes] = await Promise.all([
-          getCourses(orgId),
+          getCourses(orgId, branchId),
           getBatches(branchId),
         ]);
         // These helpers return the rows directly; there is no `.items` envelope.

@@ -294,7 +294,76 @@ function mapCourse(row: Record<string, unknown>): Record<string, any> {
   };
 }
 
-export async function getCourses(organizationId: string | null) {
+/**
+ * The course ids a branch has been given, out of `branch_courses`.
+ *
+ * `courses` belong to the organisation; which of them a branch may actually
+ * run is this join, and it is what "Assign Course to Batch" writes.
+ */
+export async function getBranchCourseIds(branchId: string | null) {
+  if (!branchId) return new Set<string>();
+  const { data, error } = await supabase
+    .from("branch_courses")
+    .select("courseId")
+    .eq("branchId", branchId)
+    .eq("isOffered", true);
+  if (error) throw new Error(error.message);
+  return new Set((data || []).map((row: Record<string, unknown>) => String(row.courseId)));
+}
+
+/**
+ * Gives a branch a course to run, or takes it back.
+ *
+ * Deliberately not an upsert: `branch_courses` is unique on (branchId,
+ * courseId), and PostgREST's upsert would write the freshly generated `id` over
+ * the existing row's primary key on conflict.
+ */
+export async function setBranchCourseOffered(
+  branchId: string,
+  courseId: string,
+  isOffered = true,
+) {
+  if (!branchId || !courseId) return { success: false as const, error: "Missing branch or course" };
+
+  const { data: existing, error: findError } = await supabase
+    .from("branch_courses")
+    .select("id")
+    .eq("branchId", branchId)
+    .eq("courseId", courseId)
+    .maybeSingle();
+  if (findError) throw new Error(findError.message);
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("branch_courses")
+      .update({ isOffered, updatedAt: nowIso() })
+      .eq("id", existing.id);
+    if (error) throw new Error(error.message);
+    return { success: true as const, created: false };
+  }
+
+  const { error } = await supabase.from("branch_courses").insert({
+    id: newId("bc"),
+    branchId,
+    courseId,
+    isOffered,
+    updatedAt: nowIso(),
+  });
+  if (error) throw new Error(error.message);
+  return { success: true as const, created: true };
+}
+
+/**
+ * The organisation's courses, narrowed to the ones a branch runs when a branch
+ * is given.
+ *
+ * The fallback matters: a branch that has never been assigned anything keeps
+ * the full list rather than dropping to an empty one. Without it, turning this
+ * scoping on would empty every branch's admission form until an administrator
+ * had gone through and assigned courses branch by branch. The first assignment
+ * a branch receives is what narrows it.
+ */
+export async function getCourses(organizationId: string | null, branchId: string | null = null) {
   let query = supabase
     .from("courses")
     .select("*")
@@ -303,7 +372,13 @@ export async function getCourses(organizationId: string | null) {
   if (organizationId) query = query.eq("organizationId", organizationId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return { success: true, data: (data || []).map(mapCourse) };
+  const all = (data || []).map(mapCourse);
+
+  if (!branchId) return { success: true, data: all };
+
+  const offered = await getBranchCourseIds(branchId);
+  if (offered.size === 0) return { success: true, data: all };
+  return { success: true, data: all.filter((course) => offered.has(String(course.id))) };
 }
 
 /**

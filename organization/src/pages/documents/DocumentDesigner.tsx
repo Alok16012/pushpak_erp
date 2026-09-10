@@ -175,7 +175,7 @@ export default function DocumentDesigner() {
     getStudents(branchId, 1, 100)
       .then((r) => setStudents((r.data || []) as StudentRow[]))
       .catch(() => setStudents([]));
-    getCourses(user?.organizationId)
+    getCourses(user?.organizationId, branchId)
       .then((r) => setCourses(r.data as Array<{ id: string; name: string }>))
       .catch(() => setCourses([]));
   }, [user?.branchId, user?.organizationId]);

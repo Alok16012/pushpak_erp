@@ -103,6 +103,9 @@ export default function ViewCourses() {
   const [saving, setSaving] = useState(false);
 
   const orgId = user?.organizationId || null;
+  // A branch sees the courses it has been given to run, not the whole
+  // organisation catalogue. Null for an administrator, who sees everything.
+  const branchId = user?.branchId || null;
 
   // Batches carry the enrolment counts, so the two lists are loaded together
   // rather than showing hardcoded zeroes.
@@ -110,7 +113,7 @@ export default function ViewCourses() {
     if (!orgId) return;
     try {
       const [courseBody, batchBody] = await Promise.all([
-        getCourses(orgId),
+        getCourses(orgId, branchId),
         getBatchesByOrg(orgId).catch(() => ({ data: [] as Record<string, unknown>[] })),
       ]);
       const batches = (batchBody.data || []) as Array<Record<string, unknown>>;
@@ -140,7 +143,7 @@ export default function ViewCourses() {
         variant: "destructive",
       });
     }
-  }, [orgId, toast]);
+  }, [orgId, branchId, toast]);
 
   useEffect(() => {
     void load();

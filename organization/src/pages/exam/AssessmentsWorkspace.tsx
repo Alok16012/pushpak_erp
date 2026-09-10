@@ -112,7 +112,7 @@ export default function AssessmentsWorkspace() {
       Promise.all([
         getExams(branchId),
         getStudents(branchId, 1, 100),
-        getCourses(orgId),
+        getCourses(orgId, branchId),
         getBatches(branchId),
       ])
         .then(([e, s, c, b]) => {

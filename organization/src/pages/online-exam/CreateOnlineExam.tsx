@@ -74,7 +74,7 @@ export default function CreateOnlineExam() {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      getCourses(user?.organizationId),
+      getCourses(user?.organizationId, branchId),
       getBatches(user?.branchId),
       getExams(user?.branchId),
     ])

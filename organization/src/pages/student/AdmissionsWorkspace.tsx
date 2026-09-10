@@ -202,7 +202,7 @@ export default function AdmissionsWorkspace() {
   // whole page as soon as the academic step rendered - unwrap `data`, and never
   // let a rejected query escape as an unhandled promise.
   useEffect(() => {
-    getCourses(organizationId)
+    getCourses(organizationId, branchId ?? null)
       .then((r) => setCourses(r.data as Array<{ id: string; name: string }>))
       .catch(() => setCourses([]));
     if (!branchId) {
