@@ -2287,6 +2287,7 @@ export async function submitRechargeRequest(input: {
   // Write immutable audit log
   try {
     await supabase.from("audit_events").insert({
+      id: newId("aud"),
       actorId: input.submittedBy?.id || null,
       organizationId: input.organizationId || null,
       branchId: input.branchId,
@@ -2307,6 +2308,12 @@ export async function submitRechargeRequest(input: {
   }
 
   return { success: true, data: mapTransaction(tx) };
+}
+
+/** Postgres 22P02 raised because a name was written to a uuid column. */
+function isUuidCastError(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "22P02" || /invalid input syntax for type uuid/i.test(error.message || "");
 }
 
 /**
@@ -2366,19 +2373,63 @@ export async function approveRechargeTransaction(
   const reviewerName = reviewer.name || reviewer.email || reviewer.id || "Administrator";
   const now = new Date().toISOString();
 
-  // 2. Fetch current wallet balance
+  // 2. Claim the request before touching the wallet.
+  //
+  // Crediting first and flipping the status afterwards leaves money credited
+  // against a row still marked PENDING whenever the second write fails, and the
+  // next click on Approve credits it again. Taking the row first, guarded on it
+  // still being PENDING, means a second approval finds nothing to claim. If the
+  // wallet write then fails the claim is handed back below.
+  const claimRow = (reviewedBy: string | null) =>
+    supabase
+      .from("branch_transactions")
+      .update({ status: "COMPLETED", reviewedBy, reviewedAt: now, updatedAt: now })
+      .eq("id", transactionId)
+      .eq("status", "PENDING")
+      .select("id");
+
+  let { data: claimed, error: claimErr } = await claimRow(reviewerName);
+
+  // add-recharge-approval.sql declared `reviewedBy` uuid while the approval code
+  // and supabase-wallet-recharge-functions.sql both treat it as the reviewer's
+  // name. On a database where the uuid form is still live, writing the name is
+  // rejected outright and no recharge can ever be approved -- so fall back to
+  // the reviewer's id, which either column accepts.
+  if (claimErr && isUuidCastError(claimErr)) {
+    ({ data: claimed, error: claimErr } = await claimRow(reviewer.id || null));
+  }
+
+  if (claimErr) throw new Error(`Failed to update transaction status: ${claimErr.message}`);
+  if (!claimed || claimed.length === 0) {
+    return {
+      success: false,
+      error: `Transaction ${transactionId} was already processed by another reviewer.`,
+    };
+  }
+
+  const releaseClaim = async () => {
+    await supabase
+      .from("branch_transactions")
+      .update({ status: "PENDING", reviewedBy: null, reviewedAt: null, updatedAt: new Date().toISOString() })
+      .eq("id", transactionId);
+  };
+
+  // 3. Fetch current wallet balance
   const { data: wallet, error: wErr } = await supabase
     .from("branch_wallets")
     .select("*")
     .eq("branchId", branchId)
     .maybeSingle();
 
-  if (wErr) throw new Error(wErr.message);
+  if (wErr) {
+    await releaseClaim();
+    throw new Error(wErr.message);
+  }
 
   const currentBalance = Number(wallet?.balance || 0);
   const newBalance = currentBalance + amount;
 
-  // 3. Atomically update wallet
+  // 4. Credit the wallet the branch's own portal reads
   if (wallet?.id) {
     const { error: uErr } = await supabase
       .from("branch_wallets")
@@ -2390,9 +2441,15 @@ export async function approveRechargeTransaction(
       })
       .eq("id", wallet.id);
 
-    if (uErr) throw new Error(`Failed to update branch wallet: ${uErr.message}`);
+    if (uErr) {
+      await releaseClaim();
+      throw new Error(`Failed to update branch wallet: ${uErr.message}`);
+    }
   } else {
+    // `id` is TEXT NOT NULL -- see lib/id.ts. A branch being recharged for the
+    // first time has no wallet row, and an insert without an id is rejected.
     const { error: iErr } = await supabase.from("branch_wallets").insert({
+      id: newId("wal"),
       branchId,
       balance: newBalance,
       lastRechargeAmount: amount,
@@ -2400,28 +2457,26 @@ export async function approveRechargeTransaction(
       updatedAt: now,
     });
 
-    if (iErr) throw new Error(`Failed to initialize branch wallet: ${iErr.message}`);
+    if (iErr) {
+      await releaseClaim();
+      throw new Error(`Failed to initialize branch wallet: ${iErr.message}`);
+    }
   }
 
-  // 4. Update transaction status to COMPLETED
+  // 5. Stamp the balance the credit landed on
   const { data: updatedTx, error: upErr } = await supabase
     .from("branch_transactions")
-    .update({
-      status: "COMPLETED",
-      balanceAfter: newBalance,
-      reviewedBy: reviewerName,
-      reviewedAt: now,
-      updatedAt: now,
-    })
+    .update({ balanceAfter: newBalance, updatedAt: now })
     .eq("id", transactionId)
     .select(TRANSACTION_SELECT)
     .single();
 
   if (upErr) throw new Error(`Failed to update transaction status: ${upErr.message}`);
 
-  // 5. Write immutable audit log
+  // 6. Write immutable audit log
   try {
     await supabase.from("audit_events").insert({
+      id: newId("aud"),
       actorId: reviewer.id || null,
       branchId,
       action: "RECHARGE_APPROVED",
@@ -2501,25 +2556,40 @@ export async function rejectRechargeTransaction(
     ? `${existingDesc} • [Rejected: ${cleanReason}]`
     : `[Rejected: ${cleanReason}]`;
 
-  // 2. Update transaction status to FAILED
-  const { data: updatedTx, error: upErr } = await supabase
-    .from("branch_transactions")
-    .update({
-      status: "FAILED",
-      description: updatedDesc,
-      reviewedBy: reviewerName,
-      reviewedAt: now,
-      updatedAt: now,
-    })
-    .eq("id", transactionId)
-    .select(TRANSACTION_SELECT)
-    .single();
+  // 2. Update transaction status to FAILED, guarded on it still being PENDING
+  //    so two reviewers cannot both record a rejection reason on one request.
+  const rejectRow = (reviewedBy: string | null) =>
+    supabase
+      .from("branch_transactions")
+      .update({
+        status: "FAILED",
+        description: updatedDesc,
+        reviewedBy,
+        reviewedAt: now,
+        updatedAt: now,
+      })
+      .eq("id", transactionId)
+      .eq("status", "PENDING")
+      .select(TRANSACTION_SELECT);
+
+  let { data: rejected, error: upErr } = await rejectRow(reviewerName);
+  if (upErr && isUuidCastError(upErr)) {
+    ({ data: rejected, error: upErr } = await rejectRow(reviewer.id || null));
+  }
 
   if (upErr) throw new Error(`Failed to reject transaction: ${upErr.message}`);
+  if (!rejected || rejected.length === 0) {
+    return {
+      success: false,
+      error: `Transaction ${transactionId} was already processed by another reviewer.`,
+    };
+  }
+  const updatedTx = rejected[0];
 
   // 3. Write immutable audit log
   try {
     await supabase.from("audit_events").insert({
+      id: newId("aud"),
       actorId: reviewer.id || null,
       branchId: tx.branchId,
       action: "RECHARGE_REJECTED",
@@ -2735,6 +2805,20 @@ export async function getRechargeProofUrl(path: string) {
   const { data, error } = await supabase.storage.from("recharge-proofs").createSignedUrl(path, 600);
   if (error) throw new Error(error.message);
   return { success: true, data: data.signedUrl };
+}
+
+/**
+ * `proofUrl` holds one of two things depending on which screen filed the
+ * request: an object path inside the private `recharge-proofs` bucket, or --
+ * for rows written before the drawer uploaded anything -- an inline data URL.
+ * A path is not something an <img> can load, which is why the proof rendered
+ * broken. Anything already loadable is returned untouched; a path is signed.
+ */
+export async function resolveRechargeProofUrl(value: string | null | undefined) {
+  const raw = (value || "").trim();
+  if (!raw) return { success: true as const, data: null };
+  if (/^(https?:|data:|blob:)/i.test(raw)) return { success: true as const, data: raw };
+  return getRechargeProofUrl(raw) as Promise<{ success: true; data: string }>;
 }
 
 /**

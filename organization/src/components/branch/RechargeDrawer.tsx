@@ -29,6 +29,7 @@ import {
 import QRCode from "qrcode";
 import {
   submitRechargeRequest,
+  uploadRechargeProof,
   type WalletTransactionItem,
 } from "@/lib/supabase/data";
 
@@ -45,6 +46,20 @@ interface RechargeDrawerProps {
   institutes: Institute[];
   onSuccess: (newTx: WalletTransactionItem) => void;
   user: any;
+  /**
+   * The branch a top-up must be filed against, for a login that has one.
+   * Passing it replaces the search box with that branch, fixed.
+   *
+   * A branch account may only write rows for its own branch -- the policy on
+   * branch_transactions checks `branchId = jwt_branch_id()` -- so offering it a
+   * list of every branch in the organisation was offering choices the database
+   * refuses. Picking any branch but its own failed on submit with "new row
+   * violates row-level security policy for table branch_transactions", after
+   * the whole form had been filled in.
+   *
+   * Left null for an administrator, who really can top up any branch.
+   */
+  fixedInstituteId?: string | null;
 }
 
 const QUICK_AMOUNTS = [5000, 10000, 25000, 50000, 100000];
@@ -69,6 +84,7 @@ export function RechargeDrawer({
   institutes,
   onSuccess,
   user,
+  fixedInstituteId = null,
 }: RechargeDrawerProps) {
   const { toast } = useToast();
 
@@ -78,7 +94,10 @@ export function RechargeDrawer({
   const [method, setMethod] = useState<"upi" | "card" | "netbanking">("upi");
   const [reference, setReference] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [proofFile, setProofFile] = useState<string | null>(null);
+  // The file itself is what gets uploaded; the data URL is only a local
+  // thumbnail. Storing the data URL in the row is what left proofs unreadable.
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [proofFileName, setProofFileName] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -92,6 +111,15 @@ export function RechargeDrawer({
           inst.directorName.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
+
+  // A branch login files against its own branch and no other, so the rest of
+  // the form reads `institute` rather than the picker's state. It is null only
+  // while an administrator has yet to choose, or when a branch's own row is
+  // missing from the list -- both cases the form has to refuse to submit.
+  const fixedInstitute = fixedInstituteId
+    ? institutes.find((inst) => inst.id === fixedInstituteId) ?? null
+    : null;
+  const institute = fixedInstituteId ? fixedInstitute : selectedInstitute;
 
   // Generate dynamic QR code for UPI
   useEffect(() => {
@@ -128,11 +156,16 @@ export function RechargeDrawer({
     }
 
     setProofFileName(file.name);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setProofFile(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    setProofFile(file);
+
+    // A PDF has nothing to show in an <img>, so only images get a thumbnail.
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onloadend = () => setProofPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setProofPreview(null);
+    }
   };
 
   const resetForm = () => {
@@ -143,14 +176,17 @@ export function RechargeDrawer({
     setReference("");
     setRemarks("");
     setProofFile(null);
+    setProofPreview(null);
     setProofFileName(null);
   };
 
   const handleSubmit = async () => {
-    if (!selectedInstitute) {
+    if (!institute) {
       toast({
-        title: "Select an Institute / Branch",
-        description: "Please choose which branch wallet to top up.",
+        title: fixedInstituteId ? "Your branch could not be found" : "Select an Institute / Branch",
+        description: fixedInstituteId
+          ? "Reload the page, and tell the organisation office if it keeps happening."
+          : "Please choose which branch wallet to top up.",
         variant: "destructive",
       });
       return;
@@ -185,12 +221,30 @@ export function RechargeDrawer({
           ? "CARD"
           : "NET_BANKING";
 
+      // Upload first: the row should carry the object path, and a failed upload
+      // should stop the request rather than file one whose proof cannot be read.
+      let proofPath: string | null = null;
+      if (proofFile) {
+        try {
+          const upload = await uploadRechargeProof(institute.id, proofFile);
+          proofPath = upload.data;
+        } catch (uploadErr) {
+          toast({
+            title: "Payment proof could not be uploaded",
+            description:
+              uploadErr instanceof Error ? uploadErr.message : "Storage rejected the file.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       const res = await submitRechargeRequest({
-        branchId: selectedInstitute.id,
+        branchId: institute.id,
         amount: val,
         paymentMethod: pmEnum,
         reference: trimmedRef,
-        proofUrl: proofFile,
+        proofUrl: proofPath,
         remarks: remarks || undefined,
         submittedBy: {
           id: user?.id,
@@ -203,7 +257,7 @@ export function RechargeDrawer({
       if (res.success && res.data) {
         toast({
           title: "Recharge Request Submitted",
-          description: `₹${val.toLocaleString("en-IN")} submitted for ${selectedInstitute.name}. Awaiting approval.`,
+          description: `₹${val.toLocaleString("en-IN")} submitted for ${institute.name}. Awaiting approval.`,
         });
         onSuccess(res.data);
         resetForm();
@@ -255,20 +309,31 @@ export function RechargeDrawer({
             <Label htmlFor="branchSearch" className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               1. Institute / Branch <span className="text-destructive">*</span>
             </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="branchSearch"
-                placeholder="Type branch name or code..."
-                className="pl-9 text-sm"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                disabled={submitting}
-              />
-            </div>
+            {/* An administrator picks; a branch is told, since it may only file
+                against its own. */}
+            {!fixedInstituteId && (
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="branchSearch"
+                  placeholder="Type branch name or code..."
+                  className="pl-9 text-sm"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+            )}
+
+            {fixedInstituteId && !fixedInstitute && (
+              <p className="text-xs text-destructive">
+                Your branch is not in the list of active branches, so a top-up cannot be filed.
+                Reload the page, and tell the organisation office if it keeps happening.
+              </p>
+            )}
 
             {/* Dropdown search results */}
-            {searchQuery && filteredInstitutes.length > 0 && !selectedInstitute && (
+            {!fixedInstituteId && searchQuery && filteredInstitutes.length > 0 && !selectedInstitute && (
               <div className="border rounded-md max-h-48 overflow-auto bg-background shadow-md divide-y">
                 {filteredInstitutes.map((inst) => (
                   <div
@@ -294,14 +359,15 @@ export function RechargeDrawer({
             )}
 
             {/* Selected Branch Snapshot */}
-            {selectedInstitute && (
+            {institute && (
               <div className="p-3 rounded-lg border bg-muted/40 flex items-center justify-between">
                 <div>
                   <span className="text-xs font-semibold text-foreground block">
-                    {selectedInstitute.name}
+                    {institute.name}
                   </span>
                   <span className="text-[11px] text-muted-foreground">
-                    Code: {selectedInstitute.directorName}
+                    Code: {institute.directorName}
+                    {fixedInstituteId && " · your branch"}
                   </span>
                 </div>
                 <div className="text-right">
@@ -309,7 +375,7 @@ export function RechargeDrawer({
                     Current Balance
                   </span>
                   <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm">
-                    ₹{selectedInstitute.balance.toLocaleString("en-IN")}
+                    ₹{institute.balance.toLocaleString("en-IN")}
                   </span>
                 </div>
               </div>
@@ -512,11 +578,17 @@ export function RechargeDrawer({
             {proofFile ? (
               <div className="relative rounded-lg border p-2 bg-muted/30 flex items-center justify-between">
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <img
-                    src={proofFile}
-                    alt="Proof Preview"
-                    className="w-12 h-12 object-cover rounded border bg-background"
-                  />
+                  {proofPreview ? (
+                    <img
+                      src={proofPreview}
+                      alt="Proof Preview"
+                      className="w-12 h-12 object-cover rounded border bg-background"
+                    />
+                  ) : (
+                    <span className="grid w-12 h-12 shrink-0 place-items-center rounded border bg-background text-muted-foreground">
+                      <UploadCloud className="h-5 w-5" />
+                    </span>
+                  )}
                   <div className="overflow-hidden">
                     <span className="text-xs font-medium text-foreground block truncate max-w-[200px]">
                       {proofFileName || "Payment receipt image"}
@@ -532,6 +604,7 @@ export function RechargeDrawer({
                   className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
                   onClick={() => {
                     setProofFile(null);
+                    setProofPreview(null);
                     setProofFileName(null);
                   }}
                   disabled={submitting}
@@ -593,7 +666,7 @@ export function RechargeDrawer({
             onClick={handleSubmit}
             disabled={
               submitting ||
-              !selectedInstitute ||
+              !institute ||
               !amount ||
               Number(amount) <= 0 ||
               !reference.trim()

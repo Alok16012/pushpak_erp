@@ -65,25 +65,50 @@ vi.mock("@/lib/supabase/client", () => {
               }),
             };
           },
+          // A real PostgREST update chains any number of filters and only runs
+          // when the builder is awaited, which is what lets the approval code
+          // guard on `id` *and* `status` in one statement. Applying the write on
+          // the first `.eq()` would ignore every filter after it.
           update: (updates: any) => {
-            return {
-              eq: (field: string, val: any) => {
-                const rows = getTableRows(table);
-                let updatedRow: any = null;
-                for (let i = 0; i < rows.length; i++) {
-                  if (rows[i][field] === val) {
-                    rows[i] = { ...rows[i], ...updates, updatedAt: new Date().toISOString() };
-                    updatedRow = rows[i];
-                  }
+            const updateFilters: Array<(row: any) => boolean> = [];
+
+            const apply = () => {
+              const rows = getTableRows(table);
+              const matched: any[] = [];
+              for (let i = 0; i < rows.length; i++) {
+                if (updateFilters.every((f) => f(rows[i]))) {
+                  rows[i] = { ...rows[i], ...updates, updatedAt: new Date().toISOString() };
+                  matched.push(rows[i]);
                 }
-                return {
-                  select: () => ({
-                    single: async () => ({ data: updatedRow, error: null }),
-                  }),
-                  then: (resolve: any) => resolve({ data: updatedRow, error: null }),
+              }
+              return matched;
+            };
+
+            const updateBuilder: any = {
+              eq: (field: string, val: any) => {
+                updateFilters.push((row: any) => row[field] === val);
+                return updateBuilder;
+              },
+              select: () => {
+                const selectBuilder: any = {
+                  single: async () => {
+                    const matched = apply();
+                    return matched.length > 0
+                      ? { data: { ...matched[0] }, error: null }
+                      : { data: null, error: { message: "Row not found", code: "PGRST116" } };
+                  },
+                  then: (resolve: any) =>
+                    resolve({ data: apply().map((r) => ({ ...r })), error: null }),
                 };
+                return selectBuilder;
+              },
+              then: (resolve: any) => {
+                const matched = apply();
+                resolve({ data: matched.length > 0 ? matched[0] : null, error: null });
               },
             };
+
+            return updateBuilder;
           },
           then: (resolve: any) => {
             let rows = getTableRows(table).filter((r) => filters.every((f) => f(r)));

@@ -80,7 +80,12 @@ const inr = (value: number) => `₹${value.toLocaleString("en-IN")}`;
 
 export default function WalletRecharge() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, view, branchId } = useAuth();
+
+  // Approval is an administrator's. A branch reaches this same route from its
+  // own sidebar, where the queue is its own request history and its balance --
+  // showing it Approve and Reject only offers buttons the database refuses.
+  const canApprove = view === "admin";
 
   // Primary Data State
   const [loading, setLoading] = useState(true);
@@ -116,6 +121,9 @@ export default function WalletRecharge() {
   // Selection & Bulk Action States
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  // A single approve/reject also has to disable its buttons; without this the
+  // proof viewer stayed live during the round trip and could be clicked twice.
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   // Modals & Drawers States
   const [rechargeDrawerOpen, setRechargeDrawerOpen] = useState(false);
@@ -251,6 +259,7 @@ export default function WalletRecharge() {
 
   // Single Approve Action
   const handleApprove = async (tx: WalletTransactionItem) => {
+    setProcessingId(tx.id);
     try {
       const res = await approveRechargeTransaction(tx.id, {
         id: user?.id,
@@ -285,11 +294,15 @@ export default function WalletRecharge() {
         description: err instanceof Error ? err.message : "Error processing approval.",
         variant: "destructive",
       });
+    } finally {
+      setProcessingId(null);
     }
   };
 
-  // Open single reject dialog
+  // Open single reject dialog. The proof viewer closes first: two stacked
+  // dialogs fight over the focus trap, and the reason box is what matters now.
   const handleOpenReject = (tx: WalletTransactionItem) => {
+    setProofModalOpen(false);
     setRejectingTx(tx);
     setIsBulkReject(false);
     setRejectDialogOpen(true);
@@ -334,6 +347,7 @@ export default function WalletRecharge() {
         setIsBulkProcessing(false);
       }
     } else if (rejectingTx) {
+      setProcessingId(rejectingTx.id);
       try {
         const res = await rejectRechargeTransaction(rejectingTx.id, {
           id: user?.id,
@@ -344,7 +358,7 @@ export default function WalletRecharge() {
         if (res.success) {
           toast({
             title: "Transaction Rejected",
-            description: `Recharge for ${rejectingTx.branch} marked as rejected.`,
+            description: `Recharge for ${rejectingTx.branch} marked as rejected. Reason: "${reason}".`,
           });
 
           if (proofModalOpen && selectedProofTx?.id === rejectingTx.id) {
@@ -354,11 +368,9 @@ export default function WalletRecharge() {
           setSelectedIds((prev) => prev.filter((id) => id !== rejectingTx.id));
           loadData(true);
         } else {
-          toast({
-            title: "Rejection Failed",
-            description: res.error || "Could not reject transaction.",
-            variant: "destructive",
-          });
+          // Thrown, not just toasted, so the reason box stays open with what was
+          // typed still in it instead of closing and losing the text.
+          throw new Error(res.error || "Could not reject transaction.");
         }
       } catch (err) {
         toast({
@@ -366,6 +378,9 @@ export default function WalletRecharge() {
           description: err instanceof Error ? err.message : "Error rejecting transaction.",
           variant: "destructive",
         });
+        throw err;
+      } finally {
+        setProcessingId(null);
       }
     }
   };
@@ -550,9 +565,13 @@ export default function WalletRecharge() {
       {/* Executive Compact KPI Summary */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-4">
         <StatsCard
-          title="Total Wallet Balance"
+          title={canApprove ? "Total Wallet Balance" : "My Wallet Balance"}
           value={inr(totals.totalBalance)}
-          subtitle={`${institutes.length} active branches`}
+          subtitle={
+            canApprove
+              ? `${institutes.length} active branches`
+              : institutes.find((i) => i.id === branchId)?.name || "This branch"
+          }
           icon={Wallet}
         />
         <StatsCard
@@ -675,20 +694,25 @@ export default function WalletRecharge() {
               />
             </div>
 
-            {/* Branch Filter */}
-            <Select value={selectedBranch} onValueChange={(v) => { setSelectedBranch(v); setCurrentPage(1); }}>
-              <SelectTrigger className="h-8 w-[160px] text-xs">
-                <SelectValue placeholder="All Branches" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Branches</SelectItem>
-                {institutes.map((inst) => (
-                  <SelectItem key={inst.id} value={inst.id}>
-                    {inst.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Branch Filter. A branch only ever sees its own rows -- the
+                policy on branch_transactions decides that, not this control --
+                so offering it every branch in the organisation only invites
+                picking one that returns an empty table. */}
+            {canApprove && (
+              <Select value={selectedBranch} onValueChange={(v) => { setSelectedBranch(v); setCurrentPage(1); }}>
+                <SelectTrigger className="h-8 w-[160px] text-xs">
+                  <SelectValue placeholder="All Branches" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Branches</SelectItem>
+                  {institutes.map((inst) => (
+                    <SelectItem key={inst.id} value={inst.id}>
+                      {inst.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             {/* Payment Method Filter */}
             <Select value={selectedMethod} onValueChange={(v) => { setSelectedMethod(v); setCurrentPage(1); }}>
@@ -752,7 +776,7 @@ export default function WalletRecharge() {
         </div>
 
         {/* Sticky Bulk Actions Toolbar (Active when >=1 row selected) */}
-        {selectedIds.length > 0 && (
+        {selectedIds.length > 0 && canApprove && (
           <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border bg-primary/10 border-primary/30 shadow-md backdrop-blur">
             <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
               <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground font-mono">
@@ -1117,12 +1141,13 @@ export default function WalletRecharge() {
 
                         {/* Actions Column */}
                         <TableCell className="text-right py-1.5 whitespace-nowrap pr-4">
-                          {isPending ? (
+                          {isPending && canApprove ? (
                             <div className="flex items-center justify-end gap-1.5">
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="h-7 px-2 text-xs border-destructive/40 text-destructive hover:bg-destructive hover:text-white"
+                                disabled={processingId === tx.id}
                                 onClick={() => handleOpenReject(tx)}
                               >
                                 <XCircle className="h-3.5 w-3.5 mr-1" />
@@ -1132,12 +1157,15 @@ export default function WalletRecharge() {
                               <Button
                                 size="sm"
                                 className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                                disabled={processingId === tx.id}
                                 onClick={() => handleApprove(tx)}
                               >
                                 <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
                                 Approve
                               </Button>
                             </div>
+                          ) : isPending ? (
+                            <span className="text-xs text-muted-foreground">Awaiting approval</span>
                           ) : (
                             <div className="flex items-center justify-end gap-1.5">
                               <Button
@@ -1241,6 +1269,9 @@ export default function WalletRecharge() {
         onOpenChange={setRechargeDrawerOpen}
         institutes={institutes}
         user={user}
+        // An administrator tops up whichever branch it likes; a branch may only
+        // file against its own, so it is handed that one rather than a picker.
+        fixedInstituteId={canApprove ? null : branchId}
         onSuccess={() => {
           setStatusTab("PENDING");
           setSortBy("createdAt");
@@ -1254,8 +1285,9 @@ export default function WalletRecharge() {
         open={proofModalOpen}
         onOpenChange={setProofModalOpen}
         transaction={selectedProofTx}
-        onApprove={handleApprove}
-        onReject={handleOpenReject}
+        onApprove={canApprove ? handleApprove : undefined}
+        onReject={canApprove ? handleOpenReject : undefined}
+        isProcessing={processingId === selectedProofTx?.id}
       />
 
       <RejectReasonDialog
@@ -1264,7 +1296,7 @@ export default function WalletRecharge() {
         onConfirm={handleConfirmReject}
         count={isBulkReject ? selectedIds.length : 1}
         transactionReference={rejectingTx?.reference}
-        isProcessing={isBulkProcessing}
+        isProcessing={isBulkProcessing || processingId !== null}
       />
 
       <TransactionAuditDrawer
