@@ -9,28 +9,11 @@ import { useState, useEffect, useMemo } from "react";
 import { getStudentProfile, getStudentAttendance, getStudentPortalInvoices, getStudentPortalResults, getStudentPortalClasses, getNotices } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+// The shared shape, not a local copy of the old api-server's response: the
+// page renders these fields straight into JSX, so what getStudentProfile
+// actually returns is the only thing worth typing them as.
+import type { StudentProfile } from "@/data/student-portal";
 
-interface StudentProfile {
-  id: string;
-  enrollmentNo: string;
-  applicationNo: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  course?: string;
-  batch?: string;
-  branch?: string;
-  academicYear?: string;
-  admissionDate?: string;
-  photo?: string;
-  gender?: string;
-  dateOfBirth?: string;
-  bloodGroup?: string;
-  fatherName?: string;
-  motherName?: string;
-  address?: string;
-  admissionStatus?: string;
-}
 
 interface AttendanceRecord {
   id: string;

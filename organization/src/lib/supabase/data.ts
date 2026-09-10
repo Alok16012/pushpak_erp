@@ -1,6 +1,7 @@
 import { supabase, supabaseUrl } from "./client";
 import { KNOWN_COURSE_CATEGORIES } from "../courseCategories";
 import { newId, nowIso } from "../id";
+import { toStudentProfile, type StudentRow } from "../student-profile";
 import {
   createInvoiceRow,
   listInvoices,
@@ -1759,10 +1760,13 @@ export async function deleteBranch(id: string) {
    ============================ */
 
 /**
- * The signed-in student's own row, with the three names the profile page shows
- * resolved. The row itself only carries `courseId`, `batchId` and `branchId`,
- * so without these embeds the page has ids where it wants "ADCA", "2026-A" and
- * "Kothrud Branch".
+ * The signed-in student's own record, as the six portal screens want to render
+ * it rather than as the table stores it.
+ *
+ * The row only carries `courseId`, `batchId` and `branchId`, so the names are
+ * embedded; and the mapping is applied here rather than in the pages, because
+ * every page that skipped it printed blanks -- and, once the embeds arrived,
+ * crashed the dashboard trying to render `{ name }` as a React child.
  *
  * `.maybeSingle()` rather than `.single()`: a student whose row was deleted, or
  * whose token carries a different branch, is a case worth naming. `.single()`
@@ -1783,7 +1787,7 @@ export async function getStudentProfile(userId: string, branchId: string) {
       "No student record is linked to this login. Ask the branch office to issue it again.",
     );
   }
-  return { success: true, data };
+  return { success: true as const, data: toStudentProfile(data as unknown as StudentRow) };
 }
 
 export async function getStudentPortalClasses(userId: string, branchId: string) {

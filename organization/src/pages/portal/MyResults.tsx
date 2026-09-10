@@ -16,28 +16,10 @@ import { downloadCsv, printHtml } from "@/lib/export";
 import {
   resultSummary,
   asStudentDocument,
+  type StudentProfile,
 } from "@/data/student-portal";
 import type { StudentDocument } from "@/lib/documents";
 
-interface StudentProfile {
-  id: string;
-  name: string;
-  enrollmentNo: string;
-  rollNo: string;
-  course: string;
-  batch: string;
-  section: string;
-  branch: string;
-  email: string;
-  phone: string;
-  guardian: string;
-  guardianPhone: string;
-  address: string;
-  dob: string;
-  bloodGroup: string;
-  admissionDate: string;
-  photo: string | null;
-}
 
 interface PortalInvoice {
   id: string;
@@ -95,7 +77,7 @@ export default function MyResults() {
         const profileData = profileResult.data;
         const resultsData = resultsResult.data;
         const invoicesData = invoicesResult.data;
-        setProfile(profileData as StudentProfile);
+        setProfile(profileData);
         setResults(resultsData);
         setInvoices(invoicesData);
         const exams = [...new Set(resultsData.map((r) => r.exam))];

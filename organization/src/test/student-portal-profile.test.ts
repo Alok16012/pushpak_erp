@@ -1,11 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-
-// MyProfile pulls in the whole app shell for its default export; the mapping
-// under test needs none of it.
-vi.mock("@/lib/supabase/client", () => ({ supabase: {}, supabaseUrl: "https://project.supabase.co" }));
+import { describe, it, expect } from "vitest";
 
 import { asIdCardStudent } from "@/data/student-portal";
-import { toStudentProfile, type StudentRow } from "@/pages/portal/MyProfile";
+import { toStudentProfile, type StudentRow } from "@/lib/student-profile";
 
 /** A students row shaped the way Supabase actually returns one. */
 const row = (overrides: Partial<StudentRow> = {}): StudentRow =>
@@ -86,6 +82,21 @@ describe("toStudentProfile", () => {
     const profile = toStudentProfile(row({ course: null, batch: null, branch: null }));
     expect(profile.course).toBe("");
     expect(profile.batch).toBe("");
+  });
+
+  // The dashboard drops these fields straight into JSX, and React throws
+  // "Objects are not valid as a React child" on any one of them that is still
+  // a joined row -- which is how the student portal went down: `course` reached
+  // it as `{ name: "ADCA" }` and took the whole page with it.
+  it("returns nothing a page could not render, for every field", () => {
+    const profile = toStudentProfile(row());
+
+    for (const [key, value] of Object.entries(profile)) {
+      expect(
+        value === null || typeof value === "string",
+        `${key} is a ${typeof value}, which React cannot render`,
+      ).toBe(true);
+    }
   });
 
   it("joins the address out of the columns the row actually has", () => {

@@ -14,28 +14,8 @@ import { getStudentProfile, getStudentPortalInvoices, addPayment, submitPortalRe
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
+import type { StudentProfile } from "@/data/student-portal";
 
-interface StudentProfile {
-  id: string;
-  enrollmentNo: string;
-  applicationNo: string;
-  name: string;
-  email?: string;
-  phone?: string;
-  course?: string;
-  batch?: string;
-  branch?: string;
-  academicYear?: string;
-  admissionDate?: string;
-  photo?: string;
-  gender?: string;
-  dateOfBirth?: string;
-  bloodGroup?: string;
-  fatherName?: string;
-  motherName?: string;
-  address?: string;
-  admissionStatus?: string;
-}
 
 interface PortalInvoice {
   id: string;
