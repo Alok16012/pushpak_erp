@@ -63,3 +63,17 @@ const LOGIN_ISSUING_ROLES = ["SUPER_ADMIN", "ORGANIZATION_ADMIN", "BRANCH_ADMIN"
 
 export const canIssueStudentLogin = (role?: string | null): boolean =>
   LOGIN_ISSUING_ROLES.includes((role ?? "").toUpperCase());
+
+/**
+ * Who may add to the course catalogue.
+ *
+ * `courses` belong to the organisation, not to a branch — `branch_courses`
+ * decides which of them a branch may run, and a branch is given its courses
+ * rather than writing its own. The navigation already draws this line (there is
+ * no "Create Course" item in the franchise menu, and `/course/create` is not in
+ * its allow-list), but the Courses & batches page offered a "New course" button
+ * regardless, and it opened the form inline — so the one route the guard was
+ * protecting could be walked around from the page it protected.
+ */
+export const canManageCourses = (role?: string | null): boolean =>
+  viewForRole(role) === "admin";

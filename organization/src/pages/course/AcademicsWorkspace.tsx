@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { BookOpen, Calendar, Download, Plus, Upload, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { canManageCourses } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile } from "@/lib/export";
 import {
@@ -76,6 +77,11 @@ export default function AcademicsWorkspace() {
   const branchId = user?.branchId || null;
   const { toast } = useToast();
 
+  /* A branch runs the courses it has been given; the catalogue itself is the
+     organisation's. Batches stay open to everyone — those are a branch's own
+     cohorts, and scheduling them is exactly what a branch is for. */
+  const mayManageCourses = canManageCourses(user?.role);
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -87,9 +93,10 @@ export default function AcademicsWorkspace() {
   // The route decides which form is open, so "Create course" from the menu
   // lands on an open form instead of a list the user has to hunt through.
   useEffect(() => {
-    setForm(formForPath(pathname));
+    const next = formForPath(pathname);
+    setForm(next === "course" && !mayManageCourses ? null : next);
     setD({});
-  }, [pathname]);
+  }, [pathname, mayManageCourses]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -179,6 +186,17 @@ export default function AcademicsWorkspace() {
 
   const submit = async () => {
     if (!validate()) return;
+    // Belt and braces behind the hidden button: whatever opened this form, a
+    // branch does not write the organisation's catalogue.
+    if (form === "course" && !mayManageCourses) {
+      toast({
+        title: "Courses are managed by the organisation",
+        description: "Your branch runs the courses it is assigned. Ask the organisation to add this one.",
+        variant: "destructive",
+      });
+      setForm(null);
+      return;
+    }
     setSaving(true);
     try {
       if (form === "course") {
@@ -315,22 +333,31 @@ export default function AcademicsWorkspace() {
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex">
-          <Button variant="outline" onClick={importCourses} disabled={saving}>
-            <Upload />
-            Import
-          </Button>
+          {/* Import writes courses, so it goes where "New course" goes. Export
+              only reads, so a branch keeps it. */}
+          {mayManageCourses && (
+            <Button variant="outline" onClick={importCourses} disabled={saving}>
+              <Upload />
+              Import
+            </Button>
+          )}
           <Button variant="outline" onClick={exportCourses} disabled={courses.length === 0}>
             <Download />
             Export
           </Button>
-          <Button variant="outline" onClick={() => setForm("batch")}>
+          <Button
+            variant={mayManageCourses ? "outline" : "default"}
+            onClick={() => setForm("batch")}
+          >
             <Plus />
             New batch
           </Button>
-          <Button onClick={() => setForm("course")}>
-            <Plus />
-            New course
-          </Button>
+          {mayManageCourses && (
+            <Button onClick={() => setForm("course")}>
+              <Plus />
+              New course
+            </Button>
+          )}
         </div>
       </div>
 
@@ -508,7 +535,9 @@ export default function AcademicsWorkspace() {
               {loading && <p className="p-4 text-sm text-muted-foreground">Loading courses...</p>}
               {!loading && courses.length === 0 && (
                 <p className="p-4 text-sm text-muted-foreground">
-                  No courses yet. Use “New course” to add the first one.
+                  {mayManageCourses
+                    ? "No courses yet. Use “New course” to add the first one."
+                    : "No courses assigned to this branch yet. The organisation assigns them from its catalogue."}
                 </p>
               )}
               {courses.map((c) => (
