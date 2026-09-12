@@ -114,8 +114,16 @@ export default function MyResults() {
     if (!doc) return;
     setProcessing(true);
     try {
-      marksheetPdf(doc);
+      // Awaited: the marksheet renders a QR of the enrolment, so the file is
+      // not on disk when the call returns and the toast would precede it.
+      await marksheetPdf(doc);
       toast({ title: "Marksheet downloaded", description: `${exam} · ${rows.length} subjects` });
+    } catch (err) {
+      toast({
+        title: "Marksheet failed",
+        description: err instanceof Error ? err.message : "Please try again",
+        variant: "destructive",
+      });
     } finally {
       setProcessing(false);
     }

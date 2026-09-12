@@ -1053,10 +1053,11 @@ export async function getStudentInvoices(
       .eq("studentId", studentId)
       .order("createdAt", { ascending: false });
 
-  let { data, error } = await run(
+  const embedded = await run(
     "*, payments:fee_payments(id, amount, method, receiptNo, referenceNo, paidAt, reversedAt)",
   );
-  if (error) {
+  let data = embedded.data;
+  if (embedded.error) {
     // Same degradation as `listInvoices`: without the embed `paidAmount` is the
     // only record of what came in, and the page still renders.
     const flat = await run("*");
@@ -1266,6 +1267,22 @@ export async function getStudentResults(studentId: string, branchId: string, exa
 }
 
 /**
+ * `photo`, `logo` and friends are JSONB, so a value written by an older upload
+ * is a bare data URL and a newer one is an object. The PDF helpers need a
+ * string or nothing — handing them an object draws nothing and logs no reason.
+ */
+function jsonbImage(value: unknown): string | null {
+  if (typeof value === "string") return value || null;
+  if (value && typeof value === "object") {
+    for (const key of ["url", "dataUrl", "src", "path"]) {
+      const found = (value as Record<string, unknown>)[key];
+      if (typeof found === "string" && found) return found;
+    }
+  }
+  return null;
+}
+
+/**
  * Everything the admission / marksheet / certificate PDFs need, in one call.
  *
  * The screens used to fetch this from `/core/documents/students/:id` on the
@@ -1291,6 +1308,12 @@ export async function getStudentDocument(studentId: string, branchId: string | n
   ]);
 
   const organization = branch ? await lookup("organizations", branch.organizationId) : null;
+
+  // The address a branch edits lives here rather than on `branches`, which has
+  // no address columns at all.
+  const { data: settings } = branch
+    ? await supabase.from("branch_settings").select("address").eq("branchId", branch.id).maybeSingle()
+    : { data: null };
 
   const { data: invoiceRows } = await supabase
     .from("fee_invoices")
@@ -1327,12 +1350,33 @@ export async function getStudentDocument(studentId: string, branchId: string | n
       enrollmentNo: student.enrollmentNo || undefined,
       applicationNo: student.applicationNo || undefined,
       admissionDate: student.admissionDate || student.createdAt || "",
-      course: course ? { name: course.name } : undefined,
+      // The marksheet's particulars block: the candidate as their paperwork
+      // names them, not just as the roster lists them.
+      rollNo: student.rollNo || undefined,
+      fatherName: student.fatherName || undefined,
+      dateOfBirth: student.dateOfBirth
+        ? new Date(student.dateOfBirth).toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })
+        : undefined,
+      photo: jsonbImage(student.photo),
+      course: course ? { name: course.name, code: course.code || undefined } : undefined,
       batch: batch ? { name: batch.name } : undefined,
       branch: {
         name: branch?.name || "",
         phone: branch?.phone || "",
         email: branch?.email || "",
+        // `branches` carries no address of its own; the one a branch edits
+        // lives on `branch_settings`, and the organisation's registered address
+        // stands in for a branch that has not set one.
+        address:
+          settings?.address ||
+          [organization?.streetAddress, organization?.city, organization?.state, organization?.pincode]
+            .filter(Boolean)
+            .join(", "),
+        logo: jsonbImage(branch?.branchLogo) || jsonbImage(organization?.logo),
         organization: { name: organization?.name || "" },
       },
       feeInvoices: invoices.map((invoice) => ({

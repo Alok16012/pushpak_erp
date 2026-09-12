@@ -215,7 +215,10 @@ export default function AssessmentsWorkspace() {
     if (!studentId) return;
     try {
       const body = await getStudentDocument(studentId, branchId);
-      ({
+      // `marksheetPdf` is async — it renders a QR before saving. Awaiting the
+      // lot keeps the "ready in Downloads" toast honest and routes a failure
+      // into the catch below rather than leaving it unhandled.
+      await ({
         admission: admissionPdf,
         marksheet: marksheetPdf,
         certificate: certificatePdf,

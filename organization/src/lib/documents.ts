@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import QRCode from "qrcode";
 
 export type StudentDocument = {
   firstName: string;
@@ -6,13 +7,43 @@ export type StudentDocument = {
   enrollmentNo?: string;
   applicationNo?: string;
   admissionDate: string;
-  course?: { name: string };
+  /** The roll number the institute assigns, printed beside the photograph. */
+  rollNo?: string;
+  fatherName?: string;
+  dateOfBirth?: string;
+  /** A data URL. Drawn into the marksheet's photograph box when present. */
+  photo?: string | null;
+  course?: { name: string; code?: string };
   batch?: { name: string };
   branch: {
     name: string;
     phone: string;
     email: string;
+    address?: string;
+    /** A data URL for the institute's own mark, printed above the title. */
+    logo?: string | null;
     organization: { name: string };
+  };
+  /**
+   * The authority the marksheet is issued under, and the session it covers.
+   *
+   * Every line here is data rather than text baked into the generator. A
+   * statement of marks names the body that awarded it, and an ERP that printed
+   * a fixed board's name would put that claim on every institute's marksheet
+   * whether or not it is affiliated to one. Unset lines are simply not printed,
+   * and the body falls back to the institute's own name.
+   */
+  awarding?: {
+    body?: string;
+    scheme?: string;
+    session?: string;
+    examMonthYear?: string;
+    /** The examination line, e.g. "Year - 1 (Annual Examination)". */
+    examination?: string;
+    /** Printed under the table, for pass rules and order references. */
+    notes?: string[];
+    /** Caption under the signature rule. */
+    signatory?: string;
   };
   feeInvoices: Array<{
     invoiceNo: string;
@@ -108,51 +139,263 @@ export function admissionPdf(s: StudentDocument) {
   save(doc, `admission-${s.enrollmentNo || s.applicationNo}.pdf`);
 }
 
-export function marksheetPdf(s: StudentDocument) {
-  const doc = new jsPDF();
-  header(doc, "ACADEMIC MARKSHEET", s.enrollmentNo || "Student record");
-  line(doc, "Student", `${s.firstName} ${s.lastName}`, 52);
-  line(doc, "Course", s.course?.name || "Not assigned", 68);
-  doc.setFillColor(245, 245, 245);
-  doc.rect(16, 82, 178, 10, "F");
+/* ============================
+   MARKSHEET
+   ============================
+
+   A statement of marks, laid out the way an institute's examination body
+   prints one: photograph and roll number on the left, the issuing block
+   centred, a verification code on the right, the candidate's particulars on
+   dotted rules, and the assessment table under them.
+
+   Everything naming an authority is data (see `awarding` on StudentDocument),
+   so the generator lays out a marksheet rather than asserting who awarded it. */
+
+const MARKSHEET = {
+  /** A4 landscape, in mm. */
+  width: 297,
+  height: 210,
+  margin: 12,
+} as const;
+
+/** A dotted rule from `x` to `x2`, the leader a filled-in form is written on. */
+const dotted = (doc: jsPDF, x: number, x2: number, y: number) => {
+  doc.setDrawColor(70);
+  doc.setLineWidth(0.2);
+  doc.setLineDashPattern([0.6, 0.6], 0);
+  doc.line(x, y, x2, y);
+  doc.setLineDashPattern([], 0);
+};
+
+/**
+ * `label   value` written over a dotted rule, the way the particulars block of
+ * a statement of marks reads. Returns nothing; the caller owns the geometry.
+ */
+const particular = (
+  doc: jsPDF,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+) => {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(20);
+  doc.text(label, x, y);
+  const labelWidth = doc.getTextWidth(label) + 2;
+  doc.setFont("helvetica", "normal");
+  // Clipped to the space it has: a long institute name must not run into the
+  // column beside it, which is where the next particular begins.
+  const room = width - labelWidth;
+  let text = value || "-";
+  while (text.length > 1 && doc.getTextWidth(text) > room) text = text.slice(0, -1);
+  doc.text(text, x + labelWidth, y);
+  dotted(doc, x + labelWidth, x + width, y + 1.2);
+};
+
+/** Draws a data-URL image, and leaves the box empty if it will not decode. */
+const tryImage = (doc: jsPDF, data: string | null | undefined, x: number, y: number, w: number, h: number) => {
+  if (!data || !data.startsWith("data:image")) return false;
+  try {
+    doc.addImage(data, x, y, w, h);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * What the table totals to, and whether it is a pass.
+ *
+ * Separate from the drawing because it is the only judgement the marksheet
+ * makes: each paper carries its own minimum, so clearing the aggregate is not
+ * a pass -- a candidate can total well above the sum of the minimums and still
+ * have failed a paper.
+ */
+export function marksheetSummary(results: StudentDocument["examResults"]) {
+  const total = results.reduce((sum, r) => sum + (Number(r.marks) || 0), 0);
+  const max = results.reduce((sum, r) => sum + (Number(r.exam.maxMarks) || 0), 0);
+  const result = !results.length
+    ? "Awaited"
+    : results.every((r) => (Number(r.marks) || 0) >= (Number(r.exam.passMarks) || 0))
+      ? "Pass"
+      : "Fail";
+  return { total: Math.round(total * 100) / 100, max, result };
+}
+
+/** The assessment table's column edges, left to right. */
+const MARK_COLUMNS = [12, 26, 150, 195, 240, 285];
+
+function marksheetTableHeader(doc: jsPDF, y: number): number {
+  const [c0, c1, c2, c3, c4, c5] = MARK_COLUMNS;
+  doc.setFillColor(244, 244, 245);
+  doc.rect(c0, y, c5 - c0, 10, "F");
+  doc.setDrawColor(60);
+  doc.setLineWidth(0.3);
+  doc.rect(c0, y, c5 - c0, 10);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
-  ["SUBJECT", "MAX", "SCORE", "RESULT"].forEach((h, i) =>
-    doc.text(h, [20, 143, 164, 181][i], 89, { align: i ? "center" : "left" }),
-  );
-  let y = 101,
-    total = 0,
-    max = 0;
-  s.examResults.forEach((r) => {
+  doc.setTextColor(20);
+  doc.text("S.No.", (c0 + c1) / 2, y + 6.5, { align: "center" });
+  doc.text("Summative Assessment", c1 + 4, y + 6.5);
+  doc.text("Max. Marks", (c2 + c3) / 2, y + 6.5, { align: "center" });
+  doc.text("Min. Pass Marks", (c3 + c4) / 2, y + 6.5, { align: "center" });
+  doc.text("Marks Secured", (c4 + c5) / 2, y + 6.5, { align: "center" });
+  for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + 10);
+  return y + 10;
+}
+
+export async function marksheetPdf(s: StudentDocument) {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const { width, margin } = MARKSHEET;
+  const centre = width / 2;
+  const right = width - margin;
+  const name = [s.firstName, s.lastName].filter(Boolean).join(" ") || "-";
+  const roll = s.rollNo || s.enrollmentNo || s.applicationNo || "-";
+  const award = s.awarding ?? {};
+
+  /* ---- header band: photograph, issuing block, verification code ---- */
+  doc.setDrawColor(120);
+  doc.setLineWidth(0.3);
+  doc.rect(margin, 10, 26, 32);
+  if (!tryImage(doc, s.photo, margin, 10, 26, 32)) {
     doc.setFont("helvetica", "normal");
-    doc.text(r.exam.subject.slice(0, 58), 20, y);
-    doc.text(String(r.exam.maxMarks), 143, y, { align: "center" });
-    doc.text(String(r.marks), 164, y, { align: "center" });
-    doc.text(r.marks >= r.exam.passMarks ? "PASS" : "REVIEW", 181, y, {
-      align: "center",
-    });
-    doc.setDrawColor(235);
-    doc.line(16, y + 4, 194, y + 4);
-    total += r.marks;
-    max += r.exam.maxMarks;
-    y += 12;
-  });
-  const percentage = max ? Math.round((total / max) * 1000) / 10 : 0;
-  doc.setFillColor(24, 24, 27);
-  doc.roundedRect(116, y + 6, 78, 26, 3, 3, "F");
-  doc.setTextColor(255);
+    doc.setFontSize(7);
+    doc.setTextColor(150);
+    doc.text("Photograph", margin + 13, 27, { align: "center" });
+  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(20);
+  doc.text(`Roll No.: ${roll}`, margin + 31, 28);
+
+  tryImage(doc, s.branch.logo, centre - 9, 8, 18, 18);
+  // The QR proves the sheet against the institute's own record; without a
+  // verifiable number there is nothing to encode, so nothing is drawn.
+  if (s.enrollmentNo) {
+    const qr = await QRCode.toDataURL(
+      `${s.branch.organization.name || s.branch.name} | ${name} | ${s.enrollmentNo}`,
+      { width: 320, margin: 0, errorCorrectionLevel: "M" },
+    ).catch(() => "");
+    tryImage(doc, qr, right - 26, 10, 26, 26);
+  }
+
+  let y = s.branch.logo ? 32 : 20;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text(`TOTAL  ${total} / ${max}`, 155, y + 17, { align: "center" });
-  doc.setTextColor(199, 255, 47);
-  doc.text(
-    `${percentage}%  |  ${percentage >= 40 ? "PASS" : "REVIEW"}`,
-    155,
-    y + 26,
-    { align: "center" },
+  doc.text("STATEMENT OF MARKS", centre, y, { align: "center" });
+  doc.setFontSize(9.5);
+  // Unset lines close the gap rather than leaving a hole in the block.
+  for (const heading of [
+    award.body || s.branch.organization.name || s.branch.name,
+    award.scheme,
+    award.session,
+    award.examination,
+  ]) {
+    if (!heading) continue;
+    y += 5.5;
+    doc.text(heading, centre, y, { align: "center" });
+  }
+
+  /* ---- the candidate's particulars ---- */
+  const colWidth = (right - margin) / 2 - 6;
+  const colTwo = centre + 6;
+  // Floored below the photograph box, which ends at 42. An institute that has
+  // configured none of the heading lines leaves the title block short, and the
+  // particulars were being drawn straight through the photograph.
+  y = Math.max(y + 10, 50);
+  particular(doc, "Name:", name, margin, y, colWidth);
+  particular(doc, "Registration/Roll No.:", roll, colTwo, y, colWidth);
+  y += 8;
+  particular(doc, "Father/Guardian Name:", s.fatherName || "-", margin, y, colWidth);
+  particular(doc, "Date of Birth:", s.dateOfBirth || "-", colTwo, y, colWidth);
+  y += 8;
+  const trade = [s.course?.name, s.course?.code && `(${s.course.code})`].filter(Boolean).join(" ");
+  particular(doc, "Trade/Course Name:", trade || "-", margin, y, colWidth);
+  particular(doc, "Exam Month-Year:", award.examMonthYear || "-", colTwo, y, colWidth);
+  y += 8;
+  particular(
+    doc,
+    "Institute Name & Address:",
+    [s.branch.name, s.branch.address].filter(Boolean).join(", "),
+    margin,
+    y,
+    right - margin,
   );
-  footer(doc, s.branch.name);
-  save(doc, `marksheet-${s.enrollmentNo}.pdf`);
+
+  /* ---- assessment table ---- */
+  const [c0, c1, c2, c3, c4, c5] = MARK_COLUMNS;
+  y = marksheetTableHeader(doc, y + 8);
+  const summary = marksheetSummary(s.examResults);
+
+  s.examResults.forEach((result, index) => {
+    // A long list runs onto a second sheet with its own header rather than off
+    // the bottom edge of the first.
+    if (y > 168) {
+      doc.addPage();
+      y = marksheetTableHeader(doc, 20);
+    }
+    const rowHeight = 10;
+    doc.setDrawColor(60);
+    doc.rect(c0, y, c5 - c0, rowHeight);
+    for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + rowHeight);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text(String(index + 1), (c0 + c1) / 2, y + 6.5, { align: "center" });
+    doc.setFont("helvetica", "normal");
+    doc.text(String(result.exam.subject || result.exam.name).slice(0, 70), c1 + 4, y + 6.5);
+    doc.text(String(result.exam.maxMarks), (c2 + c3) / 2, y + 6.5, { align: "center" });
+    doc.text(String(result.exam.passMarks), (c3 + c4) / 2, y + 6.5, { align: "center" });
+    doc.text(result.marks.toFixed(2), (c4 + c5) / 2, y + 6.5, { align: "center" });
+    y += rowHeight;
+  });
+
+  doc.setDrawColor(60);
+  doc.rect(c0, y, c5 - c0, 10);
+  for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + 10);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text("Total", c2 - 4, y + 6.5, { align: "right" });
+  doc.text(String(summary.max), (c2 + c3) / 2, y + 6.5, { align: "center" });
+  doc.text(String(summary.total), (c4 + c5) / 2, y + 6.5, { align: "center" });
+  y += 10;
+
+  /* ---- result, notes, signature ---- */
+  y += 8;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.text(`Result: ${summary.result}`, margin, y);
+  dotted(doc, margin + 34, right - 60, y + 1.2);
+
+  const notes = award.notes?.filter(Boolean) ?? [];
+  if (notes.length) {
+    doc.setFontSize(7.5);
+    for (const note of notes) {
+      y += 6;
+      doc.setFont("helvetica", "normal");
+      for (const wrapped of doc.splitTextToSize(note, right - margin) as string[]) {
+        doc.text(wrapped, margin, y);
+        y += 4;
+      }
+      y -= 4;
+    }
+  }
+
+  // Below the notes rather than pinned to the foot of the page: anchoring it to
+  // the bottom left a hand's width of blank paper between the two on a short
+  // marksheet, and the sheet read as unfinished.
+  const signY = Math.min(y + 22, MARKSHEET.height - 18);
+  doc.setDrawColor(60);
+  doc.setLineWidth(0.3);
+  doc.line(right - 55, signY, right, signY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.text(award.signatory || "Signature of Competent Authority", right - 27.5, signY + 5, {
+    align: "center",
+  });
+
+  save(doc, `marksheet-${s.enrollmentNo || s.applicationNo || name}.pdf`);
 }
 
 export function certificatePdf(s: StudentDocument) {

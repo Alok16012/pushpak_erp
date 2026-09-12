@@ -266,7 +266,13 @@ export const asStudentDocument = (
     enrollmentNo: profile.enrollmentNo,
     applicationNo: profile.id,
     admissionDate: profile.admissionDate,
-    course: { name: profile.course },
+    // The marksheet's particulars block reads these; without them a student
+    // downloading their own statement of marks gets a row of dashes.
+    rollNo: profile.rollNo,
+    fatherName: profile.guardian,
+    dateOfBirth: profile.dob,
+    photo: profile.photo,
+    course: { name: profile.course, code: profile.courseCode || undefined },
     batch: { name: profile.batch },
     branch: {
       name: profile.branch,
