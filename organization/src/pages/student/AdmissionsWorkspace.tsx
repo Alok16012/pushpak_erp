@@ -11,7 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ArrowRight, Check, Save } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, FileText, Save, Upload, X } from "lucide-react";
+import { pickImage } from "@/lib/export";
 import { getCourses, getBatches, createStudent, getBranches } from "@/lib/supabase/data";
 import { INDIAN_STATES } from "@/data/indianStates";
 import { useAuth } from "@/contexts/AuthContext";
@@ -155,7 +156,36 @@ const REQUIRED: Array<[keyof Draft, string]> = [
 /** Integer columns - a blank string is rejected, so they are dropped instead. */
 const NUMERIC: Array<keyof Draft> = ["tenthYearOfPassing", "twelfthYearOfPassing"];
 
-const steps = ["Personal", "Academic", "Guardian", "Review"];
+const steps = ["Personal", "Academic", "Guardian", "Documents", "Review"];
+
+/**
+ * The paperwork an admission collects. `required` is what the office is meant
+ * to hold on file, and the form says so plainly -- it does not block the
+ * admission, because a walk-in without their transfer certificate is still a
+ * student to be admitted, and a scan that is not to hand today is chased
+ * tomorrow rather than turning someone away at the counter.
+ */
+const ADMISSION_DOCUMENTS: Array<{ id: string; label: string; required: boolean }> = [
+  { id: "tenthMarksheet", label: "10th Marksheet", required: true },
+  { id: "twelfthMarksheet", label: "12th Marksheet", required: true },
+  { id: "transferCertificate", label: "Transfer Certificate", required: true },
+  { id: "aadharCard", label: "Aadhar Card", required: true },
+  { id: "apaarCard", label: "APAAR Card", required: true },
+  { id: "casteCertificate", label: "Caste Certificate", required: false },
+];
+
+/** What is kept for each upload. The file rides in `dataUrl`, as the student
+ *  photo already does -- this app has no storage bucket wired up. */
+interface AdmissionDocument {
+  name: string;
+  dataUrl: string;
+  uploadedAt: string;
+}
+
+const DOCUMENT_ACCEPT = "application/pdf,image/png,image/jpeg";
+/** Base64 inflates a file by about a third, and several of these share one row. */
+const DOCUMENT_MAX_BYTES = 2 * 1024 * 1024;
+const DOCUMENTS_KEY = "admission-draft-documents";
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const CATEGORIES = ["General", "OBC", "SC", "ST", "EWS"];
 const BOARDS = ["CBSE", "ICSE", "State Board", "NIOS", "Other"];
@@ -185,6 +215,13 @@ export default function AdmissionsWorkspace() {
     Array<{ id: string; name: string; courseId: string }>
   >([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [documents, setDocuments] = useState<Record<string, AdmissionDocument>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(DOCUMENTS_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  });
   const [saving, setSaving] = useState(false);
   /** Set once the record exists, so the issued number has somewhere to be read. */
   const [issued, setIssued] = useState<{ applicationNo: string; name: string } | null>(
@@ -194,9 +231,23 @@ export default function AdmissionsWorkspace() {
   const targetBranchId = branchId || draft.branchId;
   const set = (k: keyof Draft, v: string) =>
     setDraft((p) => ({ ...p, [k]: v }));
+  // Both writes are guarded: uploads are base64 and the two of them now share
+  // one 5MB quota. An unguarded `setItem` throwing QuotaExceededError inside an
+  // effect takes the whole form down, and losing autosave is not worth that.
   useEffect(() => {
-    localStorage.setItem("admission-draft", JSON.stringify(draft));
+    try {
+      localStorage.setItem("admission-draft", JSON.stringify(draft));
+    } catch {
+      /* the form still holds the draft in memory */
+    }
   }, [draft]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(documents));
+    } catch {
+      /* too large to autosave; the uploads survive until the page is reloaded */
+    }
+  }, [documents]);
   // `getCourses`/`getBatches` resolve to `{ success, data }`. Assigning the
   // envelope straight into state left `courses.map` undefined and blanked the
   // whole page as soon as the academic step rendered - unwrap `data`, and never
@@ -222,6 +273,34 @@ export default function AdmissionsWorkspace() {
       .then((r) => setBatches(r.data as Array<{ id: string; name: string; courseId: string }>))
       .catch(() => setBatches([]));
   }, [targetBranchId]);
+  const uploadDocument = async (id: string, label: string) => {
+    const picked = await pickImage(DOCUMENT_ACCEPT, DOCUMENT_MAX_BYTES);
+    if (picked === "too-large") {
+      toast({
+        title: "File too large",
+        description: `${label} must be 2MB or smaller. Scan it at a lower quality and try again.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!picked) return;
+    setDocuments((d) => ({
+      ...d,
+      [id]: { name: picked.name, dataUrl: picked.dataUrl, uploadedAt: new Date().toISOString() },
+    }));
+    toast({ title: `${label} attached`, description: picked.name });
+  };
+
+  const removeDocument = (id: string) =>
+    setDocuments((d) => {
+      const next = { ...d };
+      delete next[id];
+      return next;
+    });
+
+  const requiredDocuments = ADMISSION_DOCUMENTS.filter((doc) => doc.required);
+  const missingDocuments = requiredDocuments.filter((doc) => !documents[doc.id]);
+
   // Measured against what an admission actually needs. Counting all ~50 optional
   // boxes would leave a complete application sitting at a third of the bar.
   const progress = Math.round(
@@ -257,6 +336,10 @@ export default function AdmissionsWorkspace() {
       }
       const { data } = await createStudent(targetBranchId, {
         ...payload,
+        // `students.documents` is jsonb. Left out entirely when nothing was
+        // attached, so the column reads as null rather than an empty object --
+        // and `createStudent` drops it on a database that has not been migrated.
+        ...(Object.keys(documents).length ? { documents } : {}),
         // The columns are timestamps; a bare `yyyy-mm-dd` is rejected.
         dateOfBirth: new Date(draft.dateOfBirth).toISOString(),
         admissionDate: new Date(draft.admissionDate || Date.now()).toISOString(),
@@ -277,8 +360,10 @@ export default function AdmissionsWorkspace() {
           : "Student profile was created.",
       });
       setDraft(blank);
+      setDocuments({});
       setStep(0);
       localStorage.removeItem("admission-draft");
+      localStorage.removeItem(DOCUMENTS_KEY);
     } catch (e) {
       toast({
         title: "Admission could not be completed",
@@ -760,6 +845,80 @@ export default function AdmissionsWorkspace() {
             )}
             {step === 3 && (
               <div className="sm:col-span-2 space-y-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-[.12em] text-muted-foreground">
+                      Document upload
+                    </h2>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      PDF, PNG or JPG, up to 2MB each.
+                    </p>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {requiredDocuments.length - missingDocuments.length} of {requiredDocuments.length}{" "}
+                    required documents attached
+                  </span>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {ADMISSION_DOCUMENTS.map((doc) => {
+                    const held = documents[doc.id];
+                    return (
+                      <div
+                        key={doc.id}
+                        className={`flex items-center gap-3 rounded-xl border p-4 ${held ? "border-success/40 bg-success/5" : ""}`}
+                      >
+                        <span
+                          className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${held ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}
+                        >
+                          {held ? <CheckCircle2 className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{doc.label}</p>
+                          {/* The attached file's own name, so the office can see
+                              at a glance that the right scan went in the right slot. */}
+                          <p className="truncate text-xs text-muted-foreground">
+                            {held ? held.name : doc.required ? "Required" : "Optional"}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            variant={held ? "outline" : "default"}
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => uploadDocument(doc.id, doc.label)}
+                          >
+                            <Upload className="h-3.5 w-3.5" />
+                            {held ? "Replace" : "Upload"}
+                          </Button>
+                          {held && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              aria-label={`Remove ${doc.label}`}
+                              onClick={() => removeDocument(doc.id)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {missingDocuments.length > 0 && (
+                  <div className="rounded-2xl border p-4 text-sm text-muted-foreground">
+                    <strong className="text-foreground">Still to collect:</strong>{" "}
+                    {missingDocuments.map((doc) => doc.label).join(", ")}. The admission can be
+                    completed without them — they stay outstanding against the student.
+                  </div>
+                )}
+              </div>
+            )}
+            {step === 4 && (
+              <div className="sm:col-span-2 space-y-4">
                 <div className="rounded-2xl border bg-muted/30 p-5">
                   <p className="text-xl font-semibold">
                     {[draft.firstName, draft.middleName, draft.lastName]
@@ -811,6 +970,15 @@ export default function AdmissionsWorkspace() {
                     </div>
                   );
                 })()}
+                {/* Separate from the block above: a missing field stops the
+                    insert, a missing document does not. Saying so in one list
+                    would make the two read as the same kind of problem. */}
+                {missingDocuments.length > 0 && (
+                  <div className="rounded-2xl border border-warning/40 bg-warning/5 p-4 text-sm">
+                    <strong>Documents outstanding:</strong>{" "}
+                    {missingDocuments.map((doc) => doc.label).join(", ")}
+                  </div>
+                )}
               </div>
             )}
           </div>
