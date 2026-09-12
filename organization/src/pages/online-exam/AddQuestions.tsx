@@ -14,7 +14,16 @@ import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile, pickImage } from "@/lib/export";
 
-export type QuestionType = "mcq" | "true-false" | "short" | "long";
+export type QuestionType = "mcq" | "true-false" | "short" | "long" | "blanks";
+
+/**
+ * Three or more underscores mark a blank in a fill-in-the-blanks question.
+ * Three, not one, so an ordinary underscore inside a term -- `snake_case`,
+ * `MAX_MARKS` -- is not read as a gap the student has to fill.
+ */
+export const BLANK_MARKER = /_{3,}/g;
+
+export const countBlanks = (text: string) => (text.match(BLANK_MARKER) ?? []).length;
 
 export interface Question {
   id: string;
@@ -24,6 +33,9 @@ export interface Question {
   text: string;
   image?: string;
   options?: string[];
+  /** One entry per blank, in the order the blanks appear in `text`. Each entry
+   *  may list alternatives separated by commas — "water, H2O" accepts either. */
+  blanks?: string[];
   answer?: string;
   keywords?: string;
   wordLimit?: string;
@@ -56,9 +68,12 @@ const TOPICS: Record<string, string[]> = {
 const TYPE_LABEL: Record<QuestionType, string> = {
   mcq: "MCQ",
   "true-false": "True/False",
+  blanks: "Fill in the Blanks",
   short: "Short Answer",
   long: "Long Answer",
 };
+
+const QUESTION_TYPES = ["mcq", "true-false", "blanks", "short", "long"] as const;
 
 export const QUESTION_SEED: Question[] = [
   {
@@ -84,6 +99,16 @@ export const QUESTION_SEED: Question[] = [
     answer: "false",
     difficulty: "easy",
     marks: "1",
+  },
+  {
+    id: "q-seed-blanks",
+    type: "blanks",
+    subject: "english",
+    topic: "Grammar",
+    text: "The Earth revolves around the ___ once every ___ days.",
+    blanks: ["Sun", "365, three hundred and sixty five"],
+    difficulty: "easy",
+    marks: "2",
   },
   {
     id: "q-seed-3",
@@ -128,8 +153,9 @@ export default function AddQuestions() {
   const [options, setOptions] = useState(() => blankOptions());
   const [correctId, setCorrectId] = useState("");
 
-  // The other three tabs are self-contained forms.
+  // The other four tabs are self-contained forms.
   const [tf, setTf] = useState({ text: "", answer: "true" });
+  const [blanks, setBlanks] = useState({ text: "", answers: [] as string[] });
   const [short, setShort] = useState({ text: "", keywords: "", wordLimit: "" });
   const [long, setLong] = useState({ text: "", modelAnswer: "", minWords: "", maxWords: "" });
 
@@ -159,6 +185,22 @@ export default function AddQuestions() {
     setQuestions(list);
     try { localStorage.setItem(QUESTION_BANK_KEY, JSON.stringify(list)); } catch { /* quota */ }
   };
+
+  /**
+   * The answer boxes follow the text: mark another gap with `___` and a box for
+   * it appears, delete one and its box goes. Answers are held by position, so
+   * editing the wording around a blank does not lose what was typed for it.
+   */
+  const setBlanksText = (value: string) => {
+    const wanted = countBlanks(value);
+    setBlanks((f) => ({
+      text: value,
+      answers: Array.from({ length: wanted }, (_, i) => f.answers[i] ?? ""),
+    }));
+  };
+
+  const setBlankAnswer = (index: number, value: string) =>
+    setBlanks((f) => ({ ...f, answers: f.answers.map((a, i) => (i === index ? value : a)) }));
 
   const resetMcq = () => {
     setText("");
@@ -261,6 +303,52 @@ export default function AddQuestions() {
     toast({ title: "Question saved", description: `Added to the ${TYPE_LABEL["true-false"]} bank.` });
   };
 
+  const saveBlanks = () => {
+    const text = blanks.text.trim();
+    if (!text) {
+      toast({ title: "Question required", description: "Enter the sentence with its blanks.", variant: "destructive" });
+      return;
+    }
+    const count = countBlanks(text);
+    if (count === 0) {
+      toast({
+        title: "No blank in the sentence",
+        description: "Mark each gap with three or more underscores, like “The capital of France is ___.”",
+        variant: "destructive",
+      });
+      return;
+    }
+    const answers = blanks.answers.slice(0, count).map((a) => a.trim());
+    // Every gap needs an answer, or the question cannot be marked at all.
+    const missing = answers.findIndex((a) => !a);
+    if (answers.length < count || missing >= 0) {
+      toast({
+        title: "An answer is missing",
+        description: `Fill in the answer for blank ${(missing < 0 ? answers.length : missing) + 1}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const newQ: Question = {
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: "blanks",
+      subject: meta.subject || "general",
+      topic: meta.topic,
+      text,
+      blanks: answers,
+      difficulty: meta.difficulty || "easy",
+      /* A mark per gap, not the shared panel's figure. The marks field lives on
+         the MCQ tab, so a blanks question saved from here could never be given
+         one -- every three-gap question would have scored the same single mark
+         as a one-gap question. The count is intrinsic to this type, so it is
+         the honest default, and the form says so above the button. */
+      marks: String(count),
+    };
+    persist([newQ, ...questions]);
+    setBlanks({ text: "", answers: [] });
+    toast({ title: "Question saved", description: `Added to the ${TYPE_LABEL.blanks} bank.` });
+  };
+
   const saveShort = () => {
     if (!short.text.trim()) {
       toast({ title: "Question required", description: "Enter the question text.", variant: "destructive" });
@@ -326,13 +414,14 @@ export default function AddQuestions() {
       .filter((row) => String(row.text ?? "").trim())
       .map<Question>((row) => ({
         id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        type: (["mcq", "true-false", "short", "long"] as const).includes(row.type as QuestionType)
+        type: QUESTION_TYPES.includes(row.type as typeof QUESTION_TYPES[number])
           ? (row.type as QuestionType)
           : "mcq",
         subject: row.subject || "general",
         topic: row.topic || "",
         text: String(row.text).trim(),
         options: row.options ? String(row.options).split("|").map((o) => o.trim()).filter(Boolean) : undefined,
+        blanks: row.blanks ? String(row.blanks).split("|").map((b) => b.trim()).filter(Boolean) : undefined,
         answer: row.answer || undefined,
         difficulty: row.difficulty || "medium",
         marks: row.marks || "1",
@@ -356,13 +445,14 @@ export default function AddQuestions() {
         topic: q.topic,
         text: q.text,
         options: (q.options ?? []).join("|"),
+        blanks: (q.blanks ?? []).join("|"),
         answer: q.answer ?? "",
         difficulty: q.difficulty,
         marks: q.marks,
         negativeMarks: q.negativeMarks ?? "",
         explanation: q.explanation ?? "",
       })),
-      ["type", "subject", "topic", "text", "options", "answer", "difficulty", "marks", "negativeMarks", "explanation"],
+      ["type", "subject", "topic", "text", "options", "blanks", "answer", "difficulty", "marks", "negativeMarks", "explanation"],
     );
 
   const remove = (id: string) => {
@@ -395,9 +485,10 @@ export default function AddQuestions() {
       />
 
       <Tabs defaultValue="mcq" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
+        <TabsList className="grid w-full grid-cols-5 lg:w-[660px]">
           <TabsTrigger value="mcq">MCQ</TabsTrigger>
           <TabsTrigger value="true-false">True/False</TabsTrigger>
+          <TabsTrigger value="blanks">Fill in the Blanks</TabsTrigger>
           <TabsTrigger value="short">Short Answer</TabsTrigger>
           <TabsTrigger value="long">Long Answer</TabsTrigger>
         </TabsList>
@@ -617,6 +708,68 @@ export default function AddQuestions() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="blanks">
+          <Card>
+            <CardHeader>
+              <CardTitle>Fill in the Blanks Question</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>Question Text *</Label>
+                <Textarea
+                  placeholder="The capital of France is ___ and it stands on the river ___."
+                  rows={3}
+                  value={blanks.text}
+                  onChange={(e) => setBlanksText(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Mark each gap with three or more underscores (<code>___</code>). An answer box
+                  appears for every gap, in the order they are written.
+                </p>
+              </div>
+
+              {blanks.answers.length === 0 ? (
+                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  No blanks yet. Write <code>___</code> where the student has to fill something in.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-baseline justify-between">
+                    <Label>Answers *</Label>
+                    <span className="text-xs text-muted-foreground">
+                      {blanks.answers.length} {blanks.answers.length === 1 ? "blank" : "blanks"} in this question
+                    </span>
+                  </div>
+                  {blanks.answers.map((answer, index) => (
+                    <div key={index} className="flex items-center gap-3">
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold">
+                        {index + 1}
+                      </span>
+                      <Input
+                        aria-label={`Answer for blank ${index + 1}`}
+                        placeholder={index === 0 ? "Paris" : "Answer for this blank"}
+                        value={answer}
+                        onChange={(e) => setBlankAnswer(index, e.target.value)}
+                      />
+                    </div>
+                  ))}
+                  {/* A gap usually has more than one right way to fill it, and
+                      marking that rejects "H2O" for "water" is marking wrongly. */}
+                  <p className="text-xs text-muted-foreground">
+                    Separate alternatives with commas — “water, H2O” accepts either. Scores one
+                    mark per blank, so this question is worth {blanks.answers.length}.
+                  </p>
+                </div>
+              )}
+
+              <Button className="gap-2" onClick={saveBlanks}>
+                <Save className="h-4 w-4" />
+                Save Question
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="short">
           <Card>
             <CardHeader>
@@ -731,15 +884,20 @@ export default function AddQuestions() {
                   </span>
                 </div>
                 <p className="text-sm">{q.text}</p>
-                {q.options && (
+                {q.options?.length && q.type !== "blanks" ? (
                   <p className="text-xs text-muted-foreground">
                     {q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("   ")}
                     {q.answer !== undefined && ` - correct: ${String.fromCharCode(65 + Number(q.answer))}`}
                   </p>
-                )}
+                ) : null}
                 {q.type === "true-false" && (
                   <p className="text-xs text-muted-foreground">Correct: {q.answer}</p>
                 )}
+                {q.type === "blanks" && q.blanks?.length ? (
+                  <p className="text-xs text-muted-foreground">
+                    {q.blanks.map((answer, i) => `${i + 1}. ${answer}`).join("   ")}
+                  </p>
+                ) : null}
               </div>
               <Button variant="ghost" size="icon" className="text-destructive shrink-0" onClick={() => remove(q.id)}>
                 <Trash2 className="h-4 w-4" />

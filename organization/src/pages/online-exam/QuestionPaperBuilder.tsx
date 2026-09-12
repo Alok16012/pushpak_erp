@@ -354,17 +354,20 @@ export default function QuestionPaperBuilder() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <StatsCard title="Total Papers" value={papers.length} subtitle="In the builder" icon={FileText} variant="primary" />
         <StatsCard title="Questions Bank" value={bank.length} subtitle="Available questions" icon={HelpCircle} variant="info" />
+        {/* Split by how a question is marked, not by how it looks: the two
+            tiles have to account for the whole bank, and a fill-in-the-blanks
+            question fell outside both while they were named after MCQs. */}
         <StatsCard
-          title="MCQ Questions"
-          value={bank.filter((q) => q.type === "mcq" || q.type === "true-false").length}
-          subtitle="Multiple choice"
+          title="Objective"
+          value={bank.filter((q) => q.type === "mcq" || q.type === "true-false" || q.type === "blanks").length}
+          subtitle="MCQ, true/false, blanks"
           icon={CheckSquare}
           variant="success"
         />
         <StatsCard
           title="Descriptive"
           value={bank.filter((q) => q.type === "short" || q.type === "long").length}
-          subtitle="Long answer"
+          subtitle="Marked by hand"
           icon={ListOrdered}
           variant="warning"
         />
