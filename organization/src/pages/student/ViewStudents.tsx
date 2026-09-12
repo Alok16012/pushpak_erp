@@ -30,7 +30,15 @@ import { StudentLoginDialog } from "@/components/student/StudentLoginDialog";
 import { StudentContact } from "@/components/student/StudentContact";
 import { canIssueStudentLogin } from "@/lib/roles";
 import { formatPhone } from "@/lib/phone";
-import { getStudentRoster, getStudent, deleteStudent, type StudentRosterRow } from "@/lib/supabase/data";
+import {
+  getStudentRoster,
+  getStudent,
+  getStudentInvoices,
+  deleteStudent,
+  type StudentInvoice,
+  type StudentRosterRow,
+} from "@/lib/supabase/data";
+import { rupees } from "@/lib/fees";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -55,14 +63,6 @@ interface StudentDetail {
   admissionStatus?: string;
   course?: { name: string };
   batch?: { name: string };
-  feeInvoices?: Array<{
-    id: string;
-    description?: string;
-    amount: string | number;
-    dueDate?: string;
-    status?: string;
-    payments?: Array<{ amount: string | number; reversedAt?: string | null }>;
-  }>;
   attendance?: Array<{ date: string; status: string }>;
 }
 
@@ -98,19 +98,22 @@ export default function ViewStudents() {
   /** Exports whatever the roster is currently showing, not the whole branch. */
   const exportCsv = (rows: StudentRosterRow[]) => {
     const csv = [
-      "Name,Admission No,Admission Date,Course,Father,Father Phone,Phone,WhatsApp,Address,Fee,Status",
+      "Name,Admission No,Admission Date,Course,Course Code,Father,Father Phone,Phone,WhatsApp,Address,Course Fee,Paid,Balance,Status",
       ...rows.map((s) =>
         [
           s.name,
           s.admissionNo,
           formatAdmissionDate(s.admissionDate),
           s.course,
+          s.courseCode,
           s.fatherName,
           formatPhone(s.fatherPhone),
           formatPhone(s.phone),
           formatPhone(s.whatsapp),
           s.address,
           s.fee,
+          s.paid,
+          s.balance,
           s.status,
         ]
           .map((v) => `"${String(v).replaceAll('"', '""')}"`)
@@ -130,6 +133,7 @@ export default function ViewStudents() {
   const [detail, setDetail] = useState<StudentDetail | null>(null);
   const [detailTab, setDetailTab] = useState<"profile" | "fees">("profile");
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailInvoices, setDetailInvoices] = useState<StudentInvoice[] | null>(null);
   const [editing, setEditing] = useState<StudentRosterRow | null>(null);
   const [pendingDelete, setPendingDelete] = useState<StudentRosterRow | null>(null);
 
@@ -137,10 +141,17 @@ export default function ViewStudents() {
     setDetails(student);
     setDetailTab(tab);
     setDetail(null);
+    setDetailInvoices(null);
     setDetailError(null);
     getStudent(student.id, branchId)
       .then((result) => setDetail(result.data as unknown as StudentDetail))
       .catch((error) => setDetailError(error.message));
+    // A separate call, because `getStudent` selects the students row alone --
+    // the fee tab used to read a `feeInvoices` key that was never on it, and so
+    // told every branch that no invoice had ever been raised.
+    getStudentInvoices(student.id, branchId)
+      .then((result) => setDetailInvoices(result.data))
+      .catch(() => setDetailInvoices([]));
   };
 
   const saveEdit = () => {
@@ -173,15 +184,9 @@ export default function ViewStudents() {
     setPendingDelete(null);
   };
 
-  const invoices = detail?.feeInvoices ?? [];
-  const invoiceTotals = invoices.map((invoice) => {
-    const billed = Number(invoice.amount) || 0;
-    const paid = (invoice.payments ?? [])
-      .filter((p) => !p.reversedAt)
-      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-    return { invoice, billed, paid, balance: billed - paid };
-  });
-  const outstanding = invoiceTotals.reduce((sum, row) => sum + row.balance, 0);
+  // `getStudentInvoices` has already resolved amount / paid / balance, so the
+  // dialog and the roster row behind it cannot drift apart.
+  const invoiceTotals = detailInvoices ?? [];
 
   return (
     <AppLayout>
@@ -284,35 +289,52 @@ export default function ViewStudents() {
             </dl>
           )}
 
-          {detailTab === "fees" && (
+          {detailTab === "fees" && details && (
             <div className="space-y-3">
+              {/* The same three figures as the student's own login and the row
+                  in the table behind this dialog, from the same calculation. */}
+              <dl className="grid grid-cols-3 gap-2 rounded-lg border p-3 text-center">
+                {([
+                  ["Course fee", rupees(details.fee), "font-semibold"],
+                  ["Paid", rupees(details.paid), "font-semibold text-success"],
+                  [
+                    "Balance",
+                    rupees(details.balance),
+                    details.balance > 0 ? "font-semibold text-destructive" : "font-semibold text-success",
+                  ],
+                ] as [string, string, string][]).map(([label, value, tone]) => (
+                  <div key={label}>
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className={`tabular ${tone}`}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+
               {invoiceTotals.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  {detail ? "No invoices raised for this student." : "Fetching invoices…"}
+                  {detailInvoices
+                    ? "No invoice raised yet — the figure above is what the course costs."
+                    : "Fetching invoices…"}
                 </p>
               ) : (
-                <>
-                  <ul className="divide-y rounded-lg border text-sm">
-                    {invoiceTotals.map(({ invoice, billed, paid, balance }) => (
-                      <li key={invoice.id} className="flex items-center justify-between p-3">
-                        <div>
-                          <p className="font-medium">{invoice.description || "Fee invoice"}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {invoice.dueDate ? `Due ${new Date(invoice.dueDate).toLocaleDateString()}` : "No due date"} ·
-                            paid ₹{paid.toLocaleString()} of ₹{billed.toLocaleString()}
-                          </p>
-                        </div>
-                        <Badge variant={balance > 0 ? "secondary" : "default"}>
-                          {balance > 0 ? `₹${balance.toLocaleString()} due` : "Cleared"}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-sm">
-                    <span className="text-muted-foreground">Total outstanding: </span>
-                    <span className="font-semibold">₹{outstanding.toLocaleString()}</span>
-                  </p>
-                </>
+                <ul className="divide-y rounded-lg border text-sm">
+                  {invoiceTotals.map((invoice) => (
+                    <li key={invoice.id} className="flex items-center justify-between gap-3 p-3">
+                      <div className="min-w-0">
+                        <p className="font-medium">{invoice.description || "Fee invoice"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {invoice.dueDate
+                            ? `Due ${new Date(invoice.dueDate).toLocaleDateString()}`
+                            : "No due date"}{" "}
+                          · paid {rupees(invoice.paid)} of {rupees(invoice.amount)}
+                        </p>
+                      </div>
+                      <Badge variant={invoice.balance > 0 ? "secondary" : "default"}>
+                        {invoice.balance > 0 ? `${rupees(invoice.balance)} due` : "Cleared"}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
           )}

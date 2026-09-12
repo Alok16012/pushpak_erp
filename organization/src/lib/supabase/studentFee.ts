@@ -20,6 +20,7 @@
  *                 receivedById, reversedAt, createdAt
  */
 import { supabase } from "./client";
+import { newId } from "../id";
 
 /* ============================
    ENUMS (verified live)
@@ -151,6 +152,9 @@ export interface InvoiceStudent {
   applicationNo?: string | null;
   courseId?: string | null;
   batchId?: string | null;
+  /** The course itself, embedded through the student. `courseId` alone is an
+   *  opaque key, and the fee pages need a name to put in a Course column. */
+  course?: { name?: string | null; code?: string | null } | null;
 }
 
 export interface InvoiceRow {
@@ -174,9 +178,23 @@ export interface InvoiceRow {
   student?: InvoiceStudent | null;
 }
 
-const INVOICE_SELECT =
-  "*,payments:fee_payments(id,amount,method,receiptNo,referenceNo,paidAt,reversedAt)," +
-  "student:students(id,firstName,lastName,phone,email,enrollmentNo,applicationNo,courseId,batchId)";
+const PAYMENTS_EMBED =
+  "payments:fee_payments(id,amount,method,receiptNo,referenceNo,paidAt,reversedAt)";
+const STUDENT_COLUMNS =
+  "id,firstName,lastName,phone,email,enrollmentNo,applicationNo,courseId,batchId";
+
+/**
+ * Tried in order, richest first. The course is nested two levels deep
+ * (invoice → student → course), which not every deployment exposes; without
+ * this ladder a database that rejects the nested embed would drop all the way
+ * to a flat select and lose the payments too, which is what decides whether an
+ * invoice reads as paid.
+ */
+const INVOICE_SELECTS = [
+  `*,${PAYMENTS_EMBED},student:students(${STUDENT_COLUMNS},course:courses(name,code))`,
+  `*,${PAYMENTS_EMBED},student:students(${STUDENT_COLUMNS})`,
+  "*",
+];
 
 /**
  * Replacement for data.ts `getInvoices`, which always throws because it filters
@@ -203,16 +221,15 @@ export async function listInvoices(
     return query.order("createdAt", { ascending: false });
   };
 
-  let { data, error } = await run(INVOICE_SELECT);
-  // If the embeds are unavailable (relationship not exposed), fall back to a
-  // flat select so the page still renders rather than showing an error card.
-  if (error) {
-    const flat = await run("*");
-    if (flat.error) throw new Error(flat.error.message);
-    data = flat.data;
-    error = null;
+  // Step down the ladder until one select is accepted, so a missing embed costs
+  // that embed rather than the page.
+  let lastError: { message?: string } | null = null;
+  for (const select of INVOICE_SELECTS) {
+    const { data, error } = await run(select);
+    if (!error) return { success: true as const, data: (data || []) as unknown as InvoiceRow[] };
+    lastError = error;
   }
-  return { success: true, data: (data || []) as unknown as InvoiceRow[] };
+  throw new Error(lastError?.message || "Could not load invoices.");
 }
 
 /** Sum of non-reversed payments on an invoice, safe against missing embeds. */
@@ -311,10 +328,31 @@ export interface RecordPaymentInput {
   receiptNo?: string;
   paidAt?: string;
   note?: string;
+  /** Overrides the signed-in user. Only worth passing where the person taking
+   *  the money is not the person at the keyboard. */
+  receivedById?: string;
 }
 
 export function receiptNumber(): string {
   return `RCP-${Date.now().toString(36).toUpperCase()}`;
+}
+
+/**
+ * Who is booking the receipt.
+ *
+ * `fee_payments.receivedById` is NOT NULL with no default and nothing was
+ * filling it, so every collection — at the counter and from the student's own
+ * portal — died on "null value in column receivedById violates not-null
+ * constraint". That is a message about the schema, not about the money, and it
+ * told the branch nothing it could act on.
+ *
+ * The session, not `getUser()`: it is read locally, it is the same identity the
+ * insert will run under, and a collection should not wait on a round trip to
+ * learn who is collecting.
+ */
+async function currentUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user?.id ?? null;
 }
 
 /**
@@ -331,13 +369,23 @@ export async function recordPayment(
     throw new Error("Enter a payment amount greater than zero.");
   }
 
+  const receivedById = input.receivedById || (await currentUserId());
+  if (!receivedById) {
+    throw new Error("Your session has expired. Sign in again to record this payment.");
+  }
+
   const payload = compact({
+    // `id` has no database default either -- see lib/id.ts. Supplying it costs
+    // nothing where a default was since added, and is the difference between
+    // working and not where one was not.
+    id: newId("pay"),
     invoiceId: invoice.id,
     amount,
     method: toPaymentMethod(input.method),
     referenceNo: input.referenceNo || undefined,
     receiptNo: input.receiptNo || receiptNumber(),
     paidAt: input.paidAt || new Date().toISOString(),
+    receivedById,
     note: input.note || undefined,
   }) as Record<string, unknown>;
 

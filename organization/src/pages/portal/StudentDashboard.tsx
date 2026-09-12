@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useMemo } from "react";
 import { getStudentProfile, getStudentAttendance, getStudentPortalInvoices, getStudentPortalResults, getStudentPortalClasses, getNotices } from "@/lib/supabase/data";
+import { feeStanding, rupees } from "@/lib/fees";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 // The shared shape, not a local copy of the old api-server's response: the
@@ -27,7 +28,11 @@ interface PortalInvoice {
   id: string;
   invoiceNo?: string;
   description?: string;
+  /** Resolved by `getStudentInvoices` — the table's columns are `totalAmount`
+   *  and `paidAmount`, and the receipts live in `fee_payments`. */
   amount: number;
+  paid: number;
+  balance: number;
   status?: string;
   dueDate?: string;
   createdAt?: string;
@@ -133,16 +138,24 @@ export default function StudentDashboard() {
     return { total, present, late, absent, percentage };
   }, [attendance]);
 
+  /* The same rule the branch roster applies, so the student's own login and the
+     office read one set of figures: the total is what has been invoiced, or the
+     course fee while nothing has been. Overdue counts what is still open on a
+     late invoice, not its face value — a part-paid invoice is not overdue for
+     the amount already settled. */
   const fees = useMemo(() => {
     const billed = invoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
-    const paid = invoices.reduce((sum, inv) => sum + inv.payments?.filter((p) => !p.reversedAt).reduce((s, p) => s + Number(p.amount || 0), 0) || 0, 0);
-    const due = billed - paid;
+    const standing = feeStanding({
+      courseFee: profile?.courseFee,
+      invoiced: invoices.length ? billed : null,
+      paid: invoices.reduce((sum, inv) => sum + Number(inv.paid || 0), 0),
+    });
     const today = new Date().toISOString().slice(0, 10);
     const overdue = invoices
-      .filter((inv) => inv.status !== "PAID" && inv.dueDate && inv.dueDate < today)
-      .reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
-    return { billed, paid, due, overdue };
-  }, [invoices]);
+      .filter((inv) => inv.dueDate && inv.dueDate < today)
+      .reduce((sum, inv) => sum + Number(inv.balance || 0), 0);
+    return { billed, total: standing.total, paid: standing.paid, due: standing.balance, overdue };
+  }, [invoices, profile]);
 
   const scores = useMemo(() => {
     const exams = results.map((r) => ({
@@ -194,7 +207,7 @@ export default function StudentDashboard() {
 
   const stats = [
     { label: "Attendance", value: `${presence.percentage}%`, note: `${presence.present + presence.late} of ${presence.total} sessions`, icon: CalendarCheck, to: "/me/attendance" },
-    { label: "Fees outstanding", value: `₹${fees.due.toFixed(2)}`, note: fees.overdue ? `₹${fees.overdue.toFixed(2)} overdue` : "nothing overdue", icon: IndianRupee, to: "/me/fees" },
+    { label: "Fee balance", value: rupees(fees.due), note: fees.overdue ? `${rupees(fees.overdue)} overdue` : `${rupees(fees.paid)} paid of ${rupees(fees.total)}`, icon: IndianRupee, to: "/me/fees" },
     { label: "Average score", value: `${scores.percentage}%`, note: `${scores.exams.length} exams recorded`, icon: FileCheck, to: "/me/results" },
     { label: "Classes ahead", value: agenda.length, note: next ? `${next.day} ${next.startTime || ""}` : "nothing scheduled", icon: Video, to: "/me/classes" },
   ];

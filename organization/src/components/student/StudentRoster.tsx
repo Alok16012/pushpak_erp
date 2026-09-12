@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { StudentContact } from "@/components/student/StudentContact";
 import { formatPhone, normalisePhone, telHref } from "@/lib/phone";
+import { rupees } from "@/lib/fees";
 import type { StudentRosterRow } from "@/lib/supabase/data";
 
 const PAGE_SIZE = 10;
@@ -250,12 +251,15 @@ export function StudentRoster({
 
       {/* Roster */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1440px]">
+        <table className="w-full min-w-[1560px]">
           <thead className="border-b bg-muted/50">
             <tr className="text-left">
               <th className="w-10 px-5 py-3">
                 <span className="sr-only">Select</span>
               </th>
+              {/* The three money headings are right-aligned over their figures:
+                  columns of rupees only compare at a glance when the last digit
+                  of each lines up. */}
               {[
                 "Student",
                 "Admission",
@@ -263,15 +267,24 @@ export function StudentRoster({
                 "Father / Guardian",
                 "Contact",
                 "Location",
-                "Fee",
+                { label: "Course fee", align: "right" as const },
+                { label: "Paid", align: "right" as const },
+                { label: "Balance", align: "right" as const },
                 "Status",
                 "Portal",
                 "Actions",
-              ].map((heading) => (
-                <th key={heading} className="whitespace-nowrap px-4 py-3">
-                  <span className="eyebrow-muted">{heading}</span>
-                </th>
-              ))}
+              ].map((heading) => {
+                const { label, align } =
+                  typeof heading === "string" ? { label: heading, align: "left" as const } : heading;
+                return (
+                  <th
+                    key={label}
+                    className={`whitespace-nowrap px-4 py-3 ${align === "right" ? "text-right" : ""}`}
+                  >
+                    <span className="eyebrow-muted">{label}</span>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
 
@@ -310,10 +323,15 @@ export function StudentRoster({
                   </p>
                 </td>
 
-                <td className="px-4 py-3.5">
-                  <span className="inline-flex whitespace-nowrap rounded-md bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
-                    {student.course}
-                  </span>
+                {/* The course reads as a name, not a tag: a pill around a short
+                    name like "ADCA AI" is indistinguishable from a code, and the
+                    branch could not tell which of the two it was looking at. The
+                    code, when the course has one, sits under it labelled. */}
+                <td className="max-w-[15rem] px-4 py-3.5">
+                  <p className="text-sm font-medium">{student.course}</p>
+                  {student.courseCode && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">{student.courseCode}</p>
+                  )}
                 </td>
 
                 <td className="px-4 py-3.5">
@@ -344,10 +362,38 @@ export function StudentRoster({
                   </a>
                 </td>
 
-                <td className="px-4 py-3.5">
-                  <span className="text-sm font-semibold tabular">
-                    ₹{student.fee.toLocaleString("en-IN")}
+                {/* What the course costs, what has come in, what is left. The
+                    table used to show only the first, so a fee collected against
+                    a student left no trace on the page the branch works from. */}
+                <td className="px-4 py-3.5 text-right">
+                  <span className="text-sm font-semibold tabular">{rupees(student.fee)}</span>
+                  {student.fee !== student.courseFee && student.courseFee > 0 && (
+                    <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">
+                      invoiced · course {rupees(student.courseFee)}
+                    </p>
+                  )}
+                </td>
+
+                <td className="px-4 py-3.5 text-right">
+                  <span
+                    className={`text-sm tabular ${
+                      student.paid > 0 ? "font-medium text-success" : "text-muted-foreground"
+                    }`}
+                  >
+                    {rupees(student.paid)}
                   </span>
+                </td>
+
+                <td className="px-4 py-3.5 text-right">
+                  {student.balance > 0 ? (
+                    <span className="text-sm font-semibold tabular text-destructive">
+                      {rupees(student.balance)}
+                    </span>
+                  ) : (
+                    <span className="inline-flex whitespace-nowrap rounded-md bg-success/12 px-2 py-1 text-xs font-medium text-success">
+                      Cleared
+                    </span>
+                  )}
                 </td>
 
                 <td className="px-4 py-3.5">

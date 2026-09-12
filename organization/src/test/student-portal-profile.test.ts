@@ -78,6 +78,13 @@ describe("toStudentProfile", () => {
     expect(profile.branch).toBe("Kothrud");
   });
 
+  it("carries the course fee, which is what the portal measures a balance against", () => {
+    expect(toStudentProfile(row({ course: { name: "ADCA", baseFee: 24000 } })).courseFee).toBe(24000);
+    // A course with no fee on it is zero, never NaN -- that reached the page as "₹NaN".
+    expect(toStudentProfile(row({ course: { name: "ADCA" } })).courseFee).toBe(0);
+    expect(toStudentProfile(row({ course: null })).courseFee).toBe(0);
+  });
+
   it("leaves them blank rather than printing ids when nothing is assigned", () => {
     const profile = toStudentProfile(row({ course: null, batch: null, branch: null }));
     expect(profile.course).toBe("");
@@ -91,9 +98,10 @@ describe("toStudentProfile", () => {
   it("returns nothing a page could not render, for every field", () => {
     const profile = toStudentProfile(row());
 
+    // Strings and numbers both render; a joined row is what killed the page.
     for (const [key, value] of Object.entries(profile)) {
       expect(
-        value === null || typeof value === "string",
+        value === null || typeof value === "string" || typeof value === "number",
         `${key} is a ${typeof value}, which React cannot render`,
       ).toBe(true);
     }

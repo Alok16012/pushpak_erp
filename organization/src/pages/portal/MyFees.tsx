@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getStudentProfile, getStudentPortalInvoices, addPayment, submitPortalRequest } from "@/lib/supabase/data";
+import { feeStanding } from "@/lib/fees";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,7 +22,11 @@ interface PortalInvoice {
   id: string;
   invoiceNo?: string;
   description?: string;
+  /** `fee_invoices.totalAmount`, resolved by `getStudentInvoices`. */
   amount: number;
+  /** Receipts booked against it, reversals excluded. */
+  paid: number;
+  balance: number;
   status?: string;
   dueDate?: string;
   createdAt?: string;
@@ -74,10 +79,10 @@ export default function MyFees() {
     return () => { cancelled = true; };
   }, [toast, userId, branchId]);
 
-  const balance = (invoice: PortalInvoice) => {
-    const paid = invoice.payments?.filter((p) => !p.reversedAt).reduce((sum, p) => sum + Number(p.amount || 0), 0) || 0;
-    return Math.max(0, Number(invoice.amount || 0) - paid);
-  };
+  // `getStudentInvoices` has already netted the receipts off each invoice; this
+  // page used to do it again from an `amount` field the table does not have,
+  // which is why every figure on the student's own fee page read zero.
+  const balance = (invoice: PortalInvoice) => Number(invoice.balance || 0);
 
   const invoiceStatus = (invoice: PortalInvoice): string => {
     const bal = balance(invoice);
@@ -114,18 +119,20 @@ export default function MyFees() {
     }
   };
 
-  const summary = invoices.reduce(
-    (acc, inv) => {
-      const bal = balance(inv);
-      const status = invoiceStatus(inv);
-      acc.billed += Number(inv.amount || 0);
-      acc.paid += Number(inv.amount || 0) - bal;
-      acc.due += bal;
-      if (status === "OVERDUE") acc.overdue += bal;
-      return acc;
-    },
-    { billed: 0, paid: 0, due: 0, overdue: 0 },
-  );
+  const billed = invoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
+  const overdue = invoices
+    .filter((inv) => invoiceStatus(inv) === "OVERDUE")
+    .reduce((sum, inv) => sum + balance(inv), 0);
+
+  /* The same rule the branch roster uses, so the student and the office never
+     read different numbers off the same record: before any invoice is raised
+     the total is what the course costs, which is what admission quoted. */
+  const standing = feeStanding({
+    courseFee: profile?.courseFee,
+    invoiced: invoices.length ? billed : null,
+    paid: invoices.reduce((sum, inv) => sum + Number(inv.paid || 0), 0),
+  });
+  const summary = { billed, paid: standing.paid, due: standing.balance, overdue };
 
   const exportCsv = () => {
     const rows = invoices.map((invoice) => ({
@@ -161,9 +168,15 @@ export default function MyFees() {
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Billed", value: money(summary.billed), note: `${invoices.length} invoices` },
+          {
+            label: "Course fee",
+            value: money(standing.total),
+            note: invoices.length
+              ? `billed across ${invoices.length} invoice${invoices.length === 1 ? "" : "s"}`
+              : `${profile?.course || "Your course"} — nothing invoiced yet`,
+          },
           { label: "Paid", value: money(summary.paid), note: "receipts available below" },
-          { label: "Outstanding", value: money(summary.due), note: summary.due ? "payable online" : "all clear" },
+          { label: "Balance", value: money(summary.due), note: summary.due ? "payable online" : "all clear" },
           { label: "Overdue", value: money(summary.overdue), note: summary.overdue ? "past due date" : "nothing overdue" },
         ].map((stat) => (
           <Card key={stat.label}><CardContent className="p-4"><p className="eyebrow">{stat.label}</p><p className="metric mt-3">{stat.value}</p><p className="mt-2 text-xs text-muted-foreground">{stat.note}</p></CardContent></Card>
@@ -184,7 +197,7 @@ export default function MyFees() {
                     <TableCell>{invoice.description}</TableCell>
                     <TableCell className="whitespace-nowrap">{invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString("en-IN") : "—"}</TableCell>
                     <TableCell className="tabular text-right">{money(Number(invoice.amount || 0))}</TableCell>
-                    <TableCell className="tabular text-right">{money(Number(invoice.amount || 0) - bal)}</TableCell>
+                    <TableCell className="tabular text-right">{money(Number(invoice.paid || 0))}</TableCell>
                     <TableCell className="tabular text-right font-medium">{money(bal)}</TableCell>
                     <TableCell><Badge variant={TONE[status]} className="capitalize">{status.toLowerCase()}</Badge></TableCell>
                     <TableCell>

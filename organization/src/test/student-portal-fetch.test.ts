@@ -48,7 +48,7 @@ const STUDENT_ROW = {
   dateOfBirth: "2007-03-12T00:00:00.000Z",
   admissionDate: "2026-01-04T00:00:00.000Z",
   // The embeds: rows, not names. This is what took the dashboard down.
-  course: { name: "ADCA" },
+  course: { name: "ADCA", code: "ADCA-01", baseFee: 24000 },
   batch: { name: "2026-A" },
   branch: { name: "Kothrud Branch" },
 };
@@ -64,6 +64,7 @@ describe("getStudentProfile", () => {
     const { data } = await getStudentProfile("auth-1", "b1");
 
     expect(data.course).toBe("ADCA");
+    expect(data.courseFee).toBe(24000);
     expect(data.batch).toBe("2026-A");
     expect(data.branch).toBe("Kothrud Branch");
     expect(data.name).toBe("Aarav Sharma");
@@ -72,9 +73,10 @@ describe("getStudentProfile", () => {
   it("returns no field a page could not render", async () => {
     const { data } = await getStudentProfile("auth-1", "b1");
 
+    // Strings and numbers both render; a joined row is what killed the page.
     for (const [key, value] of Object.entries(data)) {
       expect(
-        value === null || typeof value === "string",
+        value === null || typeof value === "string" || typeof value === "number",
         `${key} is a ${typeof value}, which React cannot render`,
       ).toBe(true);
     }
@@ -83,9 +85,17 @@ describe("getStudentProfile", () => {
   it("asks for the three names, since the row only carries their ids", async () => {
     await getStudentProfile("auth-1", "b1");
 
-    expect(selects[0]).toContain("course:courses(name)");
+    expect(selects[0]).toContain("course:courses(");
     expect(selects[0]).toContain("batch:batches(name)");
     expect(selects[0]).toContain("branch:branches(name)");
+  });
+
+  // The portal shows the student what their course costs before any invoice is
+  // raised against them, and it can only do that if the fee is selected here.
+  it("asks for the course fee along with the course name", async () => {
+    await getStudentProfile("auth-1", "b1");
+
+    expect(selects[0]).toContain("baseFee");
   });
 
   it("names the missing link rather than letting PostgREST describe it", async () => {

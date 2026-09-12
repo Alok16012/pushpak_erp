@@ -23,6 +23,13 @@ export interface StudentProfile {
   enrollmentNo: string;
   rollNo: string;
   course: string;
+  /** `courses.code`, shown beside the name so a short course name is not
+   *  mistaken for a code. */
+  courseCode: string;
+  /** `courses.baseFee` — what the course costs. This is the total the student
+   *  is measured against until invoices are raised, and it is what lets their
+   *  own login show the same three figures the branch roster shows. */
+  courseFee: number;
   batch: string;
   section: string;
   branch: string;
@@ -108,6 +115,8 @@ export const PROFILE_SEED: StudentProfile = {
   enrollmentNo: "IDS/2026/2201",
   rollNo: "2201",
   course: "Advanced Diploma in Computer Applications",
+  courseCode: "ADCA",
+  courseFee: 64500,
   batch: "2026-A",
   section: "A",
   branch: "Kothrud Branch",

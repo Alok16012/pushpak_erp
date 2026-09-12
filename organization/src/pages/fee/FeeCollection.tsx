@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { CreditCard, Receipt, AlertCircle, CheckCircle, Plus, Printer, Download } from "lucide-react";
 import { downloadCsv } from "@/lib/export";
+import { compactRupees } from "@/lib/fees";
 import {
   listInvoices,
   listStudents,
@@ -45,13 +46,19 @@ interface FeeRecord {
   id: string;
   studentName: string;
   rollNo: string;
+  /** The course the student is enrolled on — not the invoice number, which is
+   *  what this column used to print. */
   course: string;
+  courseCode: string;
+  invoiceNo: string;
   feeType: string;
   totalAmount: number;
   paidAmount: number;
   dueAmount: number;
   dueDate: string;
   status: "paid" | "due" | "partial";
+  /** Past its due date with money still on it. "Due" alone is not overdue. */
+  overdue: boolean;
   invoice: InvoiceRow;
 }
 
@@ -78,11 +85,29 @@ const columns: Column<FeeRecord>[] = [
     key: "course",
     header: "Course",
     sortable: true,
+    cell: (record) => (
+      <div>
+        <p className="text-sm font-medium">{record.course}</p>
+        {record.courseCode ? (
+          <p className="text-xs text-muted-foreground">{record.courseCode}</p>
+        ) : null}
+      </div>
+    ),
   },
   {
     key: "feeType",
     header: "Fee Type",
     sortable: true,
+    // The invoice number belongs with the charge it identifies, not in the
+    // Course column, which is where it used to be printed.
+    cell: (record) => (
+      <div>
+        <p className="text-sm">{record.feeType}</p>
+        {record.invoiceNo ? (
+          <p className="text-xs text-muted-foreground">{record.invoiceNo}</p>
+        ) : null}
+      </div>
+    ),
   },
   {
     key: "totalAmount",
@@ -145,6 +170,7 @@ export default function FeeCollection() {
       // fee_invoices has no `amount` column — the live column is `totalAmount`,
       // and what has been paid comes from the fee_payments rows.
       const result = await listInvoices(branchId || null, { includeVoid: false });
+      const today = new Date().toISOString().slice(0, 10);
       const mapped: FeeRecord[] = (result.data || []).map((i) => {
         const total = toNumber(i.totalAmount);
         const paid = paidFromPayments(i);
@@ -159,13 +185,16 @@ export default function FeeCollection() {
           id: i.id,
           studentName: studentName(i.student, i.studentId ? `Student ${String(i.studentId).slice(-4)}` : "Unlinked invoice"),
           rollNo: studentCode(i.student as never) !== "—" ? studentCode(i.student as never) : (i.invoiceNo || "—"),
-          course: i.invoiceNo || "—",
+          course: i.student?.course?.name || "Not assigned",
+          courseCode: String(i.student?.course?.code || ""),
+          invoiceNo: String(i.invoiceNo || ""),
           feeType: i.description || "Fee",
           totalAmount: total,
           paidAmount: paid,
           dueAmount: due,
           dueDate: i.dueDate || "",
           status,
+          overdue: due > 0 && !!i.dueDate && String(i.dueDate).slice(0, 10) < today,
           invoice: i,
         };
       });
@@ -228,7 +257,10 @@ export default function FeeCollection() {
   const totalCollected = records.reduce((sum, r) => sum + r.paidAmount, 0);
   const totalPending = records.reduce((sum, r) => sum + r.dueAmount, 0);
   const paidCount = records.filter((r) => r.status === "paid").length;
-  const dueCount = records.filter((r) => r.status === "due").length;
+  const owingCount = records.filter((r) => r.dueAmount > 0).length;
+  // "Due" is not "overdue": an invoice payable next month is neither late nor
+  // something to chase. This tile used to count every unpaid invoice.
+  const overdueCount = records.filter((r) => r.overdue).length;
 
   const exportRecords = () => {
     if (!records.length) {
@@ -241,6 +273,8 @@ export default function FeeCollection() {
         Student: r.studentName,
         RollNo: r.rollNo,
         Course: r.course,
+        CourseCode: r.courseCode,
+        InvoiceNo: r.invoiceNo,
         FeeType: r.feeType,
         TotalAmount: r.totalAmount,
         PaidAmount: r.paidAmount,
@@ -346,31 +380,34 @@ export default function FeeCollection() {
       />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-6">
+        {/* The figures were divided by a lakh and fixed to one decimal, so a
+            branch that had collected ₹2,500 was told "₹0.0L" — the whole tile
+            row read as empty until the numbers reached six figures. */}
         <StatsCard
           title="Total Collected"
-          value={`₹${(totalCollected / 100000).toFixed(1)}L`}
-          subtitle="This month"
+          value={compactRupees(totalCollected)}
+          subtitle={`across ${records.length} ${records.length === 1 ? "invoice" : "invoices"}`}
           icon={CreditCard}
           variant="success"
         />
         <StatsCard
           title="Pending Amount"
-          value={`₹${(totalPending / 100000).toFixed(1)}L`}
-          subtitle={`${dueCount + records.filter((r) => r.status === "partial").length} students`}
+          value={compactRupees(totalPending)}
+          subtitle={`${owingCount} ${owingCount === 1 ? "invoice" : "invoices"} with a balance`}
           icon={AlertCircle}
           variant="warning"
         />
         <StatsCard
           title="Fully Paid"
           value={paidCount}
-          subtitle="Students with no dues"
+          subtitle="Invoices with no dues"
           icon={CheckCircle}
           variant="primary"
         />
         <StatsCard
           title="Overdue"
-          value={dueCount}
-          subtitle="Requires follow-up"
+          value={overdueCount}
+          subtitle={overdueCount ? "Past the due date" : "Nothing past due"}
           icon={Receipt}
           variant="info"
         />

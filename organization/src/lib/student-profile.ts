@@ -12,6 +12,7 @@
  * each page being trusted to remember.
  */
 import { format } from "date-fns";
+import { amount } from "@/lib/fees";
 import type { StudentProfile } from "@/data/student-portal";
 
 /**
@@ -45,7 +46,7 @@ export interface StudentRow {
   photo?: unknown;
   fatherName?: string | null;
   fatherPhone?: string | null;
-  course?: { name?: string | null } | null;
+  course?: { name?: string | null; code?: string | null; baseFee?: number | string | null } | null;
   batch?: { name?: string | null } | null;
   branch?: { name?: string | null } | null;
 }
@@ -86,8 +87,9 @@ function asDay(value: unknown): string {
  * the parent contact on their ID card, since `asIdCardStudent` reads that same
  * field.
  *
- * Every value it returns is a string or null. That is not incidental -- the
- * portal pages drop these straight into JSX.
+ * Every value it returns is a string, a number or null -- never a joined row.
+ * That is not incidental: the portal pages drop these straight into JSX, and
+ * React throws on an object child.
  */
 export function toStudentProfile(row: StudentRow): StudentProfile {
   const name =
@@ -102,6 +104,10 @@ export function toStudentProfile(row: StudentRow): StudentProfile {
     enrollmentNo: text(row.enrollmentNo) || text(row.applicationNo),
     rollNo: text(row.rollNo),
     course: text(row.course?.name),
+    courseCode: text(row.course?.code),
+    // The one number on the profile. The portal needs it to tell the student
+    // what their course costs before any invoice has been raised against them.
+    courseFee: amount(row.course?.baseFee),
     batch: text(row.batch?.name),
     section: text(row.section),
     branch: text(row.branch?.name),

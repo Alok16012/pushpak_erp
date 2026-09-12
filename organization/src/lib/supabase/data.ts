@@ -5,9 +5,14 @@ import { toStudentProfile, type StudentRow } from "../student-profile";
 import {
   createInvoiceRow,
   listInvoices,
+  paidFromPayments,
+  recordPayment,
   updateInvoiceRow,
   type CreateInvoiceInput,
+  type InvoiceRow,
+  type RecordPaymentInput,
 } from "./studentFee";
+import { feeStanding } from "../fees";
 
 /* ============================
    AUTH
@@ -179,12 +184,23 @@ export interface StudentRosterRow {
   admissionNo: string;
   admissionDate: string;
   course: string;
+  /** `courses.code`, printed under the name so a short name is not mistaken
+   *  for one. Blank when the course carries no code. */
+  courseCode: string;
+  /** The course's own price — `courses.baseFee`. */
+  courseFee: number;
   fatherName: string;
   fatherPhone: string;
   phone: string;
   whatsapp: string;
   email: string;
+  /** What the student is being charged: their invoices, or the course price
+   *  when none has been raised yet. */
   fee: number;
+  /** Receipts booked against those invoices, reversals excluded. */
+  paid: number;
+  /** `fee - paid`, floored at zero. */
+  balance: number;
   status: "Active" | "Pending" | "Completed" | "Inactive";
   batch: string;
   /** True once `students.userId` points at an auth account -- the link every
@@ -194,15 +210,19 @@ export interface StudentRosterRow {
 
 /**
  * The roster the View Students table renders: one row per student with the
- * course name and fee already resolved, so the table does not have to fetch
- * per row. Fee is what the student has actually been invoiced; a student with
- * no invoice yet falls back to the course's base fee, which is what the
- * admission quoted them.
+ * course name and the student's fee standing already resolved, so the table
+ * does not have to fetch per row.
+ *
+ * Three money figures, not one: what the student is being charged, what they
+ * have paid, and what is left. The table used to show only the first, so a fee
+ * collected against a student was invisible on the page the branch actually
+ * works from — the only way to see it was to open the student and read the
+ * invoices one by one.
  */
 export async function getStudentRoster(branchId: string | null, limit = 500) {
   let query = supabase
     .from("students")
-    .select("*, course:courses(id, name, baseFee)")
+    .select("*, course:courses(id, name, code, baseFee)")
     .is("deletedAt", null)
     .order("createdAt", { ascending: false })
     .limit(limit);
@@ -215,16 +235,38 @@ export async function getStudentRoster(branchId: string | null, limit = 500) {
   const ids = rows.map((r: Record<string, unknown>) => String(r.id));
 
   // One invoice query for the whole page rather than one per student.
+  //
+  // The payments are embedded rather than trusting `fee_invoices.paidAmount`:
+  // that column is only maintained by the fee pages, so a receipt booked
+  // straight into `fee_payments` leaves it stale and the roster would under-
+  // report what the student has paid. A reversed payment is not money in.
   const invoiceTotals = new Map<string, number>();
+  const paidTotals = new Map<string, number>();
   if (ids.length > 0) {
-    const { data: invoices } = await supabase
-      .from("fee_invoices")
-      .select("studentId, totalAmount")
-      .in("studentId", ids);
+    const invoiceQuery = (select: string) =>
+      supabase
+        .from("fee_invoices")
+        .select(select)
+        .in("studentId", ids)
+        // A voided invoice is a withdrawn charge, not an unpaid one.
+        .neq("status", "VOID");
+
+    let { data: invoices, error: invoiceError } = await invoiceQuery(
+      "studentId, totalAmount, paidAmount, payments:fee_payments(amount, reversedAt)",
+    );
+    if (invoiceError) {
+      // The embed is unavailable where the relationship is not exposed;
+      // `paidAmount` is then the only figure there is, and `paidFromPayments`
+      // falls back to it on its own.
+      ({ data: invoices } = await invoiceQuery("studentId, totalAmount, paidAmount"));
+    }
+
     for (const inv of invoices || []) {
-      const sid = String((inv as Record<string, unknown>).studentId);
-      const amt = Number((inv as Record<string, unknown>).totalAmount) || 0;
-      invoiceTotals.set(sid, (invoiceTotals.get(sid) || 0) + amt);
+      const row = inv as unknown as Record<string, unknown>;
+      const sid = String(row.studentId);
+      const billed = Number(row.totalAmount) || 0;
+      invoiceTotals.set(sid, (invoiceTotals.get(sid) || 0) + billed);
+      paidTotals.set(sid, (paidTotals.get(sid) || 0) + paidFromPayments(row as unknown as InvoiceRow));
     }
   }
 
@@ -232,7 +274,15 @@ export async function getStudentRoster(branchId: string | null, limit = 500) {
     const first = String(row.firstName || "");
     const last = String(row.lastName || "");
     const name = [first, row.middleName, last].filter(Boolean).join(" ").trim() || "Unnamed";
-    const course = row.course as { name?: string; baseFee?: number } | null;
+    const course = row.course as { name?: string; code?: string; baseFee?: number } | null;
+
+    const standing = feeStanding({
+      courseFee: course?.baseFee,
+      // `undefined` from the map means no invoice was raised, which is not the
+      // same as an invoice for zero — the student is still quoted the course fee.
+      invoiced: invoiceTotals.has(String(row.id)) ? invoiceTotals.get(String(row.id))! : null,
+      paid: paidTotals.get(String(row.id)),
+    });
 
     // Street is deliberately left out: the column shows where the student is
     // from, and a full street line wraps the row onto three lines.
@@ -262,12 +312,16 @@ export async function getStudentRoster(branchId: string | null, limit = 500) {
       admissionNo: String(row.enrollmentNo || row.applicationNo || "Pending"),
       admissionDate: String(row.admissionDate || ""),
       course: course?.name || "Not assigned",
+      courseCode: String(course?.code || ""),
+      courseFee: Number(course?.baseFee) || 0,
       fatherName: String(row.fatherName || "—"),
       fatherPhone: String(row.fatherPhone || phone),
       phone,
       whatsapp: String(row.whatsappNumber || phone),
       email: String(row.email || "—"),
-      fee: invoiceTotals.get(String(row.id)) ?? Number(course?.baseFee) ?? 0,
+      fee: standing.total,
+      paid: standing.paid,
+      balance: standing.balance,
       status,
       batch: "Not assigned",
       hasLogin: Boolean(row.userId),
@@ -942,20 +996,141 @@ export async function deleteInvoice(id: string, _branchId: string) {
   return { success: true };
 }
 
-export async function getStudentInvoices(studentId: string, _branchId: string | null) {
-  const { data, error } = await supabase
-    .from("fee_invoices")
-    .select("*")
-    .eq("studentId", studentId)
-    .order("createdAt", { ascending: false });
-  if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+/** One receipt, with every field resolved — no nulls for a page to trip on. */
+export interface StudentReceipt {
+  id: string;
+  amount: number;
+  method: string;
+  receiptNo: string;
+  referenceNo: string;
+  paidAt: string;
+  /** Left undefined rather than null so `!receipt.reversedAt` reads true. */
+  reversedAt?: string;
 }
 
+/**
+ * One invoice as every page that shows a student their fees reads it: the
+ * amounts already resolved, and no nullable column left to render.
+ */
+export interface StudentInvoice {
+  id: string;
+  invoiceNo: string;
+  description: string;
+  dueDate: string;
+  status: string;
+  createdAt: string;
+  /** `fee_invoices.totalAmount` — what the invoice charges. */
+  amount: number;
+  /** Receipts booked against it, reversals excluded. */
+  paid: number;
+  balance: number;
+  payments: StudentReceipt[];
+  /** The latest receipt's details, which the PDF helpers print per invoice. */
+  method?: string;
+  paidAt?: string;
+  receiptNo?: string;
+}
+
+/**
+ * One student's invoices, in the shape the pages that read them expect.
+ *
+ * Every caller — the portal's fee, results and documents screens, and the fee
+ * tab on View Students — reads `amount` and `paid`. The table has neither: the
+ * columns are `totalAmount` and `paidAmount`, and the receipts live in a
+ * separate `fee_payments` table. Handing the raw row back meant
+ * `Number(undefined || 0)`, so a student who had paid in full still saw ₹0
+ * billed, ₹0 paid and an empty balance on their own login. The mapping belongs
+ * here, once, rather than in each page that forgot it.
+ */
+export async function getStudentInvoices(
+  studentId: string,
+  _branchId: string | null,
+): Promise<{ success: true; data: StudentInvoice[] }> {
+  const run = (select: string) =>
+    supabase
+      .from("fee_invoices")
+      .select(select)
+      .eq("studentId", studentId)
+      .order("createdAt", { ascending: false });
+
+  let { data, error } = await run(
+    "*, payments:fee_payments(id, amount, method, receiptNo, referenceNo, paidAt, reversedAt)",
+  );
+  if (error) {
+    // Same degradation as `listInvoices`: without the embed `paidAmount` is the
+    // only record of what came in, and the page still renders.
+    const flat = await run("*");
+    if (flat.error) throw new Error(flat.error.message);
+    data = flat.data;
+  }
+
+  const invoices = ((data || []) as unknown as InvoiceRow[]).map((invoice): StudentInvoice => {
+    const payments: StudentReceipt[] = (
+      Array.isArray(invoice.payments) ? invoice.payments : []
+    ).map((payment) => ({
+      id: String(payment.id || ""),
+      amount: Number(payment.amount) || 0,
+      method: String(payment.method || ""),
+      receiptNo: String(payment.receiptNo || ""),
+      referenceNo: String(payment.referenceNo || ""),
+      paidAt: String(payment.paidAt || ""),
+      // undefined, not null: the pages test this with `!payment.reversedAt`.
+      reversedAt: payment.reversedAt ? String(payment.reversedAt) : undefined,
+    }));
+
+    const amount = Number(invoice.totalAmount) || 0;
+    const paid = paidFromPayments(invoice);
+    const latest = payments.filter((payment) => !payment.reversedAt).at(-1);
+
+    return {
+      id: String(invoice.id || ""),
+      invoiceNo: String(invoice.invoiceNo || invoice.id || ""),
+      description: String(invoice.description || "Fee invoice"),
+      dueDate: String(invoice.dueDate || ""),
+      status: String(invoice.status || "DUE"),
+      createdAt: String(invoice.createdAt || ""),
+      amount,
+      paid,
+      balance: Math.max(0, amount - paid),
+      payments,
+      method: latest?.method,
+      paidAt: latest?.paidAt,
+      receiptNo: latest?.receiptNo,
+    };
+  });
+
+  return { success: true as const, data: invoices };
+}
+
+/**
+ * A payment booked from the student's own portal, by invoice id.
+ *
+ * It used to insert whatever the caller handed it, straight into
+ * `fee_payments`. The portal hands it an amount and a method, and the table
+ * also requires `receiptNo` and `receivedById` — both NOT NULL, neither with a
+ * default — so a student paying their own fee got a not-null constraint error
+ * and no receipt. Worse, even a successful insert left `fee_invoices.paidAmount`
+ * and `status` untouched, so the invoice stayed DUE for its full value with the
+ * money already taken.
+ *
+ * So it goes through `recordPayment` now, which fills the row and rolls the
+ * invoice forward. The invoice is read first because that roll-up needs to know
+ * what was already paid.
+ */
 export async function addPayment(invoiceId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("fee_payments").insert({ ...input, invoiceId }).select("*").single();
+  const { data: invoice, error } = await supabase
+    .from("fee_invoices")
+    .select("*, payments:fee_payments(id, amount, reversedAt)")
+    .eq("id", invoiceId)
+    .maybeSingle();
   if (error) throw new Error(error.message);
-  return { success: true, data };
+  if (!invoice) throw new Error("That invoice no longer exists. Reload the page and try again.");
+
+  const result = await recordPayment(
+    invoice as unknown as InvoiceRow,
+    input as unknown as RecordPaymentInput,
+  );
+  return { success: true as const, data: result.data.payment };
 }
 
 /* ============================
@@ -1776,7 +1951,10 @@ export async function deleteBranch(id: string) {
 export async function getStudentProfile(userId: string, branchId: string) {
   const { data, error } = await supabase
     .from("students")
-    .select("*, course:courses(name), batch:batches(name), branch:branches(name)")
+    // `baseFee` rides along because the portal shows the student what their
+    // course costs, which is the only figure they have before an invoice is
+    // raised against them.
+    .select("*, course:courses(name, code, baseFee), batch:batches(name), branch:branches(name)")
     .eq("userId", userId)
     .eq("branchId", branchId)
     .is("deletedAt", null)
