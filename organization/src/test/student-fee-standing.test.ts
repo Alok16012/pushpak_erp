@@ -23,17 +23,28 @@ describe("feeStanding", () => {
     });
   });
 
-  it("prefers the invoices once they exist, even for less than the course fee", () => {
-    // A concession, a part-course enrolment: what was invoiced is what is owed.
+  it("still charges the whole course when only part of it has been invoiced", () => {
+    // The bug this rule exists for: the first instalment of a ₹24,000 course
+    // was read as the whole charge, so paying it showed the student "Cleared"
+    // with ₹6,000 of the course still uncollected.
     expect(feeStanding({ courseFee: 24000, invoiced: 18000, paid: 5000 })).toEqual({
-      total: 18000,
+      total: 24000,
       paid: 5000,
-      balance: 13000,
+      balance: 19000,
     });
   });
 
-  it("treats an invoice for zero as a charge of zero, not as no invoice", () => {
-    expect(feeStanding({ courseFee: 24000, invoiced: 0, paid: 0 }).total).toBe(0);
+  it("charges more than the course when more than it has been billed", () => {
+    // A late fee or an extra charge on top is money genuinely owed.
+    expect(feeStanding({ courseFee: 24000, invoiced: 25500, paid: 0 })).toEqual({
+      total: 25500,
+      paid: 0,
+      balance: 25500,
+    });
+  });
+
+  it("falls back to the invoices for a course carrying no price of its own", () => {
+    expect(feeStanding({ courseFee: 0, invoiced: 4000, paid: 1000 }).total).toBe(4000);
   });
 
   it("never reports a negative balance, because an overpayment is not a debt", () => {

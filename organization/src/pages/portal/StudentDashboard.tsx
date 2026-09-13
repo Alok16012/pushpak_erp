@@ -139,15 +139,15 @@ export default function StudentDashboard() {
   }, [attendance]);
 
   /* The same rule the branch roster applies, so the student's own login and the
-     office read one set of figures: the total is what has been invoiced, or the
-     course fee while nothing has been. Overdue counts what is still open on a
+     office read one set of figures: the total is what the course costs, raised
+     by anything billed on top of it. Overdue counts what is still open on a
      late invoice, not its face value — a part-paid invoice is not overdue for
      the amount already settled. */
   const fees = useMemo(() => {
     const billed = invoices.reduce((sum, inv) => sum + Number(inv.amount || 0), 0);
     const standing = feeStanding({
       courseFee: profile?.courseFee,
-      invoiced: invoices.length ? billed : null,
+      invoiced: billed,
       paid: invoices.reduce((sum, inv) => sum + Number(inv.paid || 0), 0),
     });
     const today = new Date().toISOString().slice(0, 10);

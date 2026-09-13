@@ -125,11 +125,12 @@ export default function MyFees() {
     .reduce((sum, inv) => sum + balance(inv), 0);
 
   /* The same rule the branch roster uses, so the student and the office never
-     read different numbers off the same record: before any invoice is raised
-     the total is what the course costs, which is what admission quoted. */
+     read different numbers off the same record: the total is what the course
+     costs, which is what admission quoted, and part-billing it does not make
+     the course cheaper. */
   const standing = feeStanding({
     courseFee: profile?.courseFee,
-    invoiced: invoices.length ? billed : null,
+    invoiced: billed,
     paid: invoices.reduce((sum, inv) => sum + Number(inv.paid || 0), 0),
   });
   const summary = { billed, paid: standing.paid, due: standing.balance, overdue };
@@ -171,8 +172,10 @@ export default function MyFees() {
           {
             label: "Course fee",
             value: money(standing.total),
+            // The tile is the course price, so the note says how much of it
+            // has actually been billed rather than implying they are the same.
             note: invoices.length
-              ? `billed across ${invoices.length} invoice${invoices.length === 1 ? "" : "s"}`
+              ? `${money(billed)} billed across ${invoices.length} invoice${invoices.length === 1 ? "" : "s"}`
               : `${profile?.course || "Your course"} — nothing invoiced yet`,
           },
           { label: "Paid", value: money(summary.paid), note: "receipts available below" },

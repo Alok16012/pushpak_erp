@@ -22,7 +22,8 @@ export const amount = (value: unknown): number => {
 };
 
 export interface FeeStanding {
-  /** What the student is being charged: their invoices, or the course price. */
+  /** What the student is being charged: the course's own price, or the
+   *  invoices where they come to more. */
   total: number;
   /** Receipts booked against those invoices, reversals excluded. */
   paid: number;
@@ -31,17 +32,25 @@ export interface FeeStanding {
 }
 
 /**
- * `invoiced` is null when no invoice has been raised yet, which is not the same
- * as one raised for zero. A student admitted this morning has been quoted the
- * course fee and nothing else, and that is the figure both the office and the
- * student expect to see against their name — not a blank.
+ * What the course costs is what the student owes.
+ *
+ * The invoices used to win outright, and that read a part invoice as the whole
+ * charge: a student on a ₹6,500 course billed ₹2,500 for the first instalment
+ * showed a fee of ₹2,500 and, once that was paid, "Cleared" -- while ₹4,000 of
+ * the course was still uncollected. An invoice is this month's bill, not a
+ * discount on the rest of the course.
+ *
+ * So the course price is the floor, and invoices only raise it: a late fee or
+ * an extra charge billed on top is real money owed and counts. A course with no
+ * price of its own falls back to whatever has been invoiced, which is then the
+ * only figure there is.
  */
 export function feeStanding(input: {
   courseFee?: unknown;
   invoiced?: number | null;
   paid?: unknown;
 }): FeeStanding {
-  const total = input.invoiced == null ? amount(input.courseFee) : amount(input.invoiced);
+  const total = Math.max(amount(input.courseFee), amount(input.invoiced));
   const paid = amount(input.paid);
   return { total, paid, balance: Math.max(0, total - paid) };
 }
