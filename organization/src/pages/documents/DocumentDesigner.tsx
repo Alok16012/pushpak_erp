@@ -54,6 +54,26 @@ import {
   usedTokens,
 } from "@/lib/documentDesigner";
 
+/**
+ * The eight grips around a selected element, as Canva and every other canvas
+ * editor places them: corners resize both ways, edges resize one.
+ */
+const HANDLES = [
+  { id: "nw", left: "0%", top: "0%", cursor: "nwse-resize" },
+  { id: "n", left: "50%", top: "0%", cursor: "ns-resize" },
+  { id: "ne", left: "100%", top: "0%", cursor: "nesw-resize" },
+  { id: "e", left: "100%", top: "50%", cursor: "ew-resize" },
+  { id: "se", left: "100%", top: "100%", cursor: "nwse-resize" },
+  { id: "s", left: "50%", top: "100%", cursor: "ns-resize" },
+  { id: "sw", left: "0%", top: "100%", cursor: "nesw-resize" },
+  { id: "w", left: "0%", top: "50%", cursor: "ew-resize" },
+] as const;
+
+type HandleId = (typeof HANDLES)[number]["id"];
+
+/** A box smaller than this cannot be caught by its own handles again. */
+const MIN_SIZE = 16;
+
 /** So `/certificate/template` and `/marksheet/template` open on the right one. */
 function kindFromPath(pathname: string, param: string | null): DocumentKind {
   if (param && (KIND_ORDER as string[]).includes(param)) return param as DocumentKind;
@@ -257,6 +277,29 @@ export default function DocumentDesigner() {
     setSelectedId(null);
   };
 
+  // Delete removes the selected element and Escape lets it go, the way every
+  // canvas editor behaves -- but never while something is being typed, or a
+  // Backspace in the Text box would take the element the text belongs to.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      if (event.key === "Escape") setSelectedId(null);
+      if (selected && (event.key === "Delete" || event.key === "Backspace")) {
+        event.preventDefault();
+        remove();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const duplicate = () => {
     if (!selected) return;
     // `id` is dropped so the copy gets a fresh one - keeping it would leave two
@@ -300,6 +343,81 @@ export default function DocumentDesigner() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       // A plain click only selects, so it must not leave an undo step behind.
+      if (!moved) return;
+      record(
+        {
+          ...before,
+          elements: before.elements.map((e) => (e.id === el.id ? { ...e, ...latest } : e)),
+        },
+        before,
+      );
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  };
+
+  /**
+   * Resize by dragging a handle, rather than typing a width into the panel.
+   *
+   * The maths is done in canvas pixels -- the pointer moves in screen pixels,
+   * so every delta is divided by the zoom -- and a west or north handle moves
+   * the box's own corner as well as its size, which is what makes the opposite
+   * corner stay where it is.
+   */
+  const startResize = (event: React.PointerEvent, el: DocElement, handle: HandleId) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedId(el.id);
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const origin = { x: el.x, y: el.y, width: el.width, height: el.height };
+    const before = design;
+    let latest = { ...origin };
+    let moved = false;
+
+    const move = (ev: PointerEvent) => {
+      moved = true;
+      const dx = (ev.clientX - startX) / zoom;
+      const dy = (ev.clientY - startY) / zoom;
+      const box = { ...origin };
+
+      if (handle.includes("e")) box.width = origin.width + dx;
+      if (handle.includes("s")) box.height = origin.height + dy;
+      if (handle.includes("w")) {
+        box.width = origin.width - dx;
+        box.x = origin.x + dx;
+      }
+      if (handle.includes("n")) {
+        box.height = origin.height - dy;
+        box.y = origin.y + dy;
+      }
+      // A box dragged past its own opposite edge stops there rather than
+      // turning inside out.
+      if (box.width < MIN_SIZE) {
+        if (handle.includes("w")) box.x = origin.x + origin.width - MIN_SIZE;
+        box.width = MIN_SIZE;
+      }
+      if (box.height < MIN_SIZE) {
+        if (handle.includes("n")) box.y = origin.y + origin.height - MIN_SIZE;
+        box.height = MIN_SIZE;
+      }
+
+      latest = {
+        x: Math.round(box.x),
+        y: Math.round(box.y),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      };
+      apply({
+        ...before,
+        elements: before.elements.map((e) => (e.id === el.id ? { ...e, ...latest } : e)),
+      });
+    };
+
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      // As with dragging: one undo step for the whole gesture, not one a pixel.
       if (!moved) return;
       record(
         {
@@ -618,29 +736,97 @@ export default function DocumentDesigner() {
               >
                 {[...design.elements]
                   .sort((a, b) => a.z - b.z)
-                  .map((el) => (
-                    <div
-                      key={el.id}
-                      onPointerDown={(e) => startDrag(e, el)}
-                      style={{
-                        position: "absolute",
-                        left: el.x,
-                        top: el.y,
-                        width: el.width,
-                        height: el.height,
-                        transform: `rotate(${el.rotate}deg)`,
-                        opacity: el.opacity,
-                        zIndex: el.z,
-                        cursor: "move",
-                        userSelect: "none",
-                        outline:
-                          el.id === selectedId ? "2px solid hsl(var(--brand))" : undefined,
-                        outlineOffset: 3,
-                      }}
-                    >
-                      <ElementBody el={el} data={data} qr={qrByElement[el.id]} />
-                    </div>
-                  ))}
+                  .map((el) => {
+                    const chosen = el.id === selectedId;
+                    return (
+                      <div
+                        key={el.id}
+                        onPointerDown={(e) => startDrag(e, el)}
+                        style={{
+                          position: "absolute",
+                          left: el.x,
+                          top: el.y,
+                          width: el.width,
+                          height: el.height,
+                          transform: `rotate(${el.rotate}deg)`,
+                          opacity: el.opacity,
+                          // A selected element is worked on, so it comes above
+                          // its neighbours -- its grips are unreachable under
+                          // anything stacked over them.
+                          zIndex: chosen ? el.z + 1000 : el.z,
+                          cursor: "move",
+                          userSelect: "none",
+                          outline: chosen ? "2px solid hsl(var(--brand))" : undefined,
+                          outlineOffset: 3,
+                        }}
+                      >
+                        <ElementBody el={el} data={data} qr={qrByElement[el.id]} />
+
+                        {/* The grips and the cross are drawn inside a canvas
+                            that is scaled by the zoom, so every size here is
+                            divided by it: they stay the same on screen at 50%
+                            as at 100%, which is the only size a finger or a
+                            pointer can actually catch. */}
+                        {chosen && (
+                          <>
+                            {HANDLES.map((handle) => (
+                              <div
+                                key={handle.id}
+                                aria-label={`Resize ${handle.id}`}
+                                onPointerDown={(e) => startResize(e, el, handle.id)}
+                                style={{
+                                  position: "absolute",
+                                  left: handle.left,
+                                  top: handle.top,
+                                  width: 10 / zoom,
+                                  height: 10 / zoom,
+                                  marginLeft: -5 / zoom,
+                                  marginTop: -5 / zoom,
+                                  borderRadius: 3 / zoom,
+                                  background: "#fff",
+                                  border: `${1.5 / zoom}px solid hsl(var(--brand))`,
+                                  boxShadow: `0 ${1 / zoom}px ${3 / zoom}px rgba(15,23,42,.25)`,
+                                  cursor: handle.cursor,
+                                  touchAction: "none",
+                                }}
+                              />
+                            ))}
+                            <button
+                              type="button"
+                              aria-label="Delete element"
+                              title="Delete"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                remove();
+                              }}
+                              style={{
+                                position: "absolute",
+                                left: "100%",
+                                top: 0,
+                                width: 22 / zoom,
+                                height: 22 / zoom,
+                                marginLeft: 8 / zoom,
+                                marginTop: -11 / zoom,
+                                display: "grid",
+                                placeItems: "center",
+                                borderRadius: "50%",
+                                background: "hsl(var(--destructive))",
+                                color: "#fff",
+                                fontSize: 13 / zoom,
+                                lineHeight: 1,
+                                border: "none",
+                                cursor: "pointer",
+                                boxShadow: `0 ${1 / zoom}px ${4 / zoom}px rgba(15,23,42,.3)`,
+                              }}
+                            >
+                              ×
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           </div>

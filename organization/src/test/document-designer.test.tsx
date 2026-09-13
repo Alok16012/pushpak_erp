@@ -116,6 +116,52 @@ describe("document designer", () => {
     expect([...KIND_ORDER].sort()).toEqual(Object.keys(DOCUMENT_KINDS).sort());
   });
 
+  /* Sizing a box by typing numbers into a panel is not how anyone draws. The
+     selected element carries its own grips and its own cross, as a canvas
+     editor does. */
+  it("resizes by dragging a grip, without anyone typing a width", async () => {
+    renderAt("/certificate/template");
+    const heading = screen.getByText("CERTIFICATE OF ACHIEVEMENT");
+    fireEvent.pointerDown(heading);
+    await waitFor(() => expect(textBox()).toBeTruthy());
+
+    // The positioned wrapper, not the body inside it -- the grips are its own
+    // children, so it is whatever they hang off.
+    const grip = screen.getByLabelText("Resize se");
+    const box = grip.parentElement as HTMLElement;
+    const widthBefore = box.style.width;
+    // jsdom has no PointerEvent, and a synthesised one drops clientX with it --
+    // which is the whole input to the gesture. A MouseEvent of the same type
+    // carries it and React reads it as the pointer event it is.
+    fireEvent(grip, new MouseEvent("pointerdown", { bubbles: true, cancelable: true, clientX: 0, clientY: 0 }));
+    fireEvent(window, new MouseEvent("pointermove", { clientX: 60, clientY: 40 }));
+    fireEvent(window, new MouseEvent("pointerup"));
+
+    expect(box.style.width).not.toBe(widthBefore);
+    expect(parseFloat(box.style.width)).toBeGreaterThan(parseFloat(widthBefore));
+  });
+
+  it("takes the element off the canvas from its own cross", async () => {
+    renderAt("/certificate/template");
+    fireEvent.pointerDown(screen.getByText("CERTIFICATE OF ACHIEVEMENT"));
+    await waitFor(() => expect(textBox()).toBeTruthy());
+
+    fireEvent.click(screen.getByLabelText("Delete element"));
+    expect(screen.queryByText("CERTIFICATE OF ACHIEVEMENT")).toBeNull();
+
+    // And it is an ordinary edit, so it can be taken back.
+    fireEvent.click(screen.getByRole("button", { name: /undo/i }));
+    expect(onCanvas("CERTIFICATE OF ACHIEVEMENT")).toBeInTheDocument();
+  });
+
+  it("shows the grips on the chosen element alone", async () => {
+    renderAt("/certificate/template");
+    expect(screen.queryByLabelText("Resize se")).toBeNull();
+
+    fireEvent.pointerDown(screen.getByText("CERTIFICATE OF ACHIEVEMENT"));
+    await waitFor(() => expect(screen.getAllByLabelText(/^Resize /)).toHaveLength(8));
+  });
+
   it("reads the type out of the query string", async () => {
     renderAt("/documents/designer?type=admit-card");
     await waitFor(() => expect(screen.getByText("ADMIT CARD")).toBeInTheDocument());
