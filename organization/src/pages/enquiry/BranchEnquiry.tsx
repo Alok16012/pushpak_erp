@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { Plus, MessageSquare, UserPlus, Clock, CheckCircle, Phone, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -349,20 +350,13 @@ export default function BranchEnquiry() {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label>Purpose</Label>
-                <Select value={form.purpose} onValueChange={(value) => set("purpose", value as Enquiry["purpose"])}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ADMISSION">Admission</SelectItem>
-                    <SelectItem value="FEE">Fee</SelectItem>
-                    <SelectItem value="MEETING">Meeting</SelectItem>
-                    <SelectItem value="COMPLAINT">Complaint</SelectItem>
-                    <SelectItem value="DELIVERY">Delivery</SelectItem>
-                    <SelectItem value="INTERVIEW">Interview</SelectItem>
-                    <SelectItem value="OTHER">Other</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SelectWithCustom
+                  value={form.purpose}
+                  onValueChange={(value) => set("purpose", value as Enquiry["purpose"])}
+                  options={["ADMISSION", "FEE", "MEETING", "COMPLAINT", "DELIVERY", "INTERVIEW"]}
+                  placeholder="Select purpose"
+                  customPlaceholder="Type the purpose"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Department</Label>

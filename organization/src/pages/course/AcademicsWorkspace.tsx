@@ -18,11 +18,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { canManageCourses } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile } from "@/lib/export";
-import {
-  CUSTOM_CATEGORY,
-  courseCategoryLabel,
-  courseCategoryOptions,
-} from "@/lib/courseCategories";
+import { courseCategoryLabel, courseCategoryOptions } from "@/lib/courseCategories";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import {
   getCourses,
   createCourse,
@@ -139,23 +136,14 @@ export default function AcademicsWorkspace() {
     [courses],
   );
 
-  /**
-   * The Select holds the sentinel while a custom category is being typed, so
-   * `d.category` is not the value to save - this is.
-   */
-  const chosenCategory = () =>
-    (d.category === CUSTOM_CATEGORY ? d.categoryCustom || "" : d.category || "").trim();
+  /** Picked or typed, the field holds the value that is saved. */
+  const chosenCategory = () => (d.category || "").trim();
 
   const validate = () => {
     const missing: string[] = [];
     if (!d.name?.trim()) missing.push("Name");
     if (!d.code?.trim()) missing.push("Code");
     if (form === "course" && !d.durationMonths) missing.push("Duration");
-    // Without this the sentinel resolves to nothing and the course would be
-    // quietly filed under COMPUTER instead of the category being typed.
-    if (form === "course" && d.category === CUSTOM_CATEGORY && !d.categoryCustom?.trim()) {
-      missing.push("Category");
-    }
     if (form === "batch") {
       if (!d.courseId) missing.push("Course");
       if (!targetBranchId) missing.push("Branch");
@@ -413,31 +401,16 @@ export default function AcademicsWorkspace() {
               {form === "course" ? (
                 <>
                   <Field l="Category">
-                    <Select
+                    <SelectWithCustom
                       value={d.category || ""}
                       onValueChange={(v) => setD((p) => ({ ...p, category: v }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categoryOptions.map((value) => (
-                          <SelectItem key={value} value={value}>
-                            {courseCategoryLabel(value)}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value={CUSTOM_CATEGORY}>Other (type your own)…</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {d.category === CUSTOM_CATEGORY && (
-                      <Input
-                        className="mt-2"
-                        autoFocus
-                        placeholder="Type the category"
-                        value={d.categoryCustom || ""}
-                        onChange={(e) => setD((p) => ({ ...p, categoryCustom: e.target.value }))}
-                      />
-                    )}
+                      options={categoryOptions.map((value) => ({
+                        value,
+                        label: courseCategoryLabel(value),
+                      }))}
+                      placeholder="Category"
+                      customPlaceholder="Type the category"
+                    />
                   </Field>
                   <Field l="Duration (months) *">
                     <Input

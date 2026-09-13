@@ -77,7 +77,13 @@ const DEPARTMENT_ENUM: Record<string, string> = {
 const lookup = (table: Record<string, string>, value: string | undefined, fallback: string) =>
   (value && table[value.trim().toLowerCase()]) || fallback;
 
-export const toPurposeEnum = (label?: string) => lookup(PURPOSE_ENUM, label, "OTHER");
+/**
+ * A known purpose becomes its enum member; anything typed in its place is kept
+ * as written. It used to fall back to OTHER, which threw away the very words
+ * the visitor came in with.
+ */
+export const toPurposeEnum = (label?: string) =>
+  lookup(PURPOSE_ENUM, label, (label || "").trim() || "OTHER");
 /** Returns `undefined` for an unknown label so the column can simply be omitted. */
 export const toIdTypeEnum = (label?: string) =>
   label ? ID_TYPE_ENUM[label.trim().toLowerCase()] : undefined;

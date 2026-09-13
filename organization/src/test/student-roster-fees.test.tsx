@@ -26,6 +26,7 @@ const student = (overrides: Partial<StudentRosterRow> = {}): StudentRosterRow =>
   whatsapp: "+91 62057 86818",
   email: "raj@example.com",
   fee: 2500,
+  invoiced: 2500,
   paid: 1000,
   balance: 1500,
   status: "Active",
@@ -69,14 +70,32 @@ describe("StudentRoster money columns", () => {
     expect(within(row).getByText("Cleared")).toBeInTheDocument();
   });
 
-  it("names the invoiced total apart from the course price when they differ", () => {
-    // A student invoiced for less than the course lists: the office needs to
-    // see both figures, or the row looks like the course fee is wrong.
-    roster([student({ fee: 1800, courseFee: 2500, paid: 300, balance: 1500 })]);
+  it("shows the course price, with what has been billed so far under it", () => {
+    // The first instalment of a ₹2,500 course. The fee column is the course's
+    // own price -- billing ₹1,800 of it does not make the course cost ₹1,800 --
+    // and what has actually been invoiced is named underneath.
+    roster([student({ fee: 2500, courseFee: 2500, invoiced: 1800, paid: 300, balance: 2200 })]);
 
     const row = screen.getByText("Raj Shekhar").closest("tr")!;
-    expect(within(row).getByText("₹1,800")).toBeInTheDocument();
-    expect(within(row).getByText(/invoiced · course ₹2,500/)).toBeInTheDocument();
+    expect(within(row).getByText("₹2,500")).toBeInTheDocument();
+    expect(within(row).getByText(/₹1,800 invoiced/)).toBeInTheDocument();
+    expect(within(row).getByText("₹2,200")).toBeInTheDocument();
+  });
+
+  it("leaves the second line off when every rupee of the course is invoiced", () => {
+    roster([student({ fee: 2500, courseFee: 2500, invoiced: 2500 })]);
+
+    const row = screen.getByText("Raj Shekhar").closest("tr")!;
+    expect(within(row).queryByText(/invoiced/)).toBeNull();
+  });
+
+  it("says nothing rather than \"₹0 invoiced\" for a student with no invoice yet", () => {
+    roster([student({ fee: 2500, courseFee: 2500, invoiced: 0, paid: 0, balance: 2500 })]);
+
+    const row = screen.getByText("Raj Shekhar").closest("tr")!;
+    expect(within(row).queryByText(/invoiced/)).toBeNull();
+    // What is owed is still the whole course: the fee column and the balance.
+    expect(within(row).getAllByText("₹2,500")).toHaveLength(2);
   });
 
   it("prints the course as a name with its code under it, not as a bare tag", () => {

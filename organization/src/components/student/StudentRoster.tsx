@@ -363,13 +363,14 @@ export function StudentRoster({
                 </td>
 
                 {/* What the course costs, what has come in, what is left. The
-                    table used to show only the first, so a fee collected against
-                    a student left no trace on the page the branch works from. */}
+                    fee is the course's own price -- billing the first instalment
+                    does not make the course cheaper -- with what has actually
+                    been invoiced named under it when the two differ. */}
                 <td className="px-4 py-3.5 text-right">
                   <span className="text-sm font-semibold tabular">{rupees(student.fee)}</span>
-                  {student.fee !== student.courseFee && student.courseFee > 0 && (
+                  {student.invoiced > 0 && student.invoiced !== student.fee && (
                     <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">
-                      invoiced · course {rupees(student.courseFee)}
+                      {rupees(student.invoiced)} invoiced
                     </p>
                   )}
                 </td>

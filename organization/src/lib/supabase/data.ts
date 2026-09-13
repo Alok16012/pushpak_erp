@@ -1,5 +1,6 @@
 import { supabase, supabaseUrl } from "./client";
 import { KNOWN_COURSE_CATEGORIES } from "../courseCategories";
+import { describeEnumRejection } from "../choices";
 import { newId, nowIso } from "../id";
 import { toStudentProfile, type StudentRow } from "../student-profile";
 import {
@@ -194,9 +195,13 @@ export interface StudentRosterRow {
   phone: string;
   whatsapp: string;
   email: string;
-  /** What the student is being charged: their invoices, or the course price
-   *  when none has been raised yet. */
+  /** What the student is being charged: the course price, or the invoices
+   *  where they come to more than it. */
   fee: number;
+  /** The face value of every invoice raised so far, voided ones excluded.
+   *  Zero when none has been. Shown apart from `fee`, because part-billing a
+   *  course does not reduce what the course costs. */
+  invoiced: number;
   /** Receipts booked against those invoices, reversals excluded. */
   paid: number;
   /** `fee - paid`, floored at zero. */
@@ -276,11 +281,10 @@ export async function getStudentRoster(branchId: string | null, limit = 500) {
     const name = [first, row.middleName, last].filter(Boolean).join(" ").trim() || "Unnamed";
     const course = row.course as { name?: string; code?: string; baseFee?: number } | null;
 
+    const invoiced = invoiceTotals.get(String(row.id)) || 0;
     const standing = feeStanding({
       courseFee: course?.baseFee,
-      // `undefined` from the map means no invoice was raised, which is not the
-      // same as an invoice for zero — the student is still quoted the course fee.
-      invoiced: invoiceTotals.has(String(row.id)) ? invoiceTotals.get(String(row.id))! : null,
+      invoiced,
       paid: paidTotals.get(String(row.id)),
     });
 
@@ -320,6 +324,7 @@ export async function getStudentRoster(branchId: string | null, limit = 500) {
       whatsapp: String(row.whatsappNumber || phone),
       email: String(row.email || "—"),
       fee: standing.total,
+      invoiced,
       paid: standing.paid,
       balance: standing.balance,
       status,
@@ -406,7 +411,8 @@ export async function createStudent(branchId: string, input: Record<string, unkn
       body = trimmed;
       continue;
     }
-    throw new Error(error.message);
+    // A typed gender reaches the Gender enum until free-text-choices.sql is run.
+    throw new Error(describeEnumRejection(error, "Could not save the student"));
   }
   throw new Error("Could not allocate an application number");
 }
@@ -1441,13 +1447,13 @@ export async function createEnquiry(branchId: string, input: Record<string, unkn
     visitTime: input.visitTime || new Date().toTimeString().slice(0, 5),
   };
   const { data, error } = await supabase.from("visit_enquiries").insert(payload).select("*").single();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(describeEnumRejection(error, "Could not register the visit"));
   return { success: true, data };
 }
 
 export async function updateEnquiry(id: string, branchId: string, input: Record<string, unknown>) {
   const { data, error } = await supabase.from("visit_enquiries").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(describeEnumRejection(error, "Could not update the visit"));
   return { success: true, data };
 }
 
@@ -1582,6 +1588,21 @@ export async function getBranches(organizationId: string | null) {
  */
 const BRANCH_OPTIONAL_COLUMNS = ["onlineFeePayment", "studentPortal", "parentPortal"];
 
+/** `branch_addresses.mapLink` arrives with add-branch-map-link.sql. Until that
+ *  is run the address write must still go through without it, or creating a
+ *  branch fails outright over a field that is optional on the form. */
+const ADDRESS_OPTIONAL_COLUMNS = ["mapLink"];
+
+const withoutOptionalAddressColumns = (input: Record<string, unknown>) => {
+  const out = { ...input };
+  for (const column of ADDRESS_OPTIONAL_COLUMNS) delete out[column];
+  return out;
+};
+
+const isMissingAddressColumn = (error: { code?: string; message?: string } | null) =>
+  error?.code === "PGRST204" &&
+  ADDRESS_OPTIONAL_COLUMNS.some((column) => error?.message?.includes(column));
+
 const withoutOptionalBranchColumns = (input: Record<string, unknown>) => {
   const out = { ...input };
   for (const column of BRANCH_OPTIONAL_COLUMNS) delete out[column];
@@ -1654,7 +1675,10 @@ async function insertBranchRow(payload: Record<string, unknown>) {
     ({ data, error } = await attempt(withoutOptionalBranchColumns(payload)));
   }
   if (error) {
-    throw new Error((await describeBranchConflict(error, payload)) || error.message);
+    throw new Error(
+      (await describeBranchConflict(error, payload)) ||
+        describeEnumRejection(error, "Could not create the branch"),
+    );
   }
   return data;
 }
@@ -1673,15 +1697,27 @@ export async function getBranchesWithStats(organizationId: string | null) {
   const ids = (branches as Record<string, unknown>[]).map((b) => b.id as string);
   if (!ids.length) return { success: true, data: [] as Record<string, unknown>[] };
 
+  // `mapLink` only exists once add-branch-map-link.sql has run. Asking for a
+  // column that is not there fails the whole select, which would blank the
+  // location of every branch -- so it is asked for, then asked for without.
+  const addressSelect = async () => {
+    const wanted = await supabase
+      .from("branch_addresses")
+      .select("branchId, city, state, mapLink")
+      .in("branchId", ids);
+    if (!wanted.error) return wanted;
+    return supabase.from("branch_addresses").select("branchId, city, state").in("branchId", ids);
+  };
+
   const [addresses, licenses, students, invoices, wallets] = await Promise.all([
-    supabase.from("branch_addresses").select("branchId, city, state").in("branchId", ids),
+    addressSelect(),
     supabase.from("branch_licenses").select("branchId, expiryDate").in("branchId", ids),
     supabase.from("students").select("id, branchId").in("branchId", ids).is("deletedAt", null),
     supabase.from("fee_invoices").select("branchId, totalAmount, paidAmount").in("branchId", ids),
     supabase.from("branch_wallets").select("branchId, balance").in("branchId", ids),
   ]);
 
-  const addressFor = new Map<string, { city?: string; state?: string }>();
+  const addressFor = new Map<string, { city?: string; state?: string; mapLink?: string }>();
   for (const row of addresses.data || []) addressFor.set(row.branchId as string, row);
   const expiryFor = new Map<string, string>();
   for (const row of licenses.data || []) expiryFor.set(row.branchId as string, row.expiryDate as string);
@@ -1718,6 +1754,7 @@ export async function getBranchesWithStats(organizationId: string | null) {
         ...b,
         city: addressFor.get(id)?.city || "",
         state: addressFor.get(id)?.state || "",
+        mapLink: addressFor.get(id)?.mapLink || "",
         expiryDate: expiryFor.get(id) || "",
         students: studentsFor.get(id) || 0,
         staff: Number(b.numFaculty) || 0,
@@ -1748,15 +1785,20 @@ export async function createBranchWithDetails(
 
   const branchId = branch.id as string;
   try {
-    const { error: addressError } = await supabase
-      .from("branch_addresses")
-      .insert({ ...input.address, branchId });
+    const address = { ...input.address, branchId };
+    let { error: addressError } = await supabase.from("branch_addresses").insert(address);
+    if (addressError && isMissingAddressColumn(addressError)) {
+      ({ error: addressError } = await supabase
+        .from("branch_addresses")
+        .insert(withoutOptionalAddressColumns(address)));
+    }
     if (addressError) throw new Error(addressError.message);
 
     const { error: directorError } = await supabase
       .from("branch_directors")
       .insert({ ...input.director, branchId });
-    if (directorError) throw new Error(directorError.message);
+    // The director's gender is an enum until free-text-choices.sql is run.
+    if (directorError) throw new Error(describeEnumRejection(directorError, "Could not save the director"));
 
     if (input.license) {
       const { error: licenseError } = await supabase
@@ -1790,7 +1832,10 @@ export async function updateBranch(id: string, organizationId: string, input: Re
   if (error && isMissingBranchColumn(error)) {
     ({ data, error } = await attempt(withoutOptionalBranchColumns(input)));
   }
-  if (error) throw new Error(error.message);
+  // A typed institute type reaches an enum column on a database where
+  // free-text-choices.sql has not been run; say so rather than passing on
+  // Postgres naming a type nobody asked about.
+  if (error) throw new Error(describeEnumRejection(error, "Could not save the branch"));
   return { success: true, data };
 }
 
@@ -1928,10 +1973,12 @@ export async function updateBranchWithDetails(
 ) {
   const result = await updateBranch(id, organizationId, input.branch);
   if (input.address) {
-    const { error } = await supabase
-      .from("branch_addresses")
-      .update(input.address)
-      .eq("branchId", id);
+    const update = (body: Record<string, unknown>) =>
+      supabase.from("branch_addresses").update(body).eq("branchId", id);
+    let { error } = await update(input.address);
+    if (error && isMissingAddressColumn(error)) {
+      ({ error } = await update(withoutOptionalAddressColumns(input.address)));
+    }
     if (error) throw new Error(error.message);
   }
   if (input.director) {
@@ -1939,7 +1986,7 @@ export async function updateBranchWithDetails(
       .from("branch_directors")
       .update(input.director)
       .eq("branchId", id);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(describeEnumRejection(error, "Could not save the director"));
   }
   if (input.license) {
     const { error } = await supabase

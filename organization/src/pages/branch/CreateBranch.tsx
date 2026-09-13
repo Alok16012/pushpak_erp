@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { createBranchWithDetails, createBranchLogin, getBranches } from "@/lib/supabase/data";
 import { canonicalState } from "@/data/indianStates";
+import { storedChoice } from "@/lib/choices";
 
 interface Branch {
   id: string;
@@ -40,6 +41,10 @@ const REQUIRED: Array<[string, string]> = [
   ["adminUsername", "Admin Username"],
   ["adminPassword", "Admin Password"],
 ];
+
+/** The enum members these two fields have; anything else was typed in. */
+const INSTITUTE_TYPES = ["computer", "typing", "paramedical", "other"];
+const GENDERS = ["male", "female", "other"];
 
 /** Legacy free-text entries may still be slugged or lowercase. */
 const titleCase = (value: string) =>
@@ -121,7 +126,9 @@ export default function CreateBranch() {
         name: value("branchName"),
         code,
         branchType: (value("branchType") || "sub").toUpperCase(),
-        instituteType: (value("instituteType") || "other").toUpperCase(),
+        // A known type goes in as the enum member; one that was typed goes in
+        // as it was written, rather than shouted as "COACHING CENTRE".
+        instituteType: storedChoice(value("instituteType"), INSTITUTE_TYPES),
         academicYear: value("academicYear"),
         establishedYear: Number(value("establishedYear")) || null,
         website: value("website") || null,
@@ -148,13 +155,14 @@ export default function CreateBranch() {
         block: value("block") || null,
         city: value("city"),
         pincode: value("pincode"),
+        mapLink: value("mapLink") || null,
         latitude: value("latitude") ? Number(value("latitude")) : null,
         longitude: value("longitude") ? Number(value("longitude")) : null,
         country: titleCase(value("country")) || "India",
       },
       director: {
         name: value("directorName"),
-        gender: value("directorGender").toUpperCase(),
+        gender: storedChoice(value("directorGender"), GENDERS),
         dob: new Date(value("directorDOB")).toISOString(),
         bloodGroup: value("directorBloodGroup") || null,
       },

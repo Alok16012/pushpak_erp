@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
+import { storedChoice } from "@/lib/choices";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +45,10 @@ import { isoOrNull, dateInputValue } from "@/lib/dates";
 import { INDIAN_STATES, canonicalState, districtsFor } from "@/data/indianStates";
 import { lookupPincode, geocode } from "@/lib/postal";
 
+/** What the InstituteType and Gender enums hold; anything else was typed in. */
+const INSTITUTE_TYPES = ["COMPUTER", "TYPING", "PARAMEDICAL", "OTHER"];
+const GENDERS = ["MALE", "FEMALE", "OTHER"];
+
 /**
  * The register row: the branch columns plus the bits gathered from its
  * address, licence and student/fee counts.
@@ -54,6 +60,8 @@ interface Branch {
   branchType: string;
   city: string;
   state: string;
+  /** The shared map link, when the branch has one. */
+  mapLink: string;
   students: number;
   staff: number;
   revenue: number;
@@ -97,8 +105,24 @@ const columns: Column<Branch>[] = [
   {
     key: "city",
     header: "Location",
+    // The written location, and the pin itself where one was shared: a lane
+    // with no name is found by the link and by nothing else.
     cell: (branch) => (
-      <span>{[branch.city, branch.state].filter(Boolean).join(", ") || "—"}</span>
+      <div className="space-y-0.5">
+        <span>{[branch.city, branch.state].filter(Boolean).join(", ") || "—"}</span>
+        {branch.mapLink && (
+          <a
+            href={branch.mapLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            <MapPin className="h-3 w-3" />
+            Map
+          </a>
+        )}
+      </div>
     ),
   },
   {
@@ -206,6 +230,9 @@ interface BranchEdit {
   latitude: number | "";
   longitude: number | "";
   country: string;
+  /** A shared Google Maps link. The written address and the pin are not the
+   *  same thing -- a lane with no name is found by the link and nothing else. */
+  mapLink: string;
   // director
   directorName: string;
   directorGender: string;
@@ -434,7 +461,7 @@ export default function ViewBranch() {
           name: d.name as string,
           code: d.code as string,
           branchType: d.branchType as string,
-          instituteType: (d.instituteType as string) || "OTHER",
+          instituteType: (d.instituteType as string) || "",
           academicYear: (d.academicYear as string) || "",
           establishedYear: (d.establishedYear as number) ?? "",
           website: (d.website as string) || "",
@@ -462,6 +489,7 @@ export default function ViewBranch() {
           latitude: (addr.latitude as number) ?? "",
           longitude: (addr.longitude as number) ?? "",
           country: (addr.country as string) || "India",
+          mapLink: (addr.mapLink as string) || "",
           directorName: (dir.name as string) || "",
           directorGender: (dir.gender as string) || "",
           directorDOB: dateInputValue(dir.dob),
@@ -544,7 +572,7 @@ export default function ViewBranch() {
           name: editing.name,
           code: editing.code,
           branchType: editing.branchType.toUpperCase(),
-          instituteType: editing.instituteType.toUpperCase(),
+          instituteType: storedChoice(editing.instituteType, INSTITUTE_TYPES),
           academicYear: editing.academicYear,
           establishedYear: editing.establishedYear === "" ? null : Number(editing.establishedYear),
           website: editing.website || null,
@@ -574,10 +602,11 @@ export default function ViewBranch() {
           latitude: editing.latitude === "" ? null : Number(editing.latitude),
           longitude: editing.longitude === "" ? null : Number(editing.longitude),
           country: editing.country || "India",
+          mapLink: editing.mapLink.trim() || null,
         },
         director: {
           name: editing.directorName,
-          gender: editing.directorGender.toUpperCase(),
+          gender: storedChoice(editing.directorGender, GENDERS),
           dob: isoOrNull(editing.directorDOB) ?? new Date().toISOString(),
           bloodGroup: editing.directorBloodGroup || null,
         },
@@ -816,7 +845,7 @@ export default function ViewBranch() {
                   name: d.name as string,
                   code: d.code as string,
                   branchType: d.branchType as string,
-                  instituteType: (d.instituteType as string) || "OTHER",
+                  instituteType: (d.instituteType as string) || "",
                   academicYear: (d.academicYear as string) || "",
                   establishedYear: (d.establishedYear as number) ?? "",
                   website: (d.website as string) || "",
@@ -844,6 +873,7 @@ export default function ViewBranch() {
                   latitude: (addr.latitude as number) ?? "",
                   longitude: (addr.longitude as number) ?? "",
                   country: (addr.country as string) || "India",
+                  mapLink: (addr.mapLink as string) || "",
                   directorName: (dir.name as string) || "",
                   directorGender: (dir.gender as string) || "",
                   directorDOB: dateInputValue(dir.dob),
@@ -912,15 +942,17 @@ export default function ViewBranch() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-instituteType">Institute Type</Label>
-                    <Select value={editing.instituteType} onValueChange={(value) => setEditing({ ...editing, instituteType: value })}>
-                      <SelectTrigger id="edit-instituteType"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SCHOOL">School</SelectItem>
-                        <SelectItem value="COLLEGE">College</SelectItem>
-                        <SelectItem value="COACHING">Coaching</SelectItem>
-                        <SelectItem value="OTHER">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {/* The three the InstituteType enum actually has -- School,
+                        College and Coaching were offered here but rejected by
+                        the column -- and anything else is typed in. */}
+                    <SelectWithCustom
+                      id="edit-instituteType"
+                      value={editing.instituteType}
+                      onValueChange={(value) => setEditing({ ...editing, instituteType: value })}
+                      options={["COMPUTER", "TYPING", "PARAMEDICAL"]}
+                      placeholder="Select institute type"
+                      customPlaceholder="Type the institute type"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-academicYear">Academic Year</Label>
@@ -1039,6 +1071,27 @@ export default function ViewBranch() {
                     <Label htmlFor="edit-longitude">Longitude</Label>
                     <Input id="edit-longitude" type="number" step="any" value={editing.longitude} onChange={(e) => setEditing({ ...editing, longitude: e.target.value === "" ? "" : Number(e.target.value) })} />
                   </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="edit-mapLink">Map link</Label>
+                    <Input
+                      id="edit-mapLink"
+                      type="url"
+                      placeholder="https://maps.app.goo.gl/…"
+                      value={editing.mapLink}
+                      onChange={(e) => setEditing({ ...editing, mapLink: e.target.value })}
+                    />
+                    {editing.mapLink.trim() && (
+                      <a
+                        href={editing.mapLink.trim()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <MapPin className="h-3 w-3" />
+                        Open this link
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1075,14 +1128,14 @@ export default function ViewBranch() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-directorGender">Gender</Label>
-                    <Select value={editing.directorGender} onValueChange={(value) => setEditing({ ...editing, directorGender: value })}>
-                      <SelectTrigger id="edit-directorGender"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="MALE">Male</SelectItem>
-                        <SelectItem value="FEMALE">Female</SelectItem>
-                        <SelectItem value="OTHER">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SelectWithCustom
+                      id="edit-directorGender"
+                      value={editing.directorGender}
+                      onValueChange={(value) => setEditing({ ...editing, directorGender: value })}
+                      options={["MALE", "FEMALE"]}
+                      placeholder="Select gender"
+                      customPlaceholder="Type the gender"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-directorDOB">Date of Birth</Label>

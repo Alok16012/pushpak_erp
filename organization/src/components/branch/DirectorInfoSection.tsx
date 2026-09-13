@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { User } from "lucide-react";
 import { UploadTile } from "./UploadTile";
 
@@ -24,16 +25,16 @@ export function DirectorInfoSection() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="directorGender">Gender *</Label>
-            <Select name="directorGender">
-              <SelectTrigger id="directorGender">
-                <SelectValue placeholder="Select gender" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="male">Male</SelectItem>
-                <SelectItem value="female">Female</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
+            <SelectWithCustom
+              id="directorGender"
+              name="directorGender"
+              options={[
+                { value: "male", label: "Male" },
+                { value: "female", label: "Female" },
+              ]}
+              placeholder="Select gender"
+              customPlaceholder="Type the gender"
+            />
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">

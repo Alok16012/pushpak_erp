@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ArrowDownLeft, ArrowLeft, ArrowRight, ArrowUpRight, Check, Download, Filter, MoreHorizontal, Package, Plus, Save, Search, SlidersHorizontal, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -487,21 +488,21 @@ export default function ItemMovementWorkspace() {
                       <Input value={draft.itemId} onChange={(e) => setDraftField("itemId", e.target.value)} placeholder="e.g. ITM-1043 (optional)" />
                     </Field>
                     <Field label="Item based Section / Category">
-                      <Select value={draft.category} onValueChange={(v) => setDraftField("category", v)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="stationery">Stationery</SelectItem>
-                          <SelectItem value="equipment">Equipment</SelectItem>
-                          <SelectItem value="electronics">Electronics</SelectItem>
-                          <SelectItem value="books">Books & Journals</SelectItem>
-                          <SelectItem value="chemicals">Chemicals / Lab</SelectItem>
-                          <SelectItem value="sports">Sports</SelectItem>
-                          <SelectItem value="certificates">Certificates</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <SelectWithCustom
+                        value={draft.category}
+                        onValueChange={(v) => setDraftField("category", v)}
+                        options={[
+                          { value: "stationery", label: "Stationery" },
+                          { value: "equipment", label: "Equipment" },
+                          { value: "electronics", label: "Electronics" },
+                          { value: "books", label: "Books & Journals" },
+                          { value: "chemicals", label: "Chemicals / Lab" },
+                          { value: "sports", label: "Sports" },
+                          { value: "certificates", label: "Certificates" },
+                        ]}
+                        placeholder="Select category"
+                        customPlaceholder="Type the category"
+                      />
                     </Field>
                   </div>
                   <Field label="Item name">

@@ -13,6 +13,10 @@
  * data.ts explains that rather than passing on the raw Postgres text.
  */
 
+/** Every member of the enum. OTHER is still a value the column accepts and is
+ *  still offered on a course already filed under it, but it is no longer in the
+ *  picker: "Other (type your own)…" is there instead, and a named category is
+ *  worth more than a bin. */
 export const KNOWN_COURSE_CATEGORIES = [
   "COMPUTER",
   "VOCATIONAL",
@@ -23,8 +27,10 @@ export const KNOWN_COURSE_CATEGORIES = [
   "OTHER",
 ] as const;
 
-/** The sentinel the Select carries while a custom category is being typed. */
-export const CUSTOM_CATEGORY = "__custom__";
+/** What the picker offers, before anything already saved is added to it. */
+export const OFFERED_COURSE_CATEGORIES = KNOWN_COURSE_CATEGORIES.filter(
+  (category) => category !== "OTHER",
+);
 
 /** COMPUTER -> "Computer", SKILL_DEVELOPMENT -> "Skill development". */
 export function courseCategoryLabel(value: string): string {
@@ -40,7 +46,7 @@ export function courseCategoryLabel(value: string): string {
  * retyped from memory.
  */
 export function courseCategoryOptions(used: Array<string | undefined>): string[] {
-  const seen = new Set<string>(KNOWN_COURSE_CATEGORIES);
+  const seen = new Set<string>(OFFERED_COURSE_CATEGORIES);
   for (const value of used) {
     const trimmed = (value || "").trim();
     if (trimmed) seen.add(trimmed);

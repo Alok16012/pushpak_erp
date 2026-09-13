@@ -3,14 +3,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { Switch } from "@/components/ui/switch";
 import { Building2 } from "lucide-react";
 
+/** The three the register knows. Anything else is typed in, not filed as
+ *  "Other" -- a coaching centre is worth knowing about by name. */
 const instituteTypes = [
   { value: "computer", label: "Computer Institute" },
   { value: "typing", label: "Typing Institute" },
   { value: "paramedical", label: "Paramedical Institute" },
-  { value: "other", label: "Other" },
 ];
 
 const academicYears = [
@@ -53,18 +55,13 @@ export function BranchInfoSection() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="instituteType">Institute Type *</Label>
-            <Select name="instituteType">
-              <SelectTrigger id="instituteType">
-                <SelectValue placeholder="Select institute type" />
-              </SelectTrigger>
-              <SelectContent>
-                {instituteTypes.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SelectWithCustom
+              id="instituteType"
+              name="instituteType"
+              options={instituteTypes}
+              placeholder="Select institute type"
+              customPlaceholder="Type the institute type"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="academicYear">Academic Year *</Label>

@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,7 +90,6 @@ const PURPOSES = [
   "Complaint",
   "Delivery",
   "Interview",
-  "Other",
 ];
 const DEPARTMENTS = [
   "Administration",
@@ -107,7 +107,6 @@ const SOURCES = [
   "Social Media",
   "Referral",
   "Advertisement",
-  "Other",
 ];
 const CALL_TYPES = ["Incoming", "Outgoing"];
 
@@ -770,21 +769,13 @@ export default function EnquiriesWorkspace() {
                         />
                       </Field>
                       <Field label="Source">
-                        <Select
+                        <SelectWithCustom
                           value={draft.source}
                           onValueChange={(v) => update("source", v)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select source" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SOURCES.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          options={SOURCES}
+                          placeholder="Select source"
+                          customPlaceholder="Type the source"
+                        />
                       </Field>
                     </div>
 
@@ -841,21 +832,13 @@ export default function EnquiriesWorkspace() {
                   <div className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Purpose of Visit *" required>
-                        <Select
+                        <SelectWithCustom
                           value={draft.purpose}
                           onValueChange={(v) => update("purpose", v)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select purpose" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PURPOSES.map((p) => (
-                              <SelectItem key={p} value={p}>
-                                {p}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          options={PURPOSES}
+                          placeholder="Select purpose"
+                          customPlaceholder="Type the purpose"
+                        />
                       </Field>
                       <Field label="Person to Meet *" required>
                         <Input

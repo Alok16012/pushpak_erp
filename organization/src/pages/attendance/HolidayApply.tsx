@@ -12,12 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { CalendarCheck, Check, Clock3, Download, FileText, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadCsv } from "@/lib/export";
 
-type HolidayType = "public_holiday" | "casual_leave" | "sick_leave" | "earned_leave" | "other";
+/** The four the office keeps to, or whatever else was typed in its place. */
+type HolidayType = string;
 
 interface Employee {
   id: string;
@@ -47,7 +49,6 @@ const HOLIDAY_TYPES: { value: HolidayType; label: string }[] = [
   { value: "casual_leave", label: "Casual Leave" },
   { value: "sick_leave", label: "Sick Leave" },
   { value: "earned_leave", label: "Earned Leave" },
-  { value: "other", label: "Other" },
 ];
 
 /** Seeded employee list matching the app's user metadata shape. */
@@ -355,16 +356,13 @@ export default function HolidayApply() {
                 )}
                 <div>
                   <Label>Holiday / Leave Type</Label>
-                  <Select value={holidayType} onValueChange={(v) => setHolidayType(v as HolidayType)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {HOLIDAY_TYPES.map((h) => (
-                        <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SelectWithCustom
+                    value={holidayType}
+                    onValueChange={setHolidayType}
+                    options={HOLIDAY_TYPES}
+                    placeholder="Select type"
+                    customPlaceholder="Type the leave type"
+                  />
                 </div>
                 <div>
                   <Label>From Date</Label>
