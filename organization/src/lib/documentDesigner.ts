@@ -40,7 +40,10 @@ export type DocumentKind =
   | "marksheet"
   | "student-id"
   | "staff-id"
-  | "admit-card";
+  | "admit-card"
+  | "student-award"
+  | "branch-award"
+  | "centre-certificate";
 
 export interface DocumentKindMeta {
   label: string;
@@ -110,6 +113,11 @@ export const TOKEN_LABELS: Record<string, string> = {
   percentage: "Percentage",
   institute: "Institute",
   designation: "Designation",
+  award_title: "Award title",
+  award_reason: "Awarded for",
+  academic_year: "Academic year",
+  centre_code: "Centre code",
+  centre_head: "Centre head",
 };
 
 export type TokenData = Record<string, string>;
@@ -139,6 +147,11 @@ export const SAMPLE_DATA: TokenData = {
   percentage: "88.4%",
   institute: "Ideal Digiskills",
   designation: "Trainer",
+  award_title: "Award of Excellence",
+  award_reason: "outstanding performance and conduct",
+  academic_year: "2026-27",
+  centre_code: "IDS-MH-014",
+  centre_head: "Centre Head",
 };
 
 /** `{{ student_name }}` -> the value, leaving unknown tokens visible on purpose. */
@@ -256,13 +269,79 @@ function admitCard(): DocElement[] {
   ];
 }
 
+/** An award, not a completion: the course is not what is being certified, the
+ *  reason for the award is -- so the middle of the page is the citation. */
+function studentAward(): DocElement[] {
+  return [
+    element("shape", { x: 30, y: 30, width: 940, height: 647, border: border("#0f766e", 8), radius: 5, z: 1 }),
+    element("text", { x: 180, y: 80, width: 640, height: 50, text: "{{institute}}", fontSize: 26, fontWeight: "700", color: "#0f766e" }),
+    element("text", { x: 150, y: 135, width: 700, height: 55, text: "STUDENT AWARD", fontSize: 36, fontWeight: "800", color: "#134e4a" }),
+    element("text", { x: 300, y: 205, width: 400, height: 36, text: "Presented to", fontSize: 19 }),
+    element("text", { x: 180, y: 245, width: 640, height: 70, text: "{{student_name}}", fontSize: 44, fontWeight: "800", color: "#1e3a8a" }),
+    element("text", { x: 200, y: 330, width: 600, height: 45, text: "{{award_title}}", fontSize: 28, fontWeight: "700", color: "#b45309" }),
+    element("text", { x: 180, y: 385, width: 640, height: 40, text: "In recognition of {{award_reason}}", fontSize: 18, color: "#334155" }),
+    element("text", { x: 180, y: 425, width: 640, height: 36, text: "{{course_name}} · {{batch_name}} · {{academic_year}}", fontSize: 16, color: "#475569" }),
+    element("text", { x: 80, y: 550, width: 280, height: 30, text: "Certificate ID: {{certificate_id}}", fontSize: 15, align: "left" }),
+    element("text", { x: 380, y: 550, width: 280, height: 30, text: "{{branch_name}}", fontSize: 17, fontWeight: "700" }),
+    element("text", { x: 380, y: 585, width: 280, height: 30, text: "Issued {{issue_date}}", fontSize: 14, color: "#475569" }),
+    element("text", { x: 680, y: 600, width: 240, height: 30, text: "Authorised signatory", fontSize: 14 }),
+    element("qr", { x: 790, y: 480, width: 100, height: 100 }),
+  ];
+}
+
+/** The same award, given to a branch rather than a student -- so the name in
+ *  the middle is the branch, and the citation is its year's performance. */
+function branchAward(): DocElement[] {
+  return [
+    element("shape", { x: 30, y: 30, width: 940, height: 647, border: border("#1d4ed8", 8), radius: 5, z: 1 }),
+    element("text", { x: 180, y: 80, width: 640, height: 50, text: "{{institute}}", fontSize: 26, fontWeight: "700", color: "#1d4ed8" }),
+    element("text", { x: 150, y: 135, width: 700, height: 55, text: "BRANCH AWARD", fontSize: 36, fontWeight: "800", color: "#1e3a8a" }),
+    element("text", { x: 300, y: 205, width: 400, height: 36, text: "Awarded to the branch", fontSize: 19 }),
+    element("text", { x: 180, y: 245, width: 640, height: 70, text: "{{branch_name}}", fontSize: 42, fontWeight: "800", color: "#1e3a8a" }),
+    element("text", { x: 200, y: 330, width: 600, height: 45, text: "{{award_title}}", fontSize: 28, fontWeight: "700", color: "#b45309" }),
+    element("text", { x: 180, y: 385, width: 640, height: 40, text: "For {{award_reason}}", fontSize: 18, color: "#334155" }),
+    element("text", { x: 180, y: 425, width: 640, height: 36, text: "Academic year {{academic_year}} · Centre code {{centre_code}}", fontSize: 16, color: "#475569" }),
+    element("text", { x: 80, y: 550, width: 280, height: 30, text: "Certificate ID: {{certificate_id}}", fontSize: 15, align: "left" }),
+    element("text", { x: 380, y: 550, width: 280, height: 30, text: "{{institute}}", fontSize: 17, fontWeight: "700" }),
+    element("text", { x: 380, y: 585, width: 280, height: 30, text: "Issued {{issue_date}}", fontSize: 14, color: "#475569" }),
+    element("text", { x: 680, y: 600, width: 240, height: 30, text: "Authorised signatory", fontSize: 14 }),
+    element("qr", { x: 790, y: 480, width: 100, height: 100 }),
+  ];
+}
+
+/** What a franchised centre puts on its wall: that it is authorised to run the
+ *  institute's courses, for a stated period. */
+function centreCertificate(): DocElement[] {
+  return [
+    element("shape", { x: 30, y: 30, width: 940, height: 647, border: border("#7c2d12", 8), radius: 5, z: 1 }),
+    element("text", { x: 180, y: 75, width: 640, height: 50, text: "{{institute}}", fontSize: 26, fontWeight: "700", color: "#7c2d12" }),
+    element("text", { x: 130, y: 130, width: 740, height: 55, text: "CERTIFICATE OF AUTHORISATION", fontSize: 32, fontWeight: "800", color: "#7c2d12" }),
+    element("text", { x: 230, y: 200, width: 540, height: 36, text: "This is to certify that the centre", fontSize: 19 }),
+    element("text", { x: 180, y: 240, width: 640, height: 65, text: "{{branch_name}}", fontSize: 40, fontWeight: "800", color: "#1e3a8a" }),
+    element("text", { x: 180, y: 315, width: 640, height: 36, text: "{{address}}", fontSize: 16, color: "#475569" }),
+    element("text", { x: 180, y: 360, width: 640, height: 70, text: "is an authorised centre of {{institute}} and may conduct its courses and examinations for the academic year {{academic_year}}.", fontSize: 17, color: "#334155" }),
+    element("text", { x: 180, y: 445, width: 640, height: 36, text: "Centre code {{centre_code}} · Valid until {{valid_until}}", fontSize: 16, fontWeight: "700" }),
+    element("text", { x: 80, y: 550, width: 280, height: 30, text: "Certificate ID: {{certificate_id}}", fontSize: 15, align: "left" }),
+    element("text", { x: 380, y: 550, width: 280, height: 30, text: "{{centre_head}}", fontSize: 17, fontWeight: "700" }),
+    element("text", { x: 380, y: 585, width: 280, height: 30, text: "Issued {{issue_date}}", fontSize: 14, color: "#475569" }),
+    element("qr", { x: 790, y: 480, width: 100, height: 100 }),
+  ];
+}
+
 export const DOCUMENT_KINDS: Record<DocumentKind, DocumentKindMeta> = {
   certificate: { label: "Certificate", icon: "🏆", width: 1000, height: 707, starter: certificate },
   marksheet: { label: "Marksheet", icon: "📊", width: 800, height: 1100, starter: marksheet },
   "student-id": { label: "Student ID card", icon: "🎓", width: 1011, height: 638, starter: studentId },
   "staff-id": { label: "Staff ID card", icon: "👨‍🏫", width: 1011, height: 638, starter: staffId },
   "admit-card": { label: "Admit card", icon: "📝", width: 800, height: 1100, starter: admitCard },
+  "student-award": { label: "Student award certificate", icon: "🎖️", width: 1000, height: 707, starter: studentAward },
+  "branch-award": { label: "Branch award certificate", icon: "🏅", width: 1000, height: 707, starter: branchAward },
+  "centre-certificate": { label: "Centre certificate", icon: "🏛️", width: 1000, height: 707, starter: centreCertificate },
 };
+
+/** The order the picker offers them in: course paperwork first, then the
+ *  awards. Every kind belongs here, or it exists but cannot be chosen. */
+export const KIND_ORDER = Object.keys(DOCUMENT_KINDS) as DocumentKind[];
 
 export const DESIGN_STORAGE_KEY = "document-designer";
 

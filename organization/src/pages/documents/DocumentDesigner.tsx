@@ -38,6 +38,7 @@ import { printHtml } from "@/lib/export";
 import { getStudents, getCourses } from "@/lib/supabase/data";
 import {
   DOCUMENT_KINDS,
+  KIND_ORDER,
   type DocElement,
   type DocumentDesign,
   type DocumentKind,
@@ -52,14 +53,6 @@ import {
   starterDesign,
   usedTokens,
 } from "@/lib/documentDesigner";
-
-const KIND_ORDER: DocumentKind[] = [
-  "certificate",
-  "marksheet",
-  "student-id",
-  "staff-id",
-  "admit-card",
-];
 
 /** So `/certificate/template` and `/marksheet/template` open on the right one. */
 function kindFromPath(pathname: string, param: string | null): DocumentKind {

@@ -98,6 +98,24 @@ describe("document designer", () => {
     }
   });
 
+  /* The three awards the office hands out besides a course certificate: one to
+     a student, one to a branch, and the authorisation a centre puts on its
+     wall. Each is its own type, so each keeps its own saved layout. */
+  it.each([
+    ["student-award", "STUDENT AWARD"],
+    ["branch-award", "BRANCH AWARD"],
+    ["centre-certificate", "CERTIFICATE OF AUTHORISATION"],
+  ])("opens %s with a layout of its own", async (kind, heading) => {
+    renderAt(`/documents/designer?type=${kind}`);
+    await waitFor(() => expect(screen.getByText(heading)).toBeInTheDocument());
+  });
+
+  it("offers every document type in the picker", async () => {
+    // A kind missing from the order exists in the model but cannot be chosen.
+    const { DOCUMENT_KINDS, KIND_ORDER } = await import("@/lib/documentDesigner");
+    expect([...KIND_ORDER].sort()).toEqual(Object.keys(DOCUMENT_KINDS).sort());
+  });
+
   it("reads the type out of the query string", async () => {
     renderAt("/documents/designer?type=admit-card");
     await waitFor(() => expect(screen.getByText("ADMIT CARD")).toBeInTheDocument());
