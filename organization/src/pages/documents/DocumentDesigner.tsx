@@ -37,6 +37,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { printHtml } from "@/lib/export";
 import { getStudents, getCourses } from "@/lib/supabase/data";
 import {
+  instituteName as readInstituteName,
+  loadInstituteName,
+  saveInstituteName,
+} from "@/lib/instituteName";
+import {
   DOCUMENT_KINDS,
   KIND_ORDER,
   type DocElement,
@@ -128,7 +133,11 @@ export default function DocumentDesigner() {
   const [students, setStudents] = useState<StudentRow[]>([]);
   const [courses, setCourses] = useState<Array<{ id: string; name: string }>>([]);
   const [studentId, setStudentId] = useState("");
-  const [instituteName, setInstituteName] = useState(SAMPLE_DATA.institute);
+  // The name behind `{{institute}}` - and so behind the watermark, which was
+  // stuck reading "Ideal Digiskills" on every certificate this app produced.
+  // Saved on the branch so the PDF builders in documents.ts print it too.
+  const [institute, setInstitute] = useState(readInstituteName);
+  const [savingInstitute, setSavingInstitute] = useState(false);
   const [qrByElement, setQrByElement] = useState<Record<string, string>>({});
   // Per-kind history, so undo after a type switch cannot resurrect a foreign layout.
   const history = useRef<Record<string, { stack: string[]; index: number }>>({});
@@ -191,7 +200,21 @@ export default function DocumentDesigner() {
     getCourses(user?.organizationId, branchId)
       .then((r) => setCourses(r.data as Array<{ id: string; name: string }>))
       .catch(() => setCourses([]));
+    loadInstituteName(branchId).then(setInstitute);
   }, [user?.branchId, user?.organizationId]);
+
+  const persistInstitute = async () => {
+    setSavingInstitute(true);
+    const { stored } = await saveInstituteName(user?.branchId ?? null, institute);
+    setSavingInstitute(false);
+    setInstitute(readInstituteName());
+    toast({
+      title: "Institute name saved",
+      description: stored
+        ? "Every certificate, marksheet and watermark now carries it."
+        : "Saved in this browser only \u2014 no branch settings row to write it to.",
+    });
+  };
 
   /**
    * Sample values are the fallback, not the source: a chosen student overwrites
@@ -199,7 +222,7 @@ export default function DocumentDesigner() {
    * readable placeholder for the ones it cannot.
    */
   const data: TokenData = useMemo(() => {
-    const base: TokenData = { ...SAMPLE_DATA, institute: instituteName };
+    const base: TokenData = { ...SAMPLE_DATA, institute };
     const student = students.find((s) => s.id === studentId);
     if (!student) return base;
     const name = [student.firstName, student.middleName, student.lastName]
@@ -230,7 +253,7 @@ export default function DocumentDesigner() {
       if (value) base[key] = value;
     }
     return base;
-  }, [students, studentId, courses, instituteName]);
+  }, [students, studentId, courses, institute]);
 
   // QR images are async, so they are rendered once per (element, payload) pair
   // and cached - regenerating inside render would loop forever.
@@ -847,11 +870,26 @@ export default function DocumentDesigner() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-2">
-                <Label>Institute name</Label>
-                <Input
-                  value={instituteName}
-                  onChange={(e) => setInstituteName(e.target.value)}
-                />
+                <Label htmlFor="institute-name">Institute name</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="institute-name"
+                    value={institute}
+                    onChange={(e) => setInstitute(e.target.value)}
+                  />
+                  <Button
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={savingInstitute || institute.trim() === readInstituteName()}
+                    onClick={persistInstitute}
+                  >
+                    {savingInstitute ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Fills {"{{institute}}"} everywhere it appears, watermark included,
+                  and the certificates generated outside the designer.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Preview with student</Label>

@@ -316,10 +316,15 @@ export function StudentRoster({
                   </div>
                 </td>
 
+                {/* The branch sits with the admission rather than in a column
+                    of its own: an organisation admin sees every branch in one
+                    list, and a thirteenth column would not fit. */}
                 <td className="px-4 py-3.5">
                   <span className="whitespace-nowrap text-sm font-medium">{student.admissionNo}</span>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {formatAdmissionDate(student.admissionDate)}
+                    {[formatAdmissionDate(student.admissionDate), student.branch]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                 </td>
 

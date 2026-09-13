@@ -33,6 +33,7 @@ import { formatPhone } from "@/lib/phone";
 import {
   getStudentRoster,
   getStudent,
+  getCourses,
   getStudentInvoices,
   deleteStudent,
   type StudentInvoice,
@@ -61,6 +62,10 @@ interface StudentDetail {
   fatherPhone?: string;
   motherName?: string;
   admissionStatus?: string;
+  courseId?: string;
+  /** The whole enrolment, primary course included. Absent until
+   *  add-multi-course-and-dropdowns.sql has run. */
+  courseIds?: string[];
   course?: { name: string };
   batch?: { name: string };
   attendance?: Array<{ date: string; status: string }>;
@@ -71,6 +76,7 @@ export default function ViewStudents() {
   const { toast } = useToast();
   const { user } = useAuth();
   const branchId = user?.branchId;
+  const organizationId = user?.organizationId;
 
   const [students, setStudents] = useState<StudentRosterRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,12 +135,30 @@ export default function ViewStudents() {
     toast({ title: "Exported", description: `${rows.length} students downloaded to CSV.` });
   };
 
+  /**
+   * Course names by id. `getStudent` returns the raw row, so `courseIds` is a
+   * list of ids and nothing on the page could turn them into names.
+   */
+  const [courseNames, setCourseNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    getCourses(organizationId ?? null)
+      .then((result) =>
+        setCourseNames(
+          Object.fromEntries(
+            (result.data as Array<{ id: string; name: string }>).map((c) => [c.id, c.name]),
+          ),
+        ),
+      )
+      // Only the "Other courses" line is lost, and it falls back to the ids.
+      .catch(() => setCourseNames({}));
+  }, [organizationId]);
+
   const [details, setDetails] = useState<StudentRosterRow | null>(null);
   const [detail, setDetail] = useState<StudentDetail | null>(null);
   const [detailTab, setDetailTab] = useState<"profile" | "fees">("profile");
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailInvoices, setDetailInvoices] = useState<StudentInvoice[] | null>(null);
-  const [editing, setEditing] = useState<StudentRosterRow | null>(null);
   const [pendingDelete, setPendingDelete] = useState<StudentRosterRow | null>(null);
 
   const openDetail = (student: StudentRosterRow, tab: "profile" | "fees") => {
@@ -152,20 +176,6 @@ export default function ViewStudents() {
     getStudentInvoices(student.id, branchId)
       .then((result) => setDetailInvoices(result.data))
       .catch(() => setDetailInvoices([]));
-  };
-
-  const saveEdit = () => {
-    if (!editing) return;
-    if (!editing.name.trim() || !editing.phone.trim()) {
-      toast({ title: "Name and phone are required", variant: "destructive" });
-      return;
-    }
-    setStudents((list) => list.map((s) => (s.id === editing.id ? editing : s)));
-    toast({
-      title: "Student updated",
-      description: "Applied to this session — the students API has no update endpoint yet.",
-    });
-    setEditing(null);
   };
 
   const confirmDelete = async () => {
@@ -217,7 +227,10 @@ export default function ViewStudents() {
         rows={students}
         loading={loading}
         onView={(student) => openDetail(student, "profile")}
-        onEdit={(student) => setEditing({ ...student })}
+        // The whole admission form, not a five-box dialog: every column on the
+        // record is editable there, and the five that used to be here were
+        // applied to the session and then thrown away.
+        onEdit={(student) => navigate(`/student/add?id=${student.id}`)}
         onDelete={setPendingDelete}
         onExport={exportCsv}
         onSetLogin={mayIssueLogin ? setLoginFor : undefined}
@@ -260,6 +273,16 @@ export default function ViewStudents() {
                     phone={detail?.phone ?? details.phone}
                     whatsapp={detail?.whatsappNumber ?? details.whatsapp}
                   />,
+                ],
+                ["Branch", details.branch || "—"],
+                // `course` is the primary one. A student on several was being
+                // shown one of them, with no sign the others existed.
+                [
+                  "Other courses",
+                  (detail?.courseIds ?? [])
+                    .filter((id) => id && id !== detail?.courseId)
+                    .map((id) => courseNames[id] || id)
+                    .join(", ") || "—",
                 ],
                 ["Gender", detail?.gender ?? "—"],
                 ["Date of birth", detail?.dateOfBirth ? new Date(detail.dateOfBirth).toLocaleDateString() : "—"],
@@ -344,65 +367,6 @@ export default function ViewStudents() {
               {detailTab === "profile" ? "Fee details" : "Profile"}
             </Button>
             <Button onClick={() => navigate("/fee/collection")}>Collect fee</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit {editing?.name}</DialogTitle>
-            <DialogDescription>{editing?.admissionNo}</DialogDescription>
-          </DialogHeader>
-          {editing && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="student-name">Name</Label>
-                <Input
-                  id="student-name"
-                  value={editing.name}
-                  onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="student-email">Email</Label>
-                <Input
-                  id="student-email"
-                  value={editing.email}
-                  onChange={(e) => setEditing({ ...editing, email: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="student-phone">Phone</Label>
-                <Input
-                  id="student-phone"
-                  value={editing.phone}
-                  onChange={(e) => setEditing({ ...editing, phone: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="student-father">Father / Guardian</Label>
-                <Input
-                  id="student-father"
-                  value={editing.fatherName}
-                  onChange={(e) => setEditing({ ...editing, fatherName: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="student-course">Course</Label>
-                <Input
-                  id="student-course"
-                  value={editing.course}
-                  onChange={(e) => setEditing({ ...editing, course: e.target.value })}
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
-            <Button onClick={saveEdit}>Save changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

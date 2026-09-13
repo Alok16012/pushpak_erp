@@ -19,6 +19,7 @@ const student = (overrides: Partial<StudentRosterRow> = {}): StudentRosterRow =>
   admissionDate: "2026-09-11T00:00:00.000Z",
   course: "ADCA AI",
   courseCode: "ADCA-AI",
+  branch: "Kothrud",
   courseFee: 2500,
   fatherName: "Ram Shekhar",
   fatherPhone: "+91 62057 86818",

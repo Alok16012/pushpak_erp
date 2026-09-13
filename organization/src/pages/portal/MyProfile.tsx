@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { pickImage } from "@/lib/export";
 import { getStudentProfile } from "@/lib/supabase/data";
@@ -31,6 +32,8 @@ export default function MyProfile() {
   const branchId = user?.branchId;
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [form, setForm] = useState<StudentProfile | null>(null);
+  /** Every course this student is enrolled on, not just the primary one. */
+  const [courses, setCourses] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
@@ -48,6 +51,7 @@ export default function MyProfile() {
         if (cancelled) return;
         setProfile(result.data);
         setForm(result.data);
+        setCourses(result.data.courses);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -123,6 +127,16 @@ export default function MyProfile() {
                 </Avatar>
                 <h2 className="mt-4 text-lg font-semibold">{form.name}</h2>
                 <p className="text-sm text-muted-foreground">{form.course || "Course not assigned"}</p>
+                {/* Only worth the room when there is a second course to show. */}
+                {courses.length > 1 && (
+                  <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                    {courses.map((course) => (
+                      <Badge key={course} variant="secondary" className="font-normal">
+                        {course}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
                 {/* A student with no batch yet would otherwise read " · Kothrud". */}
                 <p className="mt-1 text-xs text-muted-foreground">{[form.batch, form.branch].filter(Boolean).join(" · ")}</p>
                 <div className="mt-4 flex justify-center gap-2">
@@ -137,8 +151,16 @@ export default function MyProfile() {
               <CardContent className="space-y-3">
                 {READ_ONLY.map((field) => (
                   <div key={field.key} className="flex items-start justify-between gap-3 border-b pb-3 last:border-0 last:pb-0">
-                    <span className="text-xs text-muted-foreground">{field.label}</span>
-                    <span className="text-right text-sm font-medium">{String(form[field.key] ?? "").trim() || "—"}</span>
+                    {/* `course` is the primary one; a student on several wants
+                        to see all of them on their own record. */}
+                    <span className="text-xs text-muted-foreground">
+                      {field.key === "course" && courses.length > 1 ? "Courses" : field.label}
+                    </span>
+                    <span className="text-right text-sm font-medium">
+                      {field.key === "course" && courses.length > 1
+                        ? courses.join(", ")
+                        : String(form[field.key] ?? "").trim() || "—"}
+                    </span>
                   </div>
                 ))}
                 <p className="pt-1 text-xs text-muted-foreground">Something wrong here? Raise it from ID &amp; admit card → Request a document.</p>

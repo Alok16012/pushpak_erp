@@ -13,8 +13,18 @@ import {
 } from "@/components/ui/select";
 import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, FileText, Save, Upload, X } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { EditableSelect } from "@/components/ui/EditableSelect";
+import { MultiSelect } from "@/components/ui/MultiSelect";
 import { pickImage } from "@/lib/export";
-import { getCourses, getBatches, createStudent, getBranches } from "@/lib/supabase/data";
+import {
+  getCourses,
+  getBatches,
+  createStudent,
+  getStudent,
+  updateStudent,
+  getBranches,
+} from "@/lib/supabase/data";
 import { INDIAN_STATES, districtsFor } from "@/data/indianStates";
 import { citiesFor } from "@/data/indianCities";
 import { useAuth } from "@/contexts/AuthContext";
@@ -52,7 +62,10 @@ type Draft = {
   branchId: string;
   academicYear: string;
   admissionDate: string;
+  /** The primary course, which every invoice, certificate and report reads. */
   courseId: string;
+  /** Every course this student is enrolled on, the primary one included. */
+  courseIds: string[];
   batchId: string;
   section: string;
   /** The roll number the branch assigns. Not `tenthRollNo`, which is the board's. */
@@ -111,6 +124,7 @@ const blank: Draft = {
   academicYear: "",
   admissionDate: "",
   courseId: "",
+  courseIds: [],
   batchId: "",
   section: "",
   rollNo: "",
@@ -189,21 +203,67 @@ const DOCUMENT_ACCEPT = "application/pdf,image/png,image/jpeg";
 /** Base64 inflates a file by about a third, and several of these share one row. */
 const DOCUMENT_MAX_BYTES = 2 * 1024 * 1024;
 const DOCUMENTS_KEY = "admission-draft-documents";
-const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-const CATEGORIES = ["General", "OBC", "SC", "ST", "EWS"];
-/** The boards the form knows; a board it does not know is typed in by name,
- *  rather than every one of them being filed as "Other". */
-const BOARDS = ["CBSE", "ICSE", "State Board", "NIOS"];
-const STREAMS = ["Science", "Commerce", "Arts", "Vocational"];
-const RELATIONS = ["Uncle", "Aunt", "Grandparent", "Sibling", "Family friend"];
+
+/** Columns the form does not edit, so an edit never tries to write them back. */
+const READ_ONLY_COLUMNS = [
+  "id",
+  "branchId",
+  "organizationId",
+  "userId",
+  "applicationNo",
+  "enrollmentNo",
+  "createdAt",
+  "updatedAt",
+  "deletedAt",
+];
+
+/** Date columns are timestamps; every date input on the form wants yyyy-mm-dd. */
+const asDateInput = (value: unknown) => {
+  const text = String(value ?? "");
+  if (!text) return "";
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? text.slice(0, 10) : date.toISOString().slice(0, 10);
+};
+
+/**
+ * A `students` row as this form's draft. Every key of `blank` is read back, so
+ * a column the form knows about is never silently left at its placeholder.
+ */
+function draftFromRecord(row: Record<string, unknown>): Draft {
+  const out = { ...blank };
+  for (const key of Object.keys(blank) as Array<keyof Draft>) {
+    if (key === "courseIds") continue;
+    const value = row[key];
+    if (value === null || value === undefined) continue;
+    (out[key] as string) = String(value);
+  }
+  out.dateOfBirth = asDateInput(row.dateOfBirth);
+  out.admissionDate = asDateInput(row.admissionDate);
+  // `courseIds` only exists once add-multi-course-and-dropdowns.sql has run;
+  // before that the single `courseId` is the whole enrolment.
+  const saved = Array.isArray(row.courseIds) ? (row.courseIds as string[]) : [];
+  out.courseIds = [...new Set([...saved, String(row.courseId ?? "")].filter(Boolean))];
+  out.branchId = String(row.branchId ?? "");
+  return out;
+}
 
 export default function AdmissionsWorkspace() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  /**
+   * `?id=` turns this into the edit screen. "View students" used to open a
+   * five-box dialog that saved nowhere; it now sends people here, where every
+   * column on the record is on the page.
+   */
+  const editingId = params.get("id");
   const organizationId = user?.organizationId;
   const branchId = user?.branchId;
   const [step, setStep] = useState(0);
+  const [loadingRecord, setLoadingRecord] = useState(!!editingId);
   const [draft, setDraft] = useState<Draft>(() => {
+    if (editingId) return blank;
     try {
       return {
         ...blank,
@@ -246,19 +306,54 @@ export default function AdmissionsWorkspace() {
   // one 5MB quota. An unguarded `setItem` throwing QuotaExceededError inside an
   // effect takes the whole form down, and losing autosave is not worth that.
   useEffect(() => {
+    // An edit is someone else's record, not a half-finished new admission - it
+    // must never overwrite the autosaved draft or be restored as one.
+    if (editingId) return;
     try {
       localStorage.setItem("admission-draft", JSON.stringify(draft));
     } catch {
       /* the form still holds the draft in memory */
     }
-  }, [draft]);
+  }, [draft, editingId]);
   useEffect(() => {
+    if (editingId) return;
     try {
       localStorage.setItem(DOCUMENTS_KEY, JSON.stringify(documents));
     } catch {
       /* too large to autosave; the uploads survive until the page is reloaded */
     }
-  }, [documents]);
+  }, [documents, editingId]);
+
+  // Load the record being edited into the same draft the create flow fills in.
+  useEffect(() => {
+    if (!editingId) return;
+    let cancelled = false;
+    setLoadingRecord(true);
+    getStudent(editingId, branchId ?? null)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setDraft(draftFromRecord(data as Record<string, unknown>));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        toast({
+          title: "Could not open that student",
+          description: error instanceof Error ? error.message : "Please try again",
+          variant: "destructive",
+        });
+        navigate("/student/view");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRecord(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the record alone. `toast` and `navigate` are only used inside the
+    // failure path, and listing them would refetch - wiping out everything typed
+    // since - the moment either identity changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId, branchId]);
   // `getCourses`/`getBatches` resolve to `{ success, data }`. Assigning the
   // envelope straight into state left `courses.map` undefined and blanked the
   // whole page as soon as the academic step rendered - unwrap `data`, and never
@@ -338,14 +433,24 @@ export default function AdmissionsWorkspace() {
     }
     setSaving(true);
     try {
-      // Empty boxes are left out rather than written as "", so a column that was
-      // never filled reads as null and the integer columns are never sent "".
+      // Empty boxes are written as null, never "": the integer columns reject an
+      // empty string, and on an edit a box the user cleared has to actually
+      // clear the column rather than leave the old value behind. A new admission
+      // leaves them out entirely, which comes to the same thing.
       const payload: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(draft)) {
-        if (key === "branchId" || value === "") continue;
+        if (READ_ONLY_COLUMNS.includes(key) || key === "courseIds") continue;
+        if (value === "") {
+          if (editingId) payload[key] = null;
+          continue;
+        }
         payload[key] = NUMERIC.includes(key as keyof Draft) ? Number(value) : value;
       }
-      const { data } = await createStudent(targetBranchId, {
+      // The first pick is the primary course every other screen reads; the array
+      // carries the whole enrolment. An edit that clears the list clears both.
+      payload.courseId = draft.courseIds[0] || null;
+      payload.courseIds = draft.courseIds;
+      const body = {
         ...payload,
         // `students.documents` is jsonb. Left out entirely when nothing was
         // attached, so the column reads as null rather than an empty object --
@@ -354,6 +459,20 @@ export default function AdmissionsWorkspace() {
         // The columns are timestamps; a bare `yyyy-mm-dd` is rejected.
         dateOfBirth: new Date(draft.dateOfBirth).toISOString(),
         admissionDate: new Date(draft.admissionDate || Date.now()).toISOString(),
+      };
+
+      if (editingId) {
+        await updateStudent(editingId, targetBranchId, body);
+        toast({
+          title: "Student updated",
+          description: "The record now matches what is on this form.",
+        });
+        navigate("/student/view");
+        return;
+      }
+
+      const { data } = await createStudent(targetBranchId, {
+        ...body,
         admissionStatus: "APPROVED",
       });
       const applicationNo =
@@ -377,7 +496,7 @@ export default function AdmissionsWorkspace() {
       localStorage.removeItem(DOCUMENTS_KEY);
     } catch (e) {
       toast({
-        title: "Admission could not be completed",
+        title: editingId ? "Could not save the student" : "Admission could not be completed",
         description: e instanceof Error ? e.message : "Please review fields",
         variant: "destructive",
       });
@@ -385,6 +504,18 @@ export default function AdmissionsWorkspace() {
       setSaving(false);
     }
   };
+
+  // Editing renders the same form, so showing it before the record arrives would
+  // flash an empty admission over the student's own details.
+  if (loadingRecord) {
+    return (
+      <AppLayout>
+        <div className="flex min-h-[60vh] items-center justify-center text-sm text-muted-foreground">
+          Loading student…
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (issued) {
     return (
@@ -424,17 +555,18 @@ export default function AdmissionsWorkspace() {
           Student management
         </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-[-.04em] sm:text-3xl">
-          New admission
+          {editingId ? "Edit student" : "New admission"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A guided application that creates a real student record. The
-          application number is issued once the form is completed.
+          {editingId
+            ? "Every field on the record is editable here, across all four steps. Clearing a box clears the column."
+            : "A guided application that creates a real student record. The application number is issued once the form is completed."}
         </p>
       </div>
       <Card className="overflow-hidden">
         <div className="border-b bg-muted/25 p-5">
           <div className="mb-3 flex justify-between text-sm">
-            <span>Admission progress · autosaved</span>
+            <span>{editingId ? "Record completeness" : "Admission progress · autosaved"}</span>
             <strong>{progress}%</strong>
           </div>
           <div className="h-2 rounded-full bg-muted">
@@ -486,34 +618,31 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Gender" required>
-                  <SelectWithCustom
+                  <EditableSelect
+                    optionKey="gender"
                     value={draft.gender}
-                    onValueChange={(v) => set("gender", v)}
-                    options={[
-                      { value: "MALE", label: "Male" },
-                      { value: "FEMALE", label: "Female" },
-                    ]}
-                    customPlaceholder="Type the gender"
+                    onChange={(v) => set("gender", v)}
                   />
                 </Field>
                 <Field l="Blood group">
-                  <Picker
+                  <EditableSelect
+                    optionKey="bloodGroup"
                     value={draft.bloodGroup}
                     onChange={(v) => set("bloodGroup", v)}
-                    options={BLOOD_GROUPS.map((b) => [b, b])}
                   />
                 </Field>
                 <Field l="Category">
-                  <Picker
+                  <EditableSelect
+                    optionKey="studentCategory"
                     value={draft.category}
                     onChange={(v) => set("category", v)}
-                    options={CATEGORIES.map((c) => [c, c])}
                   />
                 </Field>
                 <Field l="Religion">
-                  <Input
+                  <EditableSelect
+                    optionKey="religion"
                     value={draft.religion}
-                    onChange={(e) => set("religion", e.target.value)}
+                    onChange={(v) => set("religion", v)}
                   />
                 </Field>
                 <Field l="Nationality">
@@ -652,15 +781,26 @@ export default function AdmissionsWorkspace() {
                     onChange={(e) => set("admissionDate", e.target.value)}
                   />
                 </Field>
-                <Field l="Course">
-                  <Picker
-                    value={draft.courseId}
-                    onChange={(v) => {
-                      set("courseId", v);
-                      set("batchId", "");
-                    }}
-                    options={courses.map((c) => [c.id, c.name])}
-                    placeholder="Choose course"
+                <Field l="Courses" wide>
+                  <MultiSelect
+                    options={courses.map((c) => ({ value: c.id, label: c.name }))}
+                    value={draft.courseIds}
+                    onChange={(next) =>
+                      setDraft((p) => ({
+                        ...p,
+                        courseIds: next,
+                        // A batch belongs to one course; dropping that course
+                        // would otherwise leave a batch from nowhere selected.
+                        batchId: next.includes(
+                          batches.find((b) => b.id === p.batchId)?.courseId ?? "",
+                        )
+                          ? p.batchId
+                          : "",
+                      }))
+                    }
+                    label="Courses"
+                    placeholder={courses.length ? "Choose courses" : "No courses yet"}
+                    hint="Pick as many as the student is enrolled on. The first one is the primary course shown on certificates and invoices."
                   />
                 </Field>
                 <Field l="Batch">
@@ -669,7 +809,9 @@ export default function AdmissionsWorkspace() {
                     onChange={(v) => set("batchId", v)}
                     disabled={!targetBranchId}
                     options={batches
-                      .filter((b) => !draft.courseId || b.courseId === draft.courseId)
+                      .filter(
+                        (b) => draft.courseIds.length === 0 || draft.courseIds.includes(b.courseId),
+                      )
                       .map((b) => [b.id, b.name])}
                     placeholder={targetBranchId ? "Choose batch" : "Choose a branch first"}
                   />
@@ -697,11 +839,10 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Board">
-                  <SelectWithCustom
+                  <EditableSelect
+                    optionKey="board"
                     value={draft.tenthBoard}
-                    onValueChange={(v) => set("tenthBoard", v)}
-                    options={BOARDS}
-                    customPlaceholder="Type the board"
+                    onChange={(v) => set("tenthBoard", v)}
                   />
                 </Field>
                 <Field l="Year of passing">
@@ -745,11 +886,10 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Board">
-                  <SelectWithCustom
+                  <EditableSelect
+                    optionKey="board"
                     value={draft.twelfthBoard}
-                    onValueChange={(v) => set("twelfthBoard", v)}
-                    options={BOARDS}
-                    customPlaceholder="Type the board"
+                    onChange={(v) => set("twelfthBoard", v)}
                   />
                 </Field>
                 <Field l="Year of passing">
@@ -769,10 +909,10 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Stream">
-                  <Picker
+                  <EditableSelect
+                    optionKey="stream"
                     value={draft.twelfthStream}
                     onChange={(v) => set("twelfthStream", v)}
-                    options={STREAMS.map((s) => [s, s])}
                   />
                 </Field>
                 <Field l="Subjects" wide>
@@ -851,11 +991,10 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Relationship">
-                  <SelectWithCustom
+                  <EditableSelect
+                    optionKey="guardianRelation"
                     value={draft.localGuardianRelation}
-                    onValueChange={(v) => set("localGuardianRelation", v)}
-                    options={RELATIONS}
-                    customPlaceholder="Type the relationship"
+                    onChange={(v) => set("localGuardianRelation", v)}
                   />
                 </Field>
                 <Field l="Mobile">
@@ -956,8 +1095,10 @@ export default function AdmissionsWorkspace() {
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {draft.phone || "No phone"} ·{" "}
-                    {courses.find((c) => c.id === draft.courseId)?.name ||
-                      "Course not assigned"}
+                    {draft.courseIds
+                      .map((id) => courses.find((c) => c.id === id)?.name)
+                      .filter(Boolean)
+                      .join(", ") || "Course not assigned"}
                   </p>
                   <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
                     <Row k="Date of birth" v={draft.dateOfBirth} />
@@ -994,8 +1135,9 @@ export default function AdmissionsWorkspace() {
                     </div>
                   ) : (
                     <div className="rounded-2xl border p-4 text-sm">
-                      Completing the admission creates an approved student record
-                      and issues the application number.
+                      {editingId
+                        ? "Saving writes every field on this form back to the student record."
+                        : "Completing the admission creates an approved student record and issues the application number."}
                     </div>
                   );
                 })()}
@@ -1013,17 +1155,20 @@ export default function AdmissionsWorkspace() {
           </div>
         </CardContent>
         <div className="flex flex-col-reverse gap-2 border-t p-3 sm:flex-row sm:justify-between sm:p-4">
+          {/* Nothing is autosaved on an edit, so "Save draft" would be a lie there. */}
           <Button className="w-full sm:w-auto"
             variant="ghost"
             onClick={() =>
-              toast({
-                title: "Draft saved",
-                description: `${progress}% complete`,
-              })
+              editingId
+                ? navigate("/student/view")
+                : toast({
+                    title: "Draft saved",
+                    description: `${progress}% complete`,
+                  })
             }
           >
-            <Save />
-            Save draft
+            {editingId ? <ArrowLeft /> : <Save />}
+            {editingId ? "Back to students" : "Save draft"}
           </Button>
           <div className="grid grid-cols-2 gap-2 sm:flex">
             {step > 0 && (
@@ -1040,7 +1185,11 @@ export default function AdmissionsWorkspace() {
             ) : (
               <Button onClick={submit} disabled={saving}>
                 <Check />
-                {saving ? "Saving..." : "Complete admission"}
+                {saving
+                  ? "Saving..."
+                  : editingId
+                    ? "Save changes"
+                    : "Complete admission"}
               </Button>
             )}
           </div>

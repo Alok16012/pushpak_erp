@@ -74,7 +74,12 @@ describe("getStudentProfile", () => {
     const { data } = await getStudentProfile("auth-1", "b1");
 
     // Strings and numbers both render; a joined row is what killed the page.
+    // `courses` is the one list, and it holds names rather than rows.
     for (const [key, value] of Object.entries(data)) {
+      if (key === "courses") {
+        expect(Array.isArray(value) && value.every((v) => typeof v === "string")).toBe(true);
+        continue;
+      }
       expect(
         value === null || typeof value === "string" || typeof value === "number",
         `${key} is a ${typeof value}, which React cannot render`,

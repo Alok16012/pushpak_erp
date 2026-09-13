@@ -51,8 +51,6 @@ interface FeeType {
   status: "active" | "inactive";
 }
 
-const FEE_CATEGORIES = ["Academic", "Facility", "One-time", "Optional"] as const;
-const FEE_FREQUENCIES = ["One-time", "Monthly", "Quarterly", "Per Semester", "Yearly", "Per Exam"] as const;
 const COURSE_OPTIONS = ["All Courses", "Computer Science", "Engineering", "Commerce", "Science"] as const;
 
 function suggestCode(name: string, existing: FeeType[]): string {

@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 /**
  * The admission form collected everything about a student except their
@@ -21,6 +22,10 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 vi.mock("@/lib/export", () => ({ pickImage: (...args: unknown[]) => pickImage(...(args as [])) }));
 vi.mock("@/lib/supabase/data", () => ({
+  getStudent: () => Promise.resolve({ success: true, data: {} }),
+  updateStudent: () => Promise.resolve({ success: true, data: {} }),
+  getDropdownOptions: () => Promise.resolve({ success: true, data: {}, stored: true }),
+  saveDropdownOptions: () => Promise.resolve({ success: true, stored: true }),
   getCourses: () => Promise.resolve({ success: true, data: [] }),
   getBatches: () => Promise.resolve({ success: true, data: [] }),
   getBranches: () => Promise.resolve({ success: true, data: [] }),
@@ -59,7 +64,11 @@ beforeEach(() => {
 });
 
 const openDocuments = () => {
-  render(<AdmissionsWorkspace />);
+  render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
   fireEvent.click(screen.getByRole("button", { name: /4\. Documents/ }));
 };
 
@@ -68,7 +77,11 @@ const card = (label: string) => screen.getByText(label).closest("div.rounded-xl"
 
 describe("Admission documents", () => {
   it("sits between the guardian details and the review", () => {
-    render(<AdmissionsWorkspace />);
+    render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
     const labels = screen
       .getAllByRole("button")
       .map((b) => b.textContent)
@@ -183,7 +196,11 @@ describe("Admission documents", () => {
 
   it("leaves the column out entirely when nothing was attached", async () => {
     seedCompleteDraft();
-    render(<AdmissionsWorkspace />);
+    render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
     fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
     fireEvent.click(screen.getByRole("button", { name: /complete admission/i }));
 
@@ -197,7 +214,11 @@ describe("Admission documents", () => {
   // is chased tomorrow, not a reason to turn an applicant away at the counter.
   it("completes an admission whose documents are still outstanding", async () => {
     seedCompleteDraft();
-    render(<AdmissionsWorkspace />);
+    render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
     fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
 
     expect(screen.getByText(/documents outstanding/i)).toBeInTheDocument();

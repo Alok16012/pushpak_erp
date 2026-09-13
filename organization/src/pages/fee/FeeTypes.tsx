@@ -25,9 +25,8 @@ import { Plus, IndianRupee, Tags, Edit } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { EditableSelect } from "@/components/ui/EditableSelect";
 
-const FEE_CATEGORIES = ["Academic", "Facility", "One-time", "Optional"] as const;
-const FEE_FREQUENCIES = ["One-time", "Monthly", "Quarterly", "Per Semester", "Yearly", "Per Exam"] as const;
 const COURSE_OPTIONS = ["All Courses", "Computer Science", "Engineering", "Commerce", "Science"] as const;
 
 const columns: Column<FeeType>[] = [
@@ -91,7 +90,7 @@ const columns: Column<FeeType>[] = [
 const BLANK = {
   name: "",
   code: "",
-  category: "Academic" as (typeof FEE_CATEGORIES)[number],
+  category: "Academic" as string,
   defaultAmount: "" as string | number,
   frequency: "Yearly",
   applicableTo: "All Courses",
@@ -152,7 +151,7 @@ export default function FeeTypes() {
     setForm({
       name: fee.name,
       code: fee.code,
-      category: fee.category as (typeof FEE_CATEGORIES)[number],
+      category: fee.category,
       defaultAmount: String(fee.defaultAmount),
       frequency: fee.frequency,
       applicableTo: fee.applicableTo[0] ?? "All Courses",
@@ -350,16 +349,12 @@ export default function FeeTypes() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Category</Label>
-                <Select value={form.category} onValueChange={(v) => set("category", v as typeof FEE_CATEGORIES[number])}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FEE_CATEGORIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <EditableSelect
+                  optionKey="feeCategory"
+                  value={form.category}
+                  onChange={(v) => set("category", v)}
+                  placeholder="Select category"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="fee-amount">Default Amount (₹) *</Label>
@@ -376,16 +371,12 @@ export default function FeeTypes() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Frequency</Label>
-                <Select value={form.frequency} onValueChange={(v) => set("frequency", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FEE_FREQUENCIES.map((f) => (
-                      <SelectItem key={f} value={f}>{f}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <EditableSelect
+                  optionKey="feeFrequency"
+                  value={form.frequency}
+                  onChange={(v) => set("frequency", v)}
+                  placeholder="Select frequency"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Applicable To</Label>

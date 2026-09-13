@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { EditableSelect } from "@/components/ui/EditableSelect";
 import {
   Select,
   SelectContent,
@@ -13,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,31 +83,6 @@ type EnquiryRow = {
 };
 
 const stages = ["Visitor", "Visit", "Verification", "Follow-up", "Review"];
-const PURPOSES = [
-  "Admission Enquiry",
-  "Fee Related",
-  "Meeting",
-  "Complaint",
-  "Delivery",
-  "Interview",
-];
-const DEPARTMENTS = [
-  "Administration",
-  "Academics",
-  "Accounts",
-  "HR",
-  "IT",
-  "Library",
-];
-const ID_TYPES = ["Aadhaar", "PAN", "DL", "Voter ID", "Passport"];
-const SOURCES = [
-  "Walk-in",
-  "Phone",
-  "Website",
-  "Social Media",
-  "Referral",
-  "Advertisement",
-];
 const CALL_TYPES = ["Incoming", "Outgoing"];
 
 type Draft = {
@@ -769,12 +744,11 @@ export default function EnquiriesWorkspace() {
                         />
                       </Field>
                       <Field label="Source">
-                        <SelectWithCustom
+                        <EditableSelect
+                          optionKey="enquirySource"
                           value={draft.source}
-                          onValueChange={(v) => update("source", v)}
-                          options={SOURCES}
+                          onChange={(v) => update("source", v)}
                           placeholder="Select source"
-                          customPlaceholder="Type the source"
                         />
                       </Field>
                     </div>
@@ -788,21 +762,12 @@ export default function EnquiriesWorkspace() {
                         />
                       </Field>
                       <Field label="ID Type">
-                        <Select
+                        <EditableSelect
+                          optionKey="idType"
                           value={draft.idType}
-                          onValueChange={(v) => update("idType", v)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select ID type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ID_TYPES.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {t}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          onChange={(v) => update("idType", v)}
+                          placeholder="Select ID type"
+                        />
                       </Field>
                       <Field label="ID Number">
                         <Input
@@ -832,12 +797,11 @@ export default function EnquiriesWorkspace() {
                   <div className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Purpose of Visit *" required>
-                        <SelectWithCustom
+                        <EditableSelect
+                          optionKey="enquiryPurpose"
                           value={draft.purpose}
-                          onValueChange={(v) => update("purpose", v)}
-                          options={PURPOSES}
+                          onChange={(v) => update("purpose", v)}
                           placeholder="Select purpose"
-                          customPlaceholder="Type the purpose"
                         />
                       </Field>
                       <Field label="Person to Meet *" required>
@@ -851,21 +815,12 @@ export default function EnquiriesWorkspace() {
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Department *" required>
-                        <Select
+                        <EditableSelect
+                          optionKey="department"
                           value={draft.department}
-                          onValueChange={(v) => update("department", v)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select department" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {DEPARTMENTS.map((d) => (
-                              <SelectItem key={d} value={d}>
-                                {d}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          onChange={(v) => update("department", v)}
+                          placeholder="Select department"
+                        />
                       </Field>
                       <Field label="Visit Location">
                         <Input
@@ -921,21 +876,12 @@ export default function EnquiriesWorkspace() {
                   <div className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="ID Type">
-                        <Select
+                        <EditableSelect
+                          optionKey="idType"
                           value={draft.idType}
-                          onValueChange={(v) => update("idType", v)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select ID type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ID_TYPES.map((t) => (
-                              <SelectItem key={t} value={t}>
-                                {t}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          onChange={(v) => update("idType", v)}
+                          placeholder="Select ID type"
+                        />
                       </Field>
                       <Field label="ID Number">
                         <Input

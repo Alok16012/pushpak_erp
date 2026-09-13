@@ -6,6 +6,8 @@
  * destroy the design you already made for another.
  */
 
+import { DEFAULT_INSTITUTE_NAME } from "./instituteName";
+
 export type ElementType = "text" | "shape" | "image" | "qr";
 
 export interface DocElement {
@@ -145,7 +147,9 @@ export const SAMPLE_DATA: TokenData = {
   valid_until: "31 March 2027",
   grade: "A+",
   percentage: "88.4%",
-  institute: "Ideal Digiskills",
+  // Overwritten from `instituteName()` wherever a document is actually drawn,
+  // so the watermark and the letterhead carry the institute's own name.
+  institute: DEFAULT_INSTITUTE_NAME,
   designation: "Trainer",
   award_title: "Award of Excellence",
   award_reason: "outstanding performance and conduct",

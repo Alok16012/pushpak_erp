@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 /**
  * The admission form asked for City, then District, then State, and all three
@@ -20,6 +21,10 @@ vi.mock("@/lib/supabase/data", () => ({
   getBatches: () => Promise.resolve({ success: true, data: [] }),
   getBranches: () => Promise.resolve({ success: true, data: [] }),
   createStudent: () => Promise.resolve({ success: true, data: {} }),
+  getStudent: () => Promise.resolve({ success: true, data: {} }),
+  updateStudent: () => Promise.resolve({ success: true, data: {} }),
+  getDropdownOptions: () => Promise.resolve({ success: true, data: {}, stored: true }),
+  saveDropdownOptions: () => Promise.resolve({ success: true, stored: true }),
 }));
 
 const AdmissionsWorkspace = (await import("@/pages/student/AdmissionsWorkspace")).default;
@@ -42,7 +47,11 @@ beforeEach(() => {
 
 describe("Admission address", () => {
   it("asks for the state before the district and the district before the city", () => {
-    render(<AdmissionsWorkspace />);
+    render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
     // The required marker is a "*" inside the label, so read the name alone.
     const labels = Array.from(document.querySelectorAll("label"))
       .map((el) => el.textContent?.replace("*", "").trim())
@@ -51,7 +60,11 @@ describe("Admission address", () => {
   });
 
   it("will not take a district until a state is chosen, nor a city until a district is", () => {
-    render(<AdmissionsWorkspace />);
+    render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
     expect(screen.getByText("Select a state first")).toBeInTheDocument();
     expect(screen.getByText("Select a district first")).toBeInTheDocument();
   });
@@ -63,7 +76,11 @@ describe("Admission address", () => {
       "admission-draft",
       JSON.stringify({ state: "Bihar", district: "Patna" }),
     );
-    render(<AdmissionsWorkspace />);
+    render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
 
     // Both triggers are taken before either list opens: Radix hides the rest
     // of the page from the accessibility tree while one is open.
@@ -84,7 +101,11 @@ describe("Admission address", () => {
       "admission-draft",
       JSON.stringify({ state: "Bihar", district: "Patna", city: "Danapur" }),
     );
-    render(<AdmissionsWorkspace />);
+    render(
+    <MemoryRouter>
+      <AdmissionsWorkspace />
+    </MemoryRouter>,
+  );
     expect(screen.getByText("Danapur")).toBeInTheDocument();
 
     openList(control("State"));

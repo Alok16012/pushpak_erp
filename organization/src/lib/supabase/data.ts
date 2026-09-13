@@ -208,6 +208,10 @@ export interface StudentRosterRow {
   balance: number;
   status: "Active" | "Pending" | "Completed" | "Inactive";
   batch: string;
+  /** The branch the admission was filed against. An organisation admin sees
+   *  every branch's students in one list, where the row alone did not say
+   *  which branch a student belonged to. */
+  branch: string;
   /** True once `students.userId` points at an auth account -- the link every
    *  portal query resolves the signed-in student through. */
   hasLogin: boolean;
@@ -227,7 +231,7 @@ export interface StudentRosterRow {
 export async function getStudentRoster(branchId: string | null, limit = 500) {
   let query = supabase
     .from("students")
-    .select("*, course:courses(id, name, code, baseFee)")
+    .select("*, course:courses(id, name, code, baseFee), branch:branches(name)")
     .is("deletedAt", null)
     .order("createdAt", { ascending: false })
     .limit(limit);
@@ -280,6 +284,7 @@ export async function getStudentRoster(branchId: string | null, limit = 500) {
     const last = String(row.lastName || "");
     const name = [first, row.middleName, last].filter(Boolean).join(" ").trim() || "Unnamed";
     const course = row.course as { name?: string; code?: string; baseFee?: number } | null;
+    const branch = row.branch as { name?: string } | null;
 
     const invoiced = invoiceTotals.get(String(row.id)) || 0;
     const standing = feeStanding({
@@ -329,6 +334,7 @@ export async function getStudentRoster(branchId: string | null, limit = 500) {
       balance: standing.balance,
       status,
       batch: "Not assigned",
+      branch: branch?.name || "",
       hasLogin: Boolean(row.userId),
     };
   });
@@ -373,21 +379,34 @@ export async function nextApplicationNo() {
 
 /**
  * Columns added after the table went live, which a database that has not run
- * `supabase/schema/add-student-section-roll.sql` yet will not have. Losing the
- * section and roll number is a far better outcome than losing the admission.
+ * `add-student-section-roll.sql` / `add-multi-course-and-dropdowns.sql` yet
+ * will not have. Losing the section, roll number or the extra courses is a far
+ * better outcome than losing the admission.
  */
-const STUDENT_OPTIONAL_COLUMNS = ["section", "rollNo"];
-
-const withoutOptionalStudentColumns = (input: Record<string, unknown>) => {
-  const out = { ...input };
-  for (const c of STUDENT_OPTIONAL_COLUMNS) delete out[c];
-  return out;
-};
+const STUDENT_OPTIONAL_COLUMNS = ["section", "rollNo", "courseIds"];
 
 const isMissingStudentColumn = (error: { code?: string; message?: string } | null) =>
   error?.code === "PGRST204" ||
   error?.code === "42703" ||
   STUDENT_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c));
+
+/**
+ * Drop the one column the error names, so a database missing only `courseIds`
+ * still saves the section and roll number. The error naming none of them - a
+ * bare PGRST204 - is what the whole-set fallback is for.
+ */
+const withoutOptionalStudentColumns = (
+  input: Record<string, unknown>,
+  error: { message?: string } | null,
+) => {
+  const named = STUDENT_OPTIONAL_COLUMNS.filter(
+    (c) => c in input && error?.message?.includes(c),
+  );
+  const drop = named.length ? named : STUDENT_OPTIONAL_COLUMNS;
+  const out = { ...input };
+  for (const c of drop) delete out[c];
+  return out;
+};
 
 export async function createStudent(branchId: string, input: Record<string, unknown>) {
   // A caller that already carries its own number keeps it; everyone else gets
@@ -406,7 +425,7 @@ export async function createStudent(branchId: string, input: Record<string, unkn
     if (raced && attempt < 2) continue;
     // Retry once without the columns the database may not have yet. Guarded on
     // something actually having been dropped, so this cannot loop.
-    const trimmed = withoutOptionalStudentColumns(body);
+    const trimmed = withoutOptionalStudentColumns(body, error);
     if (isMissingStudentColumn(error) && Object.keys(trimmed).length < Object.keys(body).length) {
       body = trimmed;
       continue;
@@ -418,9 +437,22 @@ export async function createStudent(branchId: string, input: Record<string, unkn
 }
 
 export async function updateStudent(id: string, branchId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("students").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
-  if (error) throw new Error(error.message);
-  return { success: true, data };
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("students").update(body).eq("id", id).eq("branchId", branchId).select("*").single();
+
+  // Same bargain as `createStudent`: an edit that touches a column this database
+  // has not gained yet still saves everything else rather than failing whole.
+  let body = { ...input };
+  for (let i = 0; i <= STUDENT_OPTIONAL_COLUMNS.length; i++) {
+    const { data, error } = await attempt(body);
+    if (!error) return { success: true, data };
+    const trimmed = withoutOptionalStudentColumns(body, error);
+    if (!isMissingStudentColumn(error) || Object.keys(trimmed).length === Object.keys(body).length) {
+      throw new Error(error.message);
+    }
+    body = trimmed;
+  }
+  throw new Error("Could not save the student");
 }
 
 export async function deleteStudent(id: string, branchId: string) {
@@ -684,6 +716,24 @@ export async function updateBatch(id: string, input: Record<string, unknown>) {
   }
   if (error) throw new Error(error.message);
   return { success: true, data: mapBatch(data as Record<string, unknown>) };
+}
+
+/**
+ * Hard delete, matching how the batch lists read: `batches` has no `deletedAt`
+ * column, so there is nothing to soft-delete against. Students keep pointing at
+ * the row through `batchId`, so a batch with enrolments is refused up front
+ * rather than left to surface as a foreign-key error.
+ */
+export async function deleteBatch(id: string) {
+  const { count } = await supabase
+    .from("students")
+    .select("id", { count: "exact", head: true })
+    .eq("batchId", id)
+    .is("deletedAt", null);
+  if (count) throw new Error(`${count} student${count > 1 ? "s are" : " is"} still enrolled in this batch`);
+  const { error } = await supabase.from("batches").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  return { success: true };
 }
 
 /**
@@ -2038,6 +2088,9 @@ export async function deleteBranch(id: string) {
  * whose token carries a different branch, is a case worth naming. `.single()`
  * reports it as "Cannot coerce the result to a single JSON object", which sends
  * the reader looking for a query bug instead of a missing link.
+ *
+ * `courses` carries the whole enrolment where `course` carries only the primary
+ * one, so a student on three courses no longer sees one of them.
  */
 export async function getStudentProfile(userId: string, branchId: string) {
   const { data, error } = await supabase
@@ -2056,7 +2109,29 @@ export async function getStudentProfile(userId: string, branchId: string) {
       "No student record is linked to this login. Ask the branch office to issue it again.",
     );
   }
-  return { success: true as const, data: toStudentProfile(data as unknown as StudentRow) };
+
+  const row = data as unknown as StudentRow & { courseId?: string | null; courseIds?: unknown };
+  const profile = toStudentProfile(row);
+
+  // A student can be enrolled on more than one course, and the embed above only
+  // resolves the primary one. `courseIds` does not exist until
+  // add-multi-course-and-dropdowns.sql has run; until then the primary course
+  // is the whole enrolment, which is what this collapses to.
+  const extraIds = (Array.isArray(row.courseIds) ? row.courseIds : [])
+    .map(String)
+    .filter((id) => id && id !== row.courseId);
+  const courses = profile.course ? [profile.course] : [];
+  if (extraIds.length) {
+    const { data: extra } = await supabase.from("courses").select("id,name").in("id", extraIds);
+    // `.in()` returns rows in the table's order, not the order asked for, so the
+    // enrolment order stored on the row is what is preserved here.
+    const nameById = new Map(
+      ((extra || []) as Array<{ id: string; name: string }>).map((c) => [c.id, c.name]),
+    );
+    courses.push(...(extraIds.map((id) => nameById.get(id)).filter(Boolean) as string[]));
+  }
+
+  return { success: true as const, data: { ...profile, courses } };
 }
 
 export async function getStudentPortalClasses(userId: string, branchId: string) {
@@ -3221,4 +3296,61 @@ export async function getFeeTypes() {
 
 export async function getFeeGroups() {
   return { success: true, data: [] };
+}
+
+/* ============================
+   DROPDOWN OPTIONS
+   ============================ */
+
+/** `dropdown_options` ships in `add-multi-course-and-dropdowns.sql`. */
+const isMissingDropdownTable = (error: { code?: string; message?: string } | null) =>
+  error?.code === "PGRST205" ||
+  error?.code === "42P01" ||
+  !!error?.message?.includes("dropdown_options");
+
+/**
+ * Every option list this organisation has customised, as `{ key: values }`.
+ *
+ * A key with no row has never been edited, and the caller falls back to its
+ * built-in defaults - so this returning `{}` is the normal state, not an error.
+ * A database without the table behaves the same way rather than throwing, which
+ * keeps every picker on the screen working before the migration is run.
+ */
+export async function getDropdownOptions(organizationId: string | null) {
+  const { data, error } = await supabase
+    .from("dropdown_options")
+    .select("key,values")
+    .eq("organizationId", organizationId || "");
+  if (error) {
+    if (isMissingDropdownTable(error)) return { success: true, data: {} as Record<string, string[]>, stored: false };
+    throw new Error(error.message);
+  }
+  const out: Record<string, string[]> = {};
+  for (const row of data || []) {
+    const { key, values } = row as { key: string; values: string[] | null };
+    out[key] = (values || []).filter(Boolean);
+  }
+  return { success: true, data: out, stored: true };
+}
+
+/**
+ * Replace one list. `stored: false` means the table is not there yet and the
+ * caller should keep the edit in the browser instead of reporting a failure.
+ */
+export async function saveDropdownOptions(
+  organizationId: string | null,
+  key: string,
+  values: string[],
+) {
+  const { error } = await supabase
+    .from("dropdown_options")
+    .upsert(
+      { organizationId: organizationId || "", key, values, updatedAt: nowIso() },
+      { onConflict: "organizationId,key" },
+    );
+  if (error) {
+    if (isMissingDropdownTable(error)) return { success: true, stored: false };
+    throw new Error(error.message);
+  }
+  return { success: true, stored: true };
 }

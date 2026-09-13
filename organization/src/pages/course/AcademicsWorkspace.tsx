@@ -13,19 +13,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BookOpen, Calendar, Download, Plus, Upload, X } from "lucide-react";
+import { BookOpen, Calendar, Download, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { EditableSelect } from "@/components/ui/EditableSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { canManageCourses } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile } from "@/lib/export";
-import { courseCategoryLabel, courseCategoryOptions } from "@/lib/courseCategories";
-import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import {
   getCourses,
   createCourse,
+  updateCourse,
+  deleteCourse,
   getBatches,
   getBatchesByOrg,
   createBatch,
+  updateBatch,
+  deleteBatch,
   getBranches,
 } from "@/lib/supabase/data";
 
@@ -85,6 +98,11 @@ export default function AcademicsWorkspace() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<"course" | "batch" | null>(null);
+  /** Null while creating; the row's id while editing one. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<
+    { kind: "course" | "batch"; id: string; name: string } | null
+  >(null);
   const [d, setD] = useState<Record<string, string>>({});
 
   // The route decides which form is open, so "Create course" from the menu
@@ -92,8 +110,72 @@ export default function AcademicsWorkspace() {
   useEffect(() => {
     const next = formForPath(pathname);
     setForm(next === "course" && !mayManageCourses ? null : next);
+    setEditingId(null);
     setD({});
   }, [pathname, mayManageCourses]);
+
+  const closeForm = () => {
+    setForm(null);
+    setEditingId(null);
+    setD({});
+  };
+
+  const openCreate = (kind: "course" | "batch") => {
+    setEditingId(null);
+    setD({});
+    setForm(kind);
+  };
+
+  /** Load a course back into the same form the create flow uses. */
+  const editCourse = (c: Course) => {
+    setEditingId(c.id);
+    setForm("course");
+    setD({
+      name: c.name || "",
+      code: c.code || "",
+      category: c.category || "",
+      description: c.description || "",
+      durationMonths: String(c.durationMonths ?? ""),
+      baseFee: c.baseFee === undefined || c.baseFee === null ? "" : String(c.baseFee),
+      isActive: c.isActive ? "yes" : "no",
+    });
+  };
+
+  const editBatch = (b: Batch) => {
+    setEditingId(b.id);
+    setForm("batch");
+    setD({
+      branchId: b.branchId || "",
+      courseId: b.courseId || "",
+      name: b.name || "",
+      code: b.code || "",
+      // The columns are timestamps; the date inputs want a bare yyyy-mm-dd.
+      startDate: b.startDate?.slice(0, 10) || "",
+      endDate: b.endDate?.slice(0, 10) || "",
+      maxStudents: b.maxStudents === undefined || b.maxStudents === null ? "" : String(b.maxStudents),
+      feeDiscount: b.feeDiscount ? String(b.feeDiscount) : "",
+      remark: b.remark || "",
+      isActive: b.isActive ? "yes" : "no",
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    const { kind, id, name } = pendingDelete;
+    setPendingDelete(null);
+    try {
+      await (kind === "course" ? deleteCourse(id) : deleteBatch(id));
+      toast({ title: `${kind === "course" ? "Course" : "Batch"} deleted`, description: `${name} has been removed.` });
+      if (editingId === id) closeForm();
+      await load();
+    } catch (e) {
+      toast({
+        title: `Could not delete the ${kind}`,
+        description: e instanceof Error ? e.message : "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,15 +211,12 @@ export default function AcademicsWorkspace() {
 
   const remarkWords = useMemo(() => countWords(d.remark || ""), [d.remark]);
 
-  // The seven enum members plus whatever the existing courses already use, so a
-  // category typed earlier is picked, not retyped.
-  const categoryOptions = useMemo(
-    () => courseCategoryOptions(courses.map((c) => c.category)),
+  // Whatever the existing courses already use, so a category typed earlier is
+  // picked rather than retyped. The editable list supplies the rest.
+  const usedCategories = useMemo(
+    () => [...new Set(courses.map((c) => (c.category || "").trim()).filter(Boolean))],
     [courses],
   );
-
-  /** Picked or typed, the field holds the value that is saved. */
-  const chosenCategory = () => (d.category || "").trim();
 
   const validate = () => {
     const missing: string[] = [];
@@ -188,17 +267,18 @@ export default function AcademicsWorkspace() {
     setSaving(true);
     try {
       if (form === "course") {
-        await createCourse(orgId, {
+        const payload = {
           name: d.name.trim(),
           code: d.code.trim().toUpperCase(),
-          category: chosenCategory() || "COMPUTER",
+          category: (d.category || "").trim() || "COMPUTER",
           description: d.description || "",
           durationMonths: Number(d.durationMonths) || 1,
           baseFee: Number(d.baseFee) || 0,
-          isActive: true,
-        });
+          isActive: d.isActive !== "no",
+        };
+        await (editingId ? updateCourse(editingId, payload) : createCourse(orgId, payload));
       } else {
-        await createBatch(targetBranchId, {
+        const payload = {
           courseId: d.courseId,
           name: d.name.trim(),
           code: d.code.trim().toUpperCase(),
@@ -207,19 +287,19 @@ export default function AcademicsWorkspace() {
           endDate: d.endDate ? new Date(d.endDate).toISOString() : null,
           feeDiscount: d.feeDiscount ? Number(d.feeDiscount) : 0,
           remark: d.remark?.trim() || null,
-          isActive: true,
-        });
+          isActive: d.isActive !== "no",
+        };
+        await (editingId ? updateBatch(editingId, payload) : createBatch(targetBranchId, payload));
       }
       toast({
-        title: `${form === "course" ? "Course" : "Batch"} created`,
-        description: "The academic record is now active.",
+        title: `${form === "course" ? "Course" : "Batch"} ${editingId ? "updated" : "created"}`,
+        description: editingId ? "The changes are saved." : "The academic record is now active.",
       });
-      setForm(null);
-      setD({});
+      closeForm();
       await load();
     } catch (e) {
       toast({
-        title: "Could not create record",
+        title: `Could not ${editingId ? "update" : "create"} record`,
         description: e instanceof Error ? e.message : "Review the form",
         variant: "destructive",
       });
@@ -335,13 +415,13 @@ export default function AcademicsWorkspace() {
           </Button>
           <Button
             variant={mayManageCourses ? "outline" : "default"}
-            onClick={() => setForm("batch")}
+            onClick={() => openCreate("batch")}
           >
             <Plus />
             New batch
           </Button>
           {mayManageCourses && (
-            <Button onClick={() => setForm("course")}>
+            <Button onClick={() => openCreate("course")}>
               <Plus />
               New course
             </Button>
@@ -354,10 +434,12 @@ export default function AcademicsWorkspace() {
           <CardContent className="p-5">
             <div className="mb-5 flex justify-between">
               <div>
-                <h2 className="font-semibold">Create {form}</h2>
+                <h2 className="font-semibold">
+                  {editingId ? "Edit" : "Create"} {form}
+                </h2>
                 <p className="text-xs text-muted-foreground">Fields marked * are required</p>
               </div>
-              <Button variant="ghost" size="icon" aria-label="Close form" onClick={() => setForm(null)}>
+              <Button variant="ghost" size="icon" aria-label="Close form" onClick={closeForm}>
                 <X />
               </Button>
             </div>
@@ -401,15 +483,12 @@ export default function AcademicsWorkspace() {
               {form === "course" ? (
                 <>
                   <Field l="Category">
-                    <SelectWithCustom
-                      value={d.category || ""}
-                      onValueChange={(v) => setD((p) => ({ ...p, category: v }))}
-                      options={categoryOptions.map((value) => ({
-                        value,
-                        label: courseCategoryLabel(value),
-                      }))}
+                    <EditableSelect
+                      optionKey="courseCategory"
                       placeholder="Category"
-                      customPlaceholder="Type the category"
+                      value={d.category || ""}
+                      extraOptions={usedCategories}
+                      onChange={(v) => setD((p) => ({ ...p, category: v }))}
                     />
                   </Field>
                   <Field l="Duration (months) *">
@@ -484,11 +563,37 @@ export default function AcademicsWorkspace() {
                   </div>
                 </>
               )}
+              <Field l="Status">
+                <Select
+                  value={d.isActive === "no" ? "no" : "yes"}
+                  onValueChange={(v) => setD((p) => ({ ...p, isActive: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Active</SelectItem>
+                    <SelectItem value="no">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setForm(null)}>Cancel</Button>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              {editingId && (
+                <Button
+                  variant="outline"
+                  className="mr-auto text-destructive"
+                  onClick={() =>
+                    setPendingDelete({ kind: form, id: editingId, name: d.name || "this record" })
+                  }
+                >
+                  <Trash2 />
+                  Delete {form}
+                </Button>
+              )}
+              <Button variant="outline" onClick={closeForm}>Cancel</Button>
               <Button onClick={submit} disabled={saving}>
-                {saving ? "Saving..." : `Create ${form}`}
+                {saving ? "Saving..." : `${editingId ? "Save" : "Create"} ${form}`}
               </Button>
             </div>
           </CardContent>
@@ -528,6 +633,11 @@ export default function AcademicsWorkspace() {
                   <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
                     {c.isActive ? "Active" : "Inactive"}
                   </p>
+                  <RowActions
+                    label={c.name}
+                    onEdit={() => editCourse(c)}
+                    onDelete={() => setPendingDelete({ kind: "course", id: c.id, name: c.name })}
+                  />
                 </div>
               ))}
             </div>
@@ -564,12 +674,34 @@ export default function AcademicsWorkspace() {
                   <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
                     {b.currentStudents ?? 0}/{b.maxStudents || "∞"}
                   </p>
+                  <RowActions
+                    label={b.name}
+                    onEdit={() => editBatch(b)}
+                    onDelete={() => setPendingDelete({ kind: "batch", id: b.id, name: b.name })}
+                  />
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete?.kind === "course"
+                ? "The course stops appearing in every picker. Students and batches already pointing at it keep their records."
+                : "The batch is removed for good. A batch with students still enrolled cannot be deleted."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
@@ -579,6 +711,33 @@ function Field({ l, children }: { l: string; children: React.ReactNode }) {
     <div className="space-y-2">
       <Label>{l}</Label>
       {children}
+    </div>
+  );
+}
+
+function RowActions({
+  label,
+  onEdit,
+  onDelete,
+}: {
+  label: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5">
+      <Button variant="ghost" size="icon" aria-label={`Edit ${label}`} onClick={onEdit}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="text-destructive"
+        aria-label={`Delete ${label}`}
+        onClick={onDelete}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
     </div>
   );
 }

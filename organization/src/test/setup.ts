@@ -5,6 +5,13 @@ const localStorageMock = { getItem:(key:string)=>storage.get(key)??null, setItem
 Object.defineProperty(globalThis,"localStorage",{value:localStorageMock,configurable:true});
 Object.defineProperty(window,"localStorage",{value:localStorageMock,configurable:true});
 
+// jsdom implements neither of these, and Radix's Select calls both while it is
+// opening - the failure surfaces as an unhandled rejection that tears the
+// listbox back down mid-assertion.
+Element.prototype.scrollIntoView = () => {};
+Element.prototype.hasPointerCapture = () => false;
+Element.prototype.releasePointerCapture = () => {};
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({
