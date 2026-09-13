@@ -11,10 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, FileText, Save, Upload, X } from "lucide-react";
 import { pickImage } from "@/lib/export";
 import { getCourses, getBatches, createStudent, getBranches } from "@/lib/supabase/data";
-import { INDIAN_STATES } from "@/data/indianStates";
+import { INDIAN_STATES, districtsFor } from "@/data/indianStates";
+import { citiesFor } from "@/data/indianCities";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -169,9 +171,10 @@ const ADMISSION_DOCUMENTS: Array<{ id: string; label: string; required: boolean 
   { id: "tenthMarksheet", label: "10th Marksheet", required: true },
   { id: "twelfthMarksheet", label: "12th Marksheet", required: true },
   { id: "transferCertificate", label: "Transfer Certificate", required: true },
-  { id: "aadharCard", label: "Aadhar Card", required: true },
-  { id: "apaarCard", label: "APAAR Card", required: true },
-  { id: "casteCertificate", label: "Caste Certificate", required: false },
+  { id: "aadharCardFront", label: "Aadhar Card (Front)", required: true },
+  { id: "aadharCardBack", label: "Aadhar Card (Back)", required: true },
+  { id: "passportPhoto", label: "Passport Photo", required: true },
+  { id: "admissionForm", label: "Admission Form", required: true },
 ];
 
 /** What is kept for each upload. The file rides in `dataUrl`, as the student
@@ -188,9 +191,11 @@ const DOCUMENT_MAX_BYTES = 2 * 1024 * 1024;
 const DOCUMENTS_KEY = "admission-draft-documents";
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const CATEGORIES = ["General", "OBC", "SC", "ST", "EWS"];
-const BOARDS = ["CBSE", "ICSE", "State Board", "NIOS", "Other"];
+/** The boards the form knows; a board it does not know is typed in by name,
+ *  rather than every one of them being filed as "Other". */
+const BOARDS = ["CBSE", "ICSE", "State Board", "NIOS"];
 const STREAMS = ["Science", "Commerce", "Arts", "Vocational"];
-const RELATIONS = ["Uncle", "Aunt", "Grandparent", "Sibling", "Family friend", "Other"];
+const RELATIONS = ["Uncle", "Aunt", "Grandparent", "Sibling", "Family friend"];
 
 export default function AdmissionsWorkspace() {
   const { toast } = useToast();
@@ -217,7 +222,13 @@ export default function AdmissionsWorkspace() {
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [documents, setDocuments] = useState<Record<string, AdmissionDocument>>(() => {
     try {
-      return JSON.parse(localStorage.getItem(DOCUMENTS_KEY) || "{}");
+      const held = JSON.parse(localStorage.getItem(DOCUMENTS_KEY) || "{}");
+      // Only the slots the form still asks for. A draft autosaved before the
+      // list changed holds keys with no card left to show them, and they would
+      // otherwise ride into the `documents` column unseen.
+      return Object.fromEntries(
+        ADMISSION_DOCUMENTS.filter((doc) => held[doc.id]).map((doc) => [doc.id, held[doc.id]]),
+      );
     } catch {
       return {};
     }
@@ -475,14 +486,14 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Gender" required>
-                  <Picker
+                  <SelectWithCustom
                     value={draft.gender}
-                    onChange={(v) => set("gender", v)}
+                    onValueChange={(v) => set("gender", v)}
                     options={[
-                      ["MALE", "Male"],
-                      ["FEMALE", "Female"],
-                      ["OTHER", "Other"],
+                      { value: "MALE", label: "Male" },
+                      { value: "FEMALE", label: "Female" },
                     ]}
+                    customPlaceholder="Type the gender"
                   />
                 </Field>
                 <Field l="Blood group">
@@ -560,24 +571,39 @@ export default function AdmissionsWorkspace() {
                     onChange={(e) => set("streetAddress", e.target.value)}
                   />
                 </Field>
-                <Field l="City" required>
-                  <Input
-                    value={draft.city}
-                    onChange={(e) => set("city", e.target.value)}
-                  />
-                </Field>
-                <Field l="District">
-                  <Input
-                    value={draft.district}
-                    onChange={(e) => set("district", e.target.value)}
-                  />
-                </Field>
+                {/* State, then its districts, then the district's towns --
+                    an address is written from the outside in, and picking the
+                    state first is what narrows the next two lists. A district
+                    or town the tables do not carry is typed in instead. */}
                 <Field l="State" required>
                   <Picker
                     value={draft.state}
-                    onChange={(v) => set("state", v)}
+                    onChange={(v) => {
+                      // The old district and city belong to the old state.
+                      setDraft((p) => ({ ...p, state: v, district: "", city: "" }));
+                    }}
                     options={INDIAN_STATES.map((s) => [s, s])}
                     placeholder="Select state"
+                  />
+                </Field>
+                <Field l="District">
+                  <SelectWithCustom
+                    value={draft.district}
+                    onValueChange={(v) => setDraft((p) => ({ ...p, district: v, city: "" }))}
+                    options={districtsFor(draft.state)}
+                    placeholder={draft.state ? "Select district" : "Select a state first"}
+                    customPlaceholder="Type the district"
+                    disabled={!draft.state}
+                  />
+                </Field>
+                <Field l="City" required>
+                  <SelectWithCustom
+                    value={draft.city}
+                    onValueChange={(v) => set("city", v)}
+                    options={citiesFor(draft.district)}
+                    placeholder={draft.district ? "Select city" : "Select a district first"}
+                    customPlaceholder="Type the city"
+                    disabled={!draft.district}
                   />
                 </Field>
                 <Field l="Pincode" required>
@@ -671,10 +697,11 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Board">
-                  <Picker
+                  <SelectWithCustom
                     value={draft.tenthBoard}
-                    onChange={(v) => set("tenthBoard", v)}
-                    options={BOARDS.map((b) => [b, b])}
+                    onValueChange={(v) => set("tenthBoard", v)}
+                    options={BOARDS}
+                    customPlaceholder="Type the board"
                   />
                 </Field>
                 <Field l="Year of passing">
@@ -718,10 +745,11 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Board">
-                  <Picker
+                  <SelectWithCustom
                     value={draft.twelfthBoard}
-                    onChange={(v) => set("twelfthBoard", v)}
-                    options={BOARDS.map((b) => [b, b])}
+                    onValueChange={(v) => set("twelfthBoard", v)}
+                    options={BOARDS}
+                    customPlaceholder="Type the board"
                   />
                 </Field>
                 <Field l="Year of passing">
@@ -823,10 +851,11 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Relationship">
-                  <Picker
+                  <SelectWithCustom
                     value={draft.localGuardianRelation}
-                    onChange={(v) => set("localGuardianRelation", v)}
-                    options={RELATIONS.map((r) => [r, r])}
+                    onValueChange={(v) => set("localGuardianRelation", v)}
+                    options={RELATIONS}
+                    customPlaceholder="Type the relationship"
                   />
                 </Field>
                 <Field l="Mobile">
@@ -935,7 +964,7 @@ export default function AdmissionsWorkspace() {
                     <Row k="Gender" v={draft.gender} />
                     <Row
                       k="Address"
-                      v={[draft.streetAddress, draft.city, draft.state, draft.pincode]
+                      v={[draft.streetAddress, draft.city, draft.district, draft.state, draft.pincode]
                         .filter(Boolean)
                         .join(", ")}
                     />
