@@ -82,6 +82,8 @@ export function printHtml(title: string, bodyHtml: string) {
       h1{font-size:20px;margin:0 0 16px}
       table{border-collapse:collapse;width:100%}
       td,th{border:1px solid #ccc;padding:8px;text-align:left;font-size:13px}
+      img{max-width:100%}
+      blockquote{margin:8px 0;padding-left:12px;border-left:3px solid #ccc;color:#444}
       .card{border:1px solid #ccc;border-radius:12px;padding:16px;margin-bottom:12px}
     </style><h1>${title}</h1>${bodyHtml}`,
   );

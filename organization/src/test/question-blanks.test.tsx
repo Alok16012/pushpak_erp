@@ -59,8 +59,17 @@ const openBlanksTab = () => {
   return screen.getByRole("tabpanel");
 };
 
+/** The question is written in the rich text editor, which is a contentEditable
+ *  box rather than a textarea -- so a test writes HTML into it and fires the
+ *  `input` the browser would fire. */
 const questionBox = (panel: HTMLElement) =>
-  within(panel).getByPlaceholderText(/The capital of France is/i);
+  within(panel).getByRole("textbox", { name: /question text/i });
+
+const write = (panel: HTMLElement, html: string) => {
+  const box = questionBox(panel);
+  box.innerHTML = html;
+  fireEvent.input(box);
+};
 
 describe("Fill in the Blanks", () => {
   it("takes its place among the other question types", () => {
@@ -74,32 +83,28 @@ describe("Fill in the Blanks", () => {
     const panel = openBlanksTab();
     expect(within(panel).getByText(/no blanks yet/i)).toBeInTheDocument();
 
-    fireEvent.change(questionBox(panel), { target: { value: "The capital of France is ___." } });
+    write(panel, "The capital of France is ___.");
     expect(within(panel).getByText(/1 blank in this question/i)).toBeInTheDocument();
 
-    fireEvent.change(questionBox(panel), {
-      target: { value: "The capital of France is ___, on the river ___." },
-    });
+    write(panel, "The capital of France is ___, on the river ___.");
     expect(within(panel).getByText(/2 blanks in this question/i)).toBeInTheDocument();
   });
 
   it("keeps what was typed for a blank when the wording around it changes", () => {
     const panel = openBlanksTab();
-    fireEvent.change(questionBox(panel), { target: { value: "Capital of France is ___ on the ___." } });
+    write(panel, "Capital of France is ___ on the ___.");
 
     fireEvent.change(within(panel).getByLabelText("Answer for blank 1"), {
       target: { value: "Paris" },
     });
 
-    fireEvent.change(questionBox(panel), {
-      target: { value: "The capital city of France is ___, which stands on the ___." },
-    });
+    write(panel, "The capital city of France is ___, which stands on the ___.");
     expect(within(panel).getByLabelText("Answer for blank 1")).toHaveValue("Paris");
   });
 
   it("saves the answers in the order the gaps are written", () => {
     const panel = openBlanksTab();
-    fireEvent.change(questionBox(panel), { target: { value: "___ orbits the ___." } });
+    write(panel, "___ orbits the ___.");
 
     fireEvent.change(within(panel).getByLabelText("Answer for blank 1"), { target: { value: "The Earth" } });
     fireEvent.change(within(panel).getByLabelText("Answer for blank 2"), { target: { value: "Sun, sol" } });
@@ -116,7 +121,7 @@ describe("Fill in the Blanks", () => {
 
   it("refuses a sentence with nothing to fill in, and says how to mark one", () => {
     const panel = openBlanksTab();
-    fireEvent.change(questionBox(panel), { target: { value: "The capital of France is Paris." } });
+    write(panel, "The capital of France is Paris.");
     fireEvent.click(within(panel).getByRole("button", { name: /save question/i }));
 
     expect(saved()).toHaveLength(0);
@@ -125,7 +130,7 @@ describe("Fill in the Blanks", () => {
 
   it("names the blank that has no answer, rather than saving one that cannot be marked", () => {
     const panel = openBlanksTab();
-    fireEvent.change(questionBox(panel), { target: { value: "___ orbits the ___." } });
+    write(panel, "___ orbits the ___.");
 
     fireEvent.change(within(panel).getByLabelText("Answer for blank 1"), { target: { value: "The Earth" } });
     fireEvent.click(within(panel).getByRole("button", { name: /save question/i }));
@@ -138,11 +143,11 @@ describe("Fill in the Blanks", () => {
 
   it("clears the form after a save, ready for the next question", () => {
     const panel = openBlanksTab();
-    fireEvent.change(questionBox(panel), { target: { value: "Water is ___." } });
+    write(panel, "Water is ___.");
     fireEvent.change(within(panel).getByLabelText("Answer for blank 1"), { target: { value: "H2O" } });
     fireEvent.click(within(panel).getByRole("button", { name: /save question/i }));
 
-    expect(questionBox(panel)).toHaveValue("");
+    expect(questionBox(panel).innerHTML).toBe("");
     expect(within(panel).getByText(/no blanks yet/i)).toBeInTheDocument();
   });
 });

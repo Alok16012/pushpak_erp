@@ -27,6 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getExams } from "@/lib/supabase/data";
 import { printHtml } from "@/lib/export";
+import { plainToRichText, richTextToPlain, sanitizeRichText } from "@/lib/rich-text";
 import { QUESTION_BANK_KEY, QUESTION_SEED, type Question } from "./AddQuestions";
 
 interface QuestionPaper {
@@ -262,11 +263,11 @@ export default function QuestionPaperBuilder() {
                 ${chosen
                   .map(
                     (q) => `<li style="margin-bottom:14px">
-                      <div>${q.text} <span style="color:#6b7280">[${q.marks} mark(s)]</span></div>
+                      <div>${sanitizeRichText(q.text)} <span style="color:#6b7280">[${q.marks} mark(s)]</span></div>
                       ${
                         q.options?.length
                           ? `<ol type="a" style="color:#374151;margin:6px 0 0">${q.options
-                              .map((o) => `<li>${o}</li>`)
+                              .map((o) => `<li>${plainToRichText(o)}</li>`)
                               .join("")}</ol>`
                           : ""
                       }
@@ -492,7 +493,7 @@ export default function QuestionPaperBuilder() {
                   }
                 />
                 <span className="text-sm">
-                  <span className="block">{question.text}</span>
+                  <span className="block">{richTextToPlain(question.text)}</span>
                   <span className="text-xs text-muted-foreground">
                     {question.topic} - {question.difficulty} - {question.marks} mark(s)
                   </span>

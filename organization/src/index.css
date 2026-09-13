@@ -207,6 +207,43 @@
   .delta-flat { @apply bg-muted text-muted-foreground; }
 }
 
+  /* Formatted prose -- what the writing editor produces and every screen that
+     shows a question renders. Tailwind's reset strips headings and lists back
+     to plain text, so the editor would otherwise show none of its own work. */
+  .rich-text { @apply text-sm leading-relaxed; }
+  .rich-text > :first-child { margin-top: 0; }
+  .rich-text > :last-child { margin-bottom: 0; }
+  .rich-text h1 { @apply mb-2 mt-4 text-xl font-semibold; }
+  .rich-text h2 { @apply mb-2 mt-4 text-lg font-semibold; }
+  .rich-text h3 { @apply mb-1 mt-3 text-base font-semibold; }
+  .rich-text h4 { @apply mb-1 mt-3 text-sm font-semibold; }
+  .rich-text p { @apply my-2; }
+  .rich-text ul { @apply my-2 list-disc pl-6; }
+  .rich-text ol { @apply my-2 list-decimal pl-6; }
+  .rich-text li { @apply my-1; }
+  .rich-text a { @apply text-primary underline underline-offset-2; }
+  .rich-text blockquote {
+    @apply my-3 border-l-4 pl-4 italic text-muted-foreground;
+    border-color: hsl(var(--border));
+  }
+  .rich-text pre {
+    @apply my-3 overflow-x-auto rounded-lg bg-muted p-3 font-mono text-xs;
+  }
+  .rich-text code { @apply rounded bg-muted px-1 py-0.5 font-mono text-xs; }
+  .rich-text pre code { @apply bg-transparent p-0; }
+  .rich-text hr { @apply my-4 border-t; }
+  .rich-text img { @apply my-2 inline-block max-w-full rounded-md; }
+  .rich-text table { @apply my-3 w-full text-sm; }
+  .rich-text th { @apply bg-muted font-semibold; }
+  .rich-text th, .rich-text td { @apply border p-1.5 align-top; }
+
+  /* The box is never truly empty -- the browser keeps a stray <br> in it -- so
+     the placeholder is driven by what the editor last emitted, not :empty. */
+  .rich-text-editor[data-empty]::before {
+    content: attr(data-placeholder);
+    @apply pointer-events-none block text-muted-foreground;
+  }
+
 @layer utilities {
   .animate-fade-in {
     animation: fadeIn 0.3s ease-out;

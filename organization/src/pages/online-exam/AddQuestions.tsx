@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichText } from "@/components/ui/rich-text";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,6 +14,7 @@ import { Plus, Save, Trash2, Image, Upload, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile, pickImage } from "@/lib/export";
+import { isRichTextEmpty, plainToRichText, richTextToPlain } from "@/lib/rich-text";
 
 export type QuestionType = "mcq" | "true-false" | "short" | "long" | "blanks";
 
@@ -23,7 +25,10 @@ export type QuestionType = "mcq" | "true-false" | "short" | "long" | "blanks";
  */
 export const BLANK_MARKER = /_{3,}/g;
 
-export const countBlanks = (text: string) => (text.match(BLANK_MARKER) ?? []).length;
+/** Counted on the wording alone: a gap stays a gap when the sentence around it
+ *  is bolded, and `<br>` is not three underscores. */
+export const countBlanks = (text: string) =>
+  (richTextToPlain(text).match(BLANK_MARKER) ?? []).length;
 
 export interface Question {
   id: string;
@@ -238,7 +243,7 @@ export default function AddQuestions() {
   /** Validate + store an MCQ; returns false so callers can skip the form reset. */
   const saveMcq = () => {
     const filled = options.filter((o) => o.text.trim());
-    if (!meta.subject || !text.trim() || !meta.difficulty) {
+    if (!meta.subject || isRichTextEmpty(text) || !meta.difficulty) {
       toast({ title: "Missing details", description: "Subject, question text and difficulty are required.", variant: "destructive" });
       return false;
     }
@@ -257,7 +262,7 @@ export default function AddQuestions() {
       type: "mcq",
       subject: meta.subject,
       topic: meta.topic,
-      text: text.trim(),
+      text,
       image: image || undefined,
       options: kept.map((o) => o.text.trim()),
       answer: String(kept.findIndex((o) => o.id === correctId)),
@@ -284,7 +289,7 @@ export default function AddQuestions() {
   };
 
   const saveTrueFalse = () => {
-    if (!tf.text.trim()) {
+    if (isRichTextEmpty(tf.text)) {
       toast({ title: "Question required", description: "Enter the statement to be judged.", variant: "destructive" });
       return;
     }
@@ -293,7 +298,7 @@ export default function AddQuestions() {
       type: "true-false",
       subject: meta.subject || "general",
       topic: meta.topic,
-      text: tf.text.trim(),
+      text: tf.text,
       answer: tf.answer,
       difficulty: meta.difficulty || "easy",
       marks: meta.marks || "1",
@@ -304,8 +309,8 @@ export default function AddQuestions() {
   };
 
   const saveBlanks = () => {
-    const text = blanks.text.trim();
-    if (!text) {
+    const text = blanks.text;
+    if (isRichTextEmpty(text)) {
       toast({ title: "Question required", description: "Enter the sentence with its blanks.", variant: "destructive" });
       return;
     }
@@ -350,7 +355,7 @@ export default function AddQuestions() {
   };
 
   const saveShort = () => {
-    if (!short.text.trim()) {
+    if (isRichTextEmpty(short.text)) {
       toast({ title: "Question required", description: "Enter the question text.", variant: "destructive" });
       return;
     }
@@ -359,7 +364,7 @@ export default function AddQuestions() {
       type: "short",
       subject: meta.subject || "general",
       topic: meta.topic,
-      text: short.text.trim(),
+      text: short.text,
       keywords: short.keywords || undefined,
       wordLimit: short.wordLimit || undefined,
       difficulty: meta.difficulty || "medium",
@@ -371,7 +376,7 @@ export default function AddQuestions() {
   };
 
   const saveLong = () => {
-    if (!long.text.trim()) {
+    if (isRichTextEmpty(long.text)) {
       toast({ title: "Question required", description: "Enter the question text.", variant: "destructive" });
       return;
     }
@@ -384,7 +389,7 @@ export default function AddQuestions() {
       type: "long",
       subject: meta.subject || "general",
       topic: meta.topic,
-      text: long.text.trim(),
+      text: long.text,
       modelAnswer: long.modelAnswer || undefined,
       minWords: long.minWords || undefined,
       maxWords: long.maxWords || undefined,
@@ -419,7 +424,7 @@ export default function AddQuestions() {
           : "mcq",
         subject: row.subject || "general",
         topic: row.topic || "",
-        text: String(row.text).trim(),
+        text: plainToRichText(String(row.text).trim()),
         options: row.options ? String(row.options).split("|").map((o) => o.trim()).filter(Boolean) : undefined,
         blanks: row.blanks ? String(row.blanks).split("|").map((b) => b.trim()).filter(Boolean) : undefined,
         answer: row.answer || undefined,
@@ -443,14 +448,14 @@ export default function AddQuestions() {
         type: q.type,
         subject: q.subject,
         topic: q.topic,
-        text: q.text,
+        text: richTextToPlain(q.text),
         options: (q.options ?? []).join("|"),
         blanks: (q.blanks ?? []).join("|"),
         answer: q.answer ?? "",
         difficulty: q.difficulty,
         marks: q.marks,
         negativeMarks: q.negativeMarks ?? "",
-        explanation: q.explanation ?? "",
+        explanation: richTextToPlain(q.explanation ?? ""),
       })),
       ["type", "subject", "topic", "text", "options", "blanks", "answer", "difficulty", "marks", "negativeMarks", "explanation"],
     );
@@ -538,12 +543,12 @@ export default function AddQuestions() {
 
                   <div className="space-y-2">
                     <Label htmlFor="question">Question Text *</Label>
-                    <Textarea
+                    <RichTextEditor
                       id="question"
+                      label="Question text"
                       placeholder="Enter your question here..."
-                      rows={4}
                       value={text}
-                      onChange={(e) => setText(e.target.value)}
+                      onChange={setText}
                     />
                   </div>
 
@@ -644,11 +649,12 @@ export default function AddQuestions() {
                   <CardTitle>Explanation</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Textarea
+                  <RichTextEditor
+                    label="Explanation"
                     placeholder="Add explanation for the correct answer (shown after submission)..."
-                    rows={4}
+                    minHeight={120}
                     value={meta.explanation}
-                    onChange={(e) => setMetaField("explanation", e.target.value)}
+                    onChange={(value) => setMetaField("explanation", value)}
                   />
                 </CardContent>
               </Card>
@@ -680,11 +686,12 @@ export default function AddQuestions() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Question Text *</Label>
-                <Textarea
+                <RichTextEditor
+                  label="Question text"
                   placeholder="Enter your true/false question..."
-                  rows={3}
+                  minHeight={120}
                   value={tf.text}
-                  onChange={(e) => setTf((f) => ({ ...f, text: e.target.value }))}
+                  onChange={(value) => setTf((f) => ({ ...f, text: value }))}
                 />
               </div>
               <div className="space-y-2">
@@ -716,11 +723,12 @@ export default function AddQuestions() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Question Text *</Label>
-                <Textarea
+                <RichTextEditor
+                  label="Question text"
                   placeholder="The capital of France is ___ and it stands on the river ___."
-                  rows={3}
+                  minHeight={120}
                   value={blanks.text}
-                  onChange={(e) => setBlanksText(e.target.value)}
+                  onChange={setBlanksText}
                 />
                 <p className="text-xs text-muted-foreground">
                   Mark each gap with three or more underscores (<code>___</code>). An answer box
@@ -778,11 +786,12 @@ export default function AddQuestions() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Question Text *</Label>
-                <Textarea
+                <RichTextEditor
+                  label="Question text"
                   placeholder="Enter your short answer question..."
-                  rows={3}
+                  minHeight={120}
                   value={short.text}
-                  onChange={(e) => setShort((f) => ({ ...f, text: e.target.value }))}
+                  onChange={(value) => setShort((f) => ({ ...f, text: value }))}
                 />
               </div>
               <div className="space-y-2">
@@ -818,20 +827,20 @@ export default function AddQuestions() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label>Question Text *</Label>
-                <Textarea
+                <RichTextEditor
+                  label="Question text"
                   placeholder="Enter your long answer question..."
-                  rows={4}
                   value={long.text}
-                  onChange={(e) => setLong((f) => ({ ...f, text: e.target.value }))}
+                  onChange={(value) => setLong((f) => ({ ...f, text: value }))}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Model Answer</Label>
-                <Textarea
+                <RichTextEditor
+                  label="Model answer"
                   placeholder="Enter the model answer for reference..."
-                  rows={4}
                   value={long.modelAnswer}
-                  onChange={(e) => setLong((f) => ({ ...f, modelAnswer: e.target.value }))}
+                  onChange={(value) => setLong((f) => ({ ...f, modelAnswer: value }))}
                 />
               </div>
               <div className="grid gap-4 md:grid-cols-2">
@@ -883,7 +892,7 @@ export default function AddQuestions() {
                     {q.topic ? ` - ${q.topic}` : ""} - {q.marks} mark(s)
                   </span>
                 </div>
-                <p className="text-sm">{q.text}</p>
+                <RichText html={q.text} />
                 {q.options?.length && q.type !== "blanks" ? (
                   <p className="text-xs text-muted-foreground">
                     {q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${o}`).join("   ")}
