@@ -49,6 +49,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ShieldAlert,
+  QrCode,
 } from "lucide-react";
 import { downloadCsv } from "@/lib/export";
 import {
@@ -62,6 +63,7 @@ import {
   type WalletTransactionItem,
 } from "@/lib/supabase/data";
 import { RechargeDrawer } from "@/components/branch/RechargeDrawer";
+import { RechargeUpiDialog } from "@/components/branch/RechargeUpiDialog";
 import { PaymentProofModal } from "@/components/branch/PaymentProofModal";
 import { RejectReasonDialog } from "@/components/branch/RejectReasonDialog";
 import { TransactionAuditDrawer } from "@/components/branch/TransactionAuditDrawer";
@@ -127,6 +129,7 @@ export default function WalletRecharge() {
 
   // Modals & Drawers States
   const [rechargeDrawerOpen, setRechargeDrawerOpen] = useState(false);
+  const [upiDialogOpen, setUpiDialogOpen] = useState(false);
   const [proofModalOpen, setProofModalOpen] = useState(false);
   const [selectedProofTx, setSelectedProofTx] = useState<WalletTransactionItem | null>(null);
   const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
@@ -549,6 +552,20 @@ export default function WalletRecharge() {
               <Download className="h-3.5 w-3.5" />
               <span>Export CSV</span>
             </Button>
+
+            {/* Whose UPI every branch is told to pay into. An administrator's
+                setting, so it is not offered to the branches paying it. */}
+            {canApprove && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8 text-xs"
+                onClick={() => setUpiDialogOpen(true)}
+              >
+                <QrCode className="h-3.5 w-3.5" />
+                <span>Payment account</span>
+              </Button>
+            )}
 
             <Button
               size="sm"
@@ -1264,6 +1281,12 @@ export default function WalletRecharge() {
       </div>
 
       {/* Modal / Drawer Integrations */}
+      <RechargeUpiDialog
+        open={upiDialogOpen}
+        onOpenChange={setUpiDialogOpen}
+        organizationId={user?.organizationId ?? null}
+      />
+
       <RechargeDrawer
         open={rechargeDrawerOpen}
         onOpenChange={setRechargeDrawerOpen}

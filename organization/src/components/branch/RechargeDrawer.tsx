@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import {
+  getRechargeUpi,
   submitRechargeRequest,
   uploadRechargeProof,
   type WalletTransactionItem,
@@ -70,12 +71,18 @@ const PAYMENT_METHODS = [
   { id: "netbanking", label: "Net Banking", icon: Building2 },
 ];
 
+/**
+ * Where a branch is told to pay. The UPI half is the organisation's own, set
+ * under Wallet Recharge -> Payment account and read from `organizations`; these
+ * are only what is shown until an administrator has set it.
+ */
 const ORG_BANK_DETAILS = {
   bankName: "ICICI Bank",
   accountNo: "109283746512",
   ifsc: "ICIC0001092",
   beneficiary: "Pushpak Educational Trust",
   upiVpa: "pushpakedu@icici",
+  upiName: "Pushpak ERP",
 };
 
 export function RechargeDrawer({
@@ -100,6 +107,11 @@ export function RechargeDrawer({
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [proofFileName, setProofFileName] = useState<string | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  /** The organisation's own UPI account, once it has been set. */
+  const [upi, setUpi] = useState({
+    upiId: ORG_BANK_DETAILS.upiVpa,
+    merchantName: ORG_BANK_DETAILS.upiName,
+  });
   const [submitting, setSubmitting] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -121,11 +133,30 @@ export function RechargeDrawer({
     : null;
   const institute = fixedInstituteId ? fixedInstitute : selectedInstitute;
 
+  // Whose account the branch is paying into. Read when the drawer opens, so an
+  // administrator changing it does not need everyone to reload the page.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    getRechargeUpi(user?.organizationId ?? null)
+      .then((result) => {
+        if (live && result.data) setUpi(result.data);
+      })
+      .catch(() => {
+        /* Leave the fallback showing rather than an empty payment panel. */
+      });
+    return () => {
+      live = false;
+    };
+  }, [open, user?.organizationId]);
+
   // Generate dynamic QR code for UPI
   useEffect(() => {
     if (method === "upi") {
       const numericAmount = Number(amount) || 0;
-      const upiUrl = `upi://pay?pa=${ORG_BANK_DETAILS.upiVpa}&pn=Pushpak%20ERP&am=${numericAmount}&cu=INR`;
+      const upiUrl =
+        `upi://pay?pa=${encodeURIComponent(upi.upiId)}` +
+        `&pn=${encodeURIComponent(upi.merchantName)}&am=${numericAmount}&cu=INR`;
       QRCode.toDataURL(upiUrl, {
         width: 140,
         margin: 1,
@@ -134,7 +165,7 @@ export function RechargeDrawer({
         .then((url) => setQrDataUrl(url))
         .catch(() => setQrDataUrl(""));
     }
-  }, [method, amount]);
+  }, [method, amount, upi]);
 
   const copyToClipboard = (field: string, text: string) => {
     navigator.clipboard.writeText(text);
@@ -465,11 +496,11 @@ export function RechargeDrawer({
                     </span>
                     <div className="flex items-center justify-between p-2 rounded bg-background border">
                       <span className="font-mono text-xs font-semibold text-foreground select-all">
-                        {ORG_BANK_DETAILS.upiVpa}
+                        {upi.upiId}
                       </span>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard("vpa", ORG_BANK_DETAILS.upiVpa)}
+                        onClick={() => copyToClipboard("vpa", upi.upiId)}
                         className="text-xs text-primary hover:underline flex items-center gap-1 ml-2"
                       >
                         {copiedField === "vpa" ? (

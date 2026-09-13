@@ -3,8 +3,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const submitRechargeRequest = vi.fn();
 const uploadRechargeProof = vi.fn();
+/** The organisation's own UPI account, which the drawer reads when it opens. */
+const getRechargeUpi = vi.fn(() =>
+  Promise.resolve({ success: true, data: { upiId: "idealdigiskills@icici", merchantName: "Ideal Digiskills" } }),
+);
 
-vi.mock("@/lib/supabase/data", () => ({ submitRechargeRequest, uploadRechargeProof }));
+vi.mock("@/lib/supabase/data", () => ({
+  submitRechargeRequest,
+  uploadRechargeProof,
+  getRechargeUpi: (...args: unknown[]) => getRechargeUpi(...(args as [])),
+}));
 vi.mock("qrcode", () => ({ default: { toDataURL: () => Promise.resolve("data:image/png;base64,QR") } }));
 
 const { RechargeDrawer } = await import("@/components/branch/RechargeDrawer");
@@ -34,6 +42,7 @@ function fillAmountAndReference() {
 }
 
 beforeEach(() => {
+  getRechargeUpi.mockClear();
   submitRechargeRequest.mockReset();
   uploadRechargeProof.mockReset();
   submitRechargeRequest.mockResolvedValue({ success: true, data: { id: "txn1" } });
@@ -70,6 +79,23 @@ describe("RechargeDrawer, filing for a branch login", () => {
     expect(screen.getByText(/not in the list of active branches/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Submit Recharge/i })).toBeDisabled();
     expect(submitRechargeRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("RechargeDrawer, the account being paid", () => {
+  // It used to be a constant in the file: one institute's UPI ID, shown to
+  // every branch on every installation.
+  it("shows the organisation's own UPI account, not a hardcoded one", async () => {
+    open();
+    expect(await screen.findByText("idealdigiskills@icici")).toBeInTheDocument();
+    expect(getRechargeUpi).toHaveBeenCalledWith("org1");
+  });
+
+  it("still shows an account to pay when the organisation has not set one", async () => {
+    getRechargeUpi.mockResolvedValueOnce({ success: true, data: null });
+    open();
+    await waitFor(() => expect(getRechargeUpi).toHaveBeenCalled());
+    expect(screen.getByText(/@/)).toBeInTheDocument();
   });
 });
 
