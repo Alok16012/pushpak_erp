@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { instituteName } from "./instituteName";
+import { instituteLogo } from "./instituteLogo";
 
 export type StudentDocument = {
   firstName: string;
@@ -69,16 +70,35 @@ export type StudentDocument = {
   }>;
 };
 
-const header = (doc: jsPDF, title: string, subtitle: string) => {
+/**
+ * `logo` draws the institute's own mark at the left of the bar and shifts the
+ * name clear of it. Left off, the bar is exactly as it was — the marksheet and
+ * certificate place their mark themselves, in their own layout.
+ */
+const header = (doc: jsPDF, title: string, subtitle: string, logo?: string | null) => {
   doc.setFillColor(24, 24, 27);
   doc.rect(0, 0, 210, 38, "F");
+  const mark = logo && logo.startsWith("data:image") ? logo : null;
+  let x = 16;
+  if (mark) {
+    try {
+      // A white tile behind it: most institute marks are drawn for a light
+      // background and disappear into the bar without one.
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(14, 9, 20, 20, 3, 3, "F");
+      doc.addImage(mark, 16, 11, 16, 16);
+      x = 40;
+    } catch {
+      x = 16;
+    }
+  }
   doc.setTextColor(199, 255, 47);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
-  doc.text("IDEALDIGISKILLS", 16, 17);
+  doc.text("IDEALDIGISKILLS", x, 17);
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(9);
-  doc.text("EDUCATION  |  SOFTWARE  |  SKILL DEVELOPMENT", 16, 25);
+  doc.text("EDUCATION  |  SOFTWARE  |  SKILL DEVELOPMENT", x, 25);
   doc.setFontSize(13);
   doc.text(title, 194, 17, { align: "right" });
   doc.setFont("helvetica", "normal");
@@ -508,6 +528,8 @@ export type InvoiceDocument = {
     address?: string | null;
   };
   items: Array<{ description: string; amount: number }>;
+  /** Overrides the branch's saved mark. Left off, whatever is configured prints. */
+  logo?: string | null;
   discount?: number;
   lateFee?: number;
   paidAmount: number;
@@ -542,7 +564,7 @@ export function feeInvoicePdf(invoice: InvoiceDocument) {
   const status =
     balance <= 0 ? "PAID IN FULL" : overdue ? "OVERDUE" : invoice.paidAmount > 0 ? "PART PAID" : "UNPAID";
 
-  header(doc, "INVOICE", invoice.invoiceNo);
+  header(doc, "INVOICE", invoice.invoiceNo, invoice.logo ?? instituteLogo());
 
   // Billed party on the left, the invoice's own particulars on the right, so
   // the two blocks that get read first sit side by side.

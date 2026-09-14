@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  */
 const drawn: string[] = [];
 const saved: string[] = [];
+const images: string[] = [];
 
 vi.mock("jspdf", async () => {
   const actual = await vi.importActual<typeof import("jspdf")>("jspdf");
@@ -22,6 +23,11 @@ vi.mock("jspdf", async () => {
       self.text = (value: unknown, ...rest: unknown[]) => {
         drawn.push(String(value));
         return (text as (...a: unknown[]) => unknown)(value, ...rest);
+      };
+      const addImage = this.addImage.bind(this);
+      self.addImage = (value: unknown, ...rest: unknown[]) => {
+        images.push(String(value));
+        return (addImage as (...a: unknown[]) => unknown)(value, ...rest);
       };
     }
   }
@@ -44,9 +50,15 @@ const invoice = (overrides: Partial<Parameters<typeof feeInvoicePdf>[0]> = {}) =
     ...overrides,
   });
 
+/** A real 1x1 PNG: jsPDF parses the bytes, so a made-up string would be thrown out. */
+const PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 beforeEach(() => {
   drawn.length = 0;
   saved.length = 0;
+  images.length = 0;
+  localStorage.clear();
 });
 
 describe("feeInvoicePdf", () => {
@@ -122,5 +134,30 @@ describe("feeInvoicePdf", () => {
   it("names the file after the invoice", () => {
     invoice();
     expect(saved).toEqual(["invoice-INV-1001.pdf"]);
+  });
+
+  it("prints the institute's mark on the letterhead", () => {
+    invoice({ logo: PNG });
+    expect(images).toContain(PNG);
+  });
+
+  it("falls back to the mark mirrored for this branch", () => {
+    // The builders are synchronous and cannot fetch, so the logo is read from
+    // the mirror the app primes on sign-in rather than passed in every time.
+    localStorage.setItem("institute-logo", PNG);
+    invoice();
+    expect(images).toContain(PNG);
+  });
+
+  it("still prints when there is no mark to print", () => {
+    invoice();
+    expect(images).toEqual([]);
+    expect(drawn).toContain("IDEALDIGISKILLS");
+  });
+
+  it("ignores a stored value that is not an image", () => {
+    localStorage.setItem("institute-logo", "https://example.com/logo.png");
+    invoice();
+    expect(images).toEqual([]);
   });
 });

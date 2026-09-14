@@ -35,6 +35,14 @@ function assertRemoved(rows: unknown[] | null, what: string) {
   );
 }
 
+/** The write-side twin of `assertRemoved`, for the same reason. */
+function assertWritten(rows: unknown[] | null, what: string) {
+  if (rows && rows.length > 0) return;
+  throw new Error(
+    `${what} was not saved — it no longer exists, or this login is not allowed to change it.`,
+  );
+}
+
 /* ============================
    AUTH
    ============================ */
@@ -3399,4 +3407,164 @@ export async function saveDropdownOptions(
     throw new Error(error.message);
   }
   return { success: true, stored: true };
+}
+
+/* ============================
+   SYSTEM USERS
+   ============================ */
+
+/**
+ * The live values of the `SystemRole` and `UserType` Postgres enums.
+ *
+ * The All Users page used to offer "Admin", "Manager" and "Employee", none of
+ * which the database will accept — writing one back is rejected with `22P02`.
+ */
+export const SYSTEM_ROLES = [
+  "SUPER_ADMIN",
+  "ORGANIZATION_ADMIN",
+  "BRANCH_ADMIN",
+  "ACCOUNTANT",
+  "RECEPTIONIST",
+  "TEACHER",
+  "STAFF",
+  "STUDENT",
+] as const;
+
+export type SystemRole = (typeof SYSTEM_ROLES)[number];
+
+export interface SystemUserRow {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  userType: string;
+  isActive: boolean;
+  lastLoginAt: string;
+  createdAt: string;
+  /** The branch this login runs, if it runs one. The `users` table has no
+   *  branch column — `branches.userId` points the other way, at the login. */
+  branch: string;
+  branchId: string;
+  /** The organisation this login owns, if it owns one. */
+  organization: string;
+}
+
+/**
+ * Staff logins, scoped to what the caller may see.
+ *
+ * There is no `users.organizationId` to filter on, so the scope is resolved the
+ * way the schema actually models it: an organisation names its admin through
+ * `organizations.userId`, and each branch names its login through
+ * `branches.userId`. Those ids are collected first and the users read back by
+ * id.
+ *
+ * Student logins are deliberately left out. Every enrolled student has one, so
+ * they would swamp the list, and they are managed from the Students section
+ * where the rest of the student record lives.
+ */
+export async function getUsers(
+  organizationId: string | null,
+  branchId: string | null,
+): Promise<{ success: true; data: SystemUserRow[] }> {
+  const owners = new Map<string, { branch?: string; branchId?: string; organization?: string }>();
+
+  if (organizationId) {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("id,name,userId")
+      .eq("id", organizationId)
+      .maybeSingle();
+    const row = org as { name?: string; userId?: string } | null;
+    if (row?.userId) owners.set(row.userId, { organization: row.name || "" });
+  }
+
+  let branchQuery = supabase.from("branches").select("id,name,userId").is("deletedAt", null);
+  if (organizationId) branchQuery = branchQuery.eq("organizationId", organizationId);
+  else if (branchId) branchQuery = branchQuery.eq("id", branchId);
+  const { data: branches } = await branchQuery;
+
+  for (const branch of (branches || []) as Array<{ id: string; name: string; userId?: string }>) {
+    if (!branch.userId) continue;
+    owners.set(branch.userId, {
+      ...owners.get(branch.userId),
+      branch: branch.name || "",
+      branchId: branch.id,
+    });
+  }
+
+  if (!owners.size) return { success: true, data: [] };
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("id,name,email,phone,role,userType,isActive,lastLoginAt,createdAt")
+    .in("id", [...owners.keys()])
+    .is("deletedAt", null)
+    .order("createdAt", { ascending: false });
+  if (error) throw new Error(error.message);
+
+  const users = ((data || []) as Array<Record<string, unknown>>).map((row): SystemUserRow => {
+    const owner = owners.get(String(row.id)) || {};
+    return {
+      id: String(row.id),
+      name: String(row.name || ""),
+      email: String(row.email || ""),
+      phone: String(row.phone || ""),
+      role: String(row.role || ""),
+      userType: String(row.userType || ""),
+      // The column is not null and defaults to true, so only an explicit
+      // false means the account has been switched off.
+      isActive: row.isActive !== false,
+      lastLoginAt: String(row.lastLoginAt || ""),
+      createdAt: String(row.createdAt || ""),
+      branch: owner.branch || "",
+      branchId: owner.branchId || "",
+      organization: owner.organization || "",
+    };
+  });
+
+  return { success: true, data: users };
+}
+
+/**
+ * Saves an edit. Only the columns that exist are sent — `department` and
+ * `status` were on the old form and are on no table, so they were being typed
+ * into boxes that went nowhere.
+ */
+export async function updateUser(
+  id: string,
+  patch: { name?: string; phone?: string | null; role?: string; isActive?: boolean },
+) {
+  const body: Record<string, unknown> = {};
+  if (patch.name !== undefined) body.name = patch.name.trim();
+  if (patch.phone !== undefined) body.phone = patch.phone?.trim() || null;
+  if (patch.role !== undefined) body.role = patch.role;
+  if (patch.isActive !== undefined) body.isActive = patch.isActive;
+  if (!Object.keys(body).length) return { success: true as const };
+
+  const { data, error } = await supabase
+    .from("users")
+    .update(body)
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(error.message);
+  assertWritten(data, "That user");
+  return { success: true as const };
+}
+
+/**
+ * Soft-deletes a login, the same way branches and students are removed. The
+ * account itself stays in Supabase Auth — revoking it needs the service-role
+ * key, which the browser does not hold — so this stops it appearing as a user
+ * of the institute rather than pretending the credential is gone.
+ */
+export async function deleteUser(id: string) {
+  const { data, error } = await supabase
+    .from("users")
+    .update({ deletedAt: new Date().toISOString(), isActive: false })
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(error.message);
+  assertRemoved(data, "That user");
+  return { success: true as const };
 }

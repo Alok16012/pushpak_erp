@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { useAuth } from "@/contexts/AuthContext";
 import { MobileNav } from "./MobileNav";
+import { loadInstituteLogo } from "@/lib/instituteLogo";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -11,6 +13,14 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { user } = useAuth();
+
+  // The PDF builders are synchronous and cannot fetch, so the branch's mark is
+  // pulled into its localStorage mirror here — once per session, on whatever
+  // page the user happens to open first.
+  useEffect(() => {
+    void loadInstituteLogo(user?.branchId ?? null);
+  }, [user?.branchId]);
+
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background">
