@@ -31,11 +31,45 @@ export interface DocElement {
   z: number;
 }
 
+/** How the watermark is laid over the canvas before `backgroundScale` is applied. */
+export type BackgroundFit = "cover" | "contain" | "stretch" | "tile";
+
+export const BACKGROUND_FITS: Array<{ value: BackgroundFit; label: string; hint: string }> = [
+  { value: "cover", label: "Fill the page", hint: "Covers the whole canvas, cropping the overflow" },
+  { value: "contain", label: "Fit inside", hint: "Whole image visible, letterboxed" },
+  { value: "stretch", label: "Stretch", hint: "Forced to the canvas, ignoring its proportions" },
+  { value: "tile", label: "Tile", hint: "Repeated across the page, for a seal or a crest" },
+];
+
 export interface DocumentDesign {
   elements: DocElement[];
   background: string;
   backgroundImage: string;
+  /** How the mark is laid over the canvas. */
+  backgroundFit: BackgroundFit;
+  /** Percent. For a tile this is the width of one tile against the canvas. */
+  backgroundScale: number;
+  /** Where the mark sits, 0-100 across and down the canvas. */
+  backgroundX: number;
+  backgroundY: number;
+  /** 0-1. A watermark is a watermark because it is faint. */
+  backgroundOpacity: number;
+  backgroundRotate: number;
 }
+
+/**
+ * The defaults reproduce what the background image used to do - centred, filling
+ * the page, fully opaque - so a design saved before any of this existed opens
+ * looking exactly as it did.
+ */
+export const BACKGROUND_DEFAULTS = {
+  backgroundFit: "cover" as BackgroundFit,
+  backgroundScale: 100,
+  backgroundX: 50,
+  backgroundY: 50,
+  backgroundOpacity: 1,
+  backgroundRotate: 0,
+};
 
 export type DocumentKind =
   | "certificate"
@@ -354,7 +388,54 @@ export function starterDesign(kind: DocumentKind): DocumentDesign {
     elements: DOCUMENT_KINDS[kind].starter(),
     background: "#ffffff",
     backgroundImage: "",
+    ...BACKGROUND_DEFAULTS,
   };
+}
+
+/**
+ * The watermark, as a layer of its own.
+ *
+ * It cannot be the canvas's own `background-image`: a background cannot be
+ * faded or turned on its own, and putting `opacity` on the canvas would take
+ * every element standing on it down with the mark. Scale is applied through
+ * the tile size when tiling and through a transform otherwise, because
+ * `background-size: cover` has no factor to multiply.
+ */
+export function watermarkStyle(design: DocumentDesign): Record<string, string | number> {
+  const scale = Math.max(1, Number(design.backgroundScale) || 100) / 100;
+  const tiling = design.backgroundFit === "tile";
+  const size = tiling
+    ? `${scale * 25}% auto`
+    : design.backgroundFit === "stretch"
+      ? "100% 100%"
+      : design.backgroundFit === "contain"
+        ? "contain"
+        : "cover";
+  const turn = `rotate(${Number(design.backgroundRotate) || 0}deg)`;
+  return {
+    position: "absolute",
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    backgroundImage: `url('${design.backgroundImage}')`,
+    backgroundRepeat: tiling ? "repeat" : "no-repeat",
+    backgroundSize: size,
+    backgroundPosition: `${design.backgroundX ?? 50}% ${design.backgroundY ?? 50}%`,
+    opacity: design.backgroundOpacity ?? 1,
+    transform: tiling ? turn : `${turn} scale(${scale})`,
+    transformOrigin: "center",
+    // The mark is scenery: it must never swallow a click meant for an element.
+    pointerEvents: "none",
+    zIndex: 0,
+  };
+}
+
+/** `backgroundSize` -> `background-size`, for the printable string form. */
+export function styleText(style: Record<string, string | number>): string {
+  return Object.entries(style)
+    .map(([key, value]) => `${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}:${value}`)
+    .join(";");
 }
 
 /** Designs live per kind, so switching type never discards the other layouts. */
@@ -369,6 +450,15 @@ export function loadDesigns(): Partial<Record<DocumentKind, DocumentDesign>> {
       if (!design) continue;
       design.background ||= "#ffffff";
       design.backgroundImage ??= "";
+      // A design stored before the watermark controls existed has none of these.
+      // `??=` and not `||=`: a mark faded to nothing, or turned to zero, is a
+      // setting somebody chose and must survive being reopened.
+      design.backgroundFit ??= BACKGROUND_DEFAULTS.backgroundFit;
+      design.backgroundScale ??= BACKGROUND_DEFAULTS.backgroundScale;
+      design.backgroundX ??= BACKGROUND_DEFAULTS.backgroundX;
+      design.backgroundY ??= BACKGROUND_DEFAULTS.backgroundY;
+      design.backgroundOpacity ??= BACKGROUND_DEFAULTS.backgroundOpacity;
+      design.backgroundRotate ??= BACKGROUND_DEFAULTS.backgroundRotate;
       design.elements = (design.elements ?? []).map((el) => ({
         ...element(el.type ?? "text"),
         ...el,
@@ -422,8 +512,8 @@ export function designHtml(
       return `<div style="${box}background:${el.background};border:${el.border};border-radius:${el.radius}px;display:flex;align-items:center;justify-content:${justify};font-size:${el.fontSize}px;font-weight:${el.fontWeight};color:${el.color};text-align:${el.align}">${escape(replaceTokens(el.text, data))}</div>`;
     })
     .join("");
-  const bg = design.backgroundImage
-    ? `background-image:url('${design.backgroundImage}');background-size:cover;background-position:center;`
-    : `background:${design.background};`;
-  return `<div style="position:relative;width:${width}px;height:${height}px;${bg}overflow:hidden">${body}</div>`;
+  const mark = design.backgroundImage
+    ? `<div style="${styleText(watermarkStyle(design))}"></div>`
+    : "";
+  return `<div style="position:relative;width:${width}px;height:${height}px;background:${design.background};overflow:hidden">${mark}${body}</div>`;
 }

@@ -42,8 +42,11 @@ import {
   saveInstituteName,
 } from "@/lib/instituteName";
 import {
+  BACKGROUND_DEFAULTS,
+  BACKGROUND_FITS,
   DOCUMENT_KINDS,
   KIND_ORDER,
+  type BackgroundFit,
   type DocElement,
   type DocumentDesign,
   type DocumentKind,
@@ -57,6 +60,7 @@ import {
   saveDesigns,
   starterDesign,
   usedTokens,
+  watermarkStyle,
 } from "@/lib/documentDesigner";
 
 /**
@@ -184,6 +188,23 @@ export default function DocumentDesigner() {
     },
     [record, apply, design],
   );
+
+  // A slider fires on every movement. Dragging one through `commit` would push
+  // forty steps and flush the whole history, so the watermark sliders write
+  // straight through and leave a single step behind when the drag ends - the
+  // same bargain the canvas drag and resize gestures already make.
+  const backgroundBefore = useRef<DocumentDesign | null>(null);
+
+  const tuneBackground = (patch: Partial<DocumentDesign>) => {
+    backgroundBefore.current ??= design;
+    apply({ ...design, ...patch });
+  };
+
+  const settleBackground = () => {
+    const before = backgroundBefore.current;
+    backgroundBefore.current = null;
+    if (before && JSON.stringify(before) !== JSON.stringify(design)) record(design, before);
+  };
 
   // Only a change of type drops the selection. This used to depend on `designs`
   // too, which deselected the element on every keystroke: the properties panel
@@ -627,7 +648,7 @@ export default function DocumentDesigner() {
               />
               <ElementButton
                 icon={Droplet}
-                label="Watermark"
+                label="Text watermark"
                 onClick={() =>
                   add(
                     element("text", {
@@ -646,6 +667,32 @@ export default function DocumentDesigner() {
                   )
                 }
               />
+              {/* The only watermark on offer was that faint line of text. A
+                  crest or a seal had to go in as the canvas background, which
+                  lived in another panel and could not be faded or scaled. */}
+              <label>
+                <span className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border bg-muted/30 p-3 text-xs font-semibold transition hover:bg-muted">
+                  <ImageIcon className="h-4 w-4" />
+                  Image watermark
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) =>
+                    readImage(e, (backgroundImage) =>
+                      commit({
+                        ...design,
+                        backgroundImage,
+                        ...BACKGROUND_DEFAULTS,
+                        backgroundFit: "contain",
+                        backgroundScale: 60,
+                        backgroundOpacity: 0.12,
+                      }),
+                    )
+                  }
+                />
+              </label>
               <label className="col-span-2">
                 <span className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border bg-muted/40 p-3 text-xs font-semibold hover:bg-muted">
                   <ImageIcon className="h-4 w-4" />
@@ -746,17 +793,18 @@ export default function DocumentDesigner() {
                   width: meta.width,
                   height: meta.height,
                   background: design.background,
-                  backgroundImage: design.backgroundImage
-                    ? `url('${design.backgroundImage}')`
-                    : undefined,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
                   transform: `scale(${zoom})`,
                   transformOrigin: "top left",
                   overflow: "hidden",
                   boxShadow: "0 20px 60px rgba(15,23,42,.18)",
                 }}
               >
+                {/* The same layer the printed document gets, so what is
+                    dragged and scaled here is what comes out. */}
+                {design.backgroundImage && (
+                  <div style={watermarkStyle(design) as React.CSSProperties} />
+                )}
+
                 {[...design.elements]
                   .sort((a, b) => a.z - b.z)
                   .map((el) => {
@@ -920,12 +968,12 @@ export default function DocumentDesigner() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Background image</Label>
+                <Label>Background image / watermark</Label>
                 <div className="flex gap-2">
                   <label className="flex-1">
                     <span className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border bg-muted/40 p-2.5 text-xs font-semibold hover:bg-muted">
                       <ImageIcon className="h-4 w-4" />
-                      {design.backgroundImage ? "Change" : "Upload"}
+                      {design.backgroundImage ? "Change image" : "Upload image"}
                     </span>
                     <input
                       type="file"
@@ -948,7 +996,113 @@ export default function DocumentDesigner() {
                     </Button>
                   )}
                 </div>
+                {!design.backgroundImage && (
+                  <p className="text-xs text-muted-foreground">
+                    Upload a crest, seal or letterhead to sit behind the design.
+                  </p>
+                )}
               </div>
+
+              {/* The mark used to be pinned to the middle of the page, filling
+                  it, fully opaque, with nothing to change any of that. */}
+              {design.backgroundImage && (
+                <div className="space-y-3 rounded-xl border bg-muted/30 p-3">
+                  <div className="space-y-2">
+                    <Label>How it sits</Label>
+                    <Select
+                      value={design.backgroundFit}
+                      onValueChange={(v) =>
+                        commit({ ...design, backgroundFit: v as BackgroundFit })
+                      }
+                    >
+                      <SelectTrigger aria-label="Watermark fit">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BACKGROUND_FITS.map((fit) => (
+                          <SelectItem key={fit.value} value={fit.value}>
+                            {fit.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {BACKGROUND_FITS.find((f) => f.value === design.backgroundFit)?.hint}
+                    </p>
+                  </div>
+
+                  <RangeField
+                    label={
+                      design.backgroundFit === "tile"
+                        ? `Tile size — ${Math.round(design.backgroundScale)}%`
+                        : `Scale — ${Math.round(design.backgroundScale)}%`
+                    }
+                    min={25}
+                    max={400}
+                    step={5}
+                    value={design.backgroundScale}
+                    onChange={(backgroundScale) => tuneBackground({ backgroundScale })}
+                    onSettle={settleBackground}
+                  />
+                  <RangeField
+                    label={`Opacity — ${Math.round(design.backgroundOpacity * 100)}%`}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={design.backgroundOpacity}
+                    onChange={(backgroundOpacity) => tuneBackground({ backgroundOpacity })}
+                    onSettle={settleBackground}
+                  />
+                  <RangeField
+                    label={`Rotation — ${Math.round(design.backgroundRotate)}°`}
+                    min={-180}
+                    max={180}
+                    step={5}
+                    value={design.backgroundRotate}
+                    onChange={(backgroundRotate) => tuneBackground({ backgroundRotate })}
+                    onSettle={settleBackground}
+                  />
+                  <RangeField
+                    label={`Across — ${Math.round(design.backgroundX)}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={design.backgroundX}
+                    onChange={(backgroundX) => tuneBackground({ backgroundX })}
+                    onSettle={settleBackground}
+                  />
+                  <RangeField
+                    label={`Down — ${Math.round(design.backgroundY)}%`}
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={design.backgroundY}
+                    onChange={(backgroundY) => tuneBackground({ backgroundY })}
+                    onSettle={settleBackground}
+                  />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        commit({ ...design, ...BACKGROUND_DEFAULTS, backgroundOpacity: 0.12 })
+                      }
+                    >
+                      <Droplet className="mr-2 h-4 w-4" />
+                      Watermark it
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => commit({ ...design, ...BACKGROUND_DEFAULTS })}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -1234,6 +1388,47 @@ function ElementButton({
       <Icon className="h-4 w-4" />
       {label}
     </button>
+  );
+}
+
+/**
+ * A labelled slider. `onChange` fires all through the drag so the canvas moves
+ * under the pointer; `onSettle` fires once at the end, for the undo step.
+ */
+function RangeField({
+  label,
+  min,
+  max,
+  step,
+  value,
+  onChange,
+  onSettle,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (v: number) => void;
+  onSettle: () => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      <input
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        className="w-full"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        onPointerUp={onSettle}
+        onKeyUp={onSettle}
+        onBlur={onSettle}
+      />
+    </div>
   );
 }
 
