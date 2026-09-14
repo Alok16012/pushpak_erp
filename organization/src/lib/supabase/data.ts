@@ -3450,18 +3450,30 @@ export interface SystemUserRow {
   organization: string;
 }
 
+/** The scope columns arrive with user-management.sql; until it is run the
+ *  table has no `organizationId`, and PostgREST answers 42703. */
+const isMissingUserScope = (error: { code?: string; message?: string }) =>
+  error?.code === "42703" || /column users\.(organizationId|branchId) does not exist/i.test(error?.message || "");
+
 /**
  * Staff logins, scoped to what the caller may see.
  *
- * There is no `users.organizationId` to filter on, so the scope is resolved the
- * way the schema actually models it: an organisation names its admin through
- * `organizations.userId`, and each branch names its login through
- * `branches.userId`. Those ids are collected first and the users read back by
- * id.
+ * Two scopes are merged, because the schema grew two ways of saying where a
+ * login belongs.
  *
- * Student logins are deliberately left out. Every enrolled student has one, so
- * they would swamp the list, and they are managed from the Students section
- * where the rest of the student record lives.
+ * The older way is a link pointing the other way: an organisation names its
+ * admin through `organizations.userId`, and each branch names its login through
+ * `branches.userId`. That covers exactly the accounts that *own* something.
+ *
+ * The newer way is `users.organizationId`, added by user-management.sql, which
+ * is the only way to place a receptionist or an accountant — they own neither a
+ * branch nor an organisation, so the links above can never name them. Where
+ * that column is missing the query is skipped rather than failing, so the page
+ * keeps working on a database where the migration has not been run yet.
+ *
+ * Student logins are deliberately left out of both. Every enrolled student has
+ * one, so they would swamp the list, and they are managed from the Students
+ * section where the rest of the student record lives.
  */
 export async function getUsers(
   organizationId: string | null,
@@ -3484,7 +3496,12 @@ export async function getUsers(
   else if (branchId) branchQuery = branchQuery.eq("id", branchId);
   const { data: branches } = await branchQuery;
 
+  // Every branch name, keyed by id -- a staff row carries a `branchId` but no
+  // link back through `branches.userId`, so the owner map cannot name it.
+  const branchNames = new Map<string, string>();
+
   for (const branch of (branches || []) as Array<{ id: string; name: string; userId?: string }>) {
+    branchNames.set(branch.id, branch.name || "");
     if (!branch.userId) continue;
     owners.set(branch.userId, {
       ...owners.get(branch.userId),
@@ -3493,18 +3510,46 @@ export async function getUsers(
     });
   }
 
-  if (!owners.size) return { success: true, data: [] };
+  const columns = "id,name,email,phone,role,userType,isActive,lastLoginAt,createdAt";
+  const rows = new Map<string, Record<string, unknown>>();
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("id,name,email,phone,role,userType,isActive,lastLoginAt,createdAt")
-    .in("id", [...owners.keys()])
-    .is("deletedAt", null)
-    .order("createdAt", { ascending: false });
-  if (error) throw new Error(error.message);
+  if (owners.size) {
+    const { data, error } = await supabase
+      .from("users")
+      .select(columns)
+      .in("id", [...owners.keys()])
+      .is("deletedAt", null);
+    if (error) throw new Error(error.message);
+    for (const row of (data || []) as Array<Record<string, unknown>>) {
+      rows.set(String(row.id), row);
+    }
+  }
 
-  const users = ((data || []) as Array<Record<string, unknown>>).map((row): SystemUserRow => {
+  if (organizationId || branchId) {
+    let scopedQuery = supabase
+      .from("users")
+      .select(`${columns},organizationId,branchId`)
+      .is("deletedAt", null)
+      // Students are managed from the Students section, not here.
+      .neq("userType", "STUDENT");
+    if (organizationId) scopedQuery = scopedQuery.eq("organizationId", organizationId);
+    else scopedQuery = scopedQuery.eq("branchId", branchId);
+
+    const { data, error } = await scopedQuery;
+    // A database without user-management.sql has no such column. That is not a
+    // failure -- it just means the only users it can place are the ones the
+    // owner links above already found.
+    if (error && !isMissingUserScope(error)) throw new Error(error.message);
+    for (const row of (data || []) as Array<Record<string, unknown>>) {
+      rows.set(String(row.id), { ...rows.get(String(row.id)), ...row });
+    }
+  }
+
+  if (!rows.size) return { success: true, data: [] };
+
+  const users = [...rows.values()].map((row): SystemUserRow => {
     const owner = owners.get(String(row.id)) || {};
+    const ownBranchId = String(row.branchId || "");
     return {
       id: String(row.id),
       name: String(row.name || ""),
@@ -3517,11 +3562,17 @@ export async function getUsers(
       isActive: row.isActive !== false,
       lastLoginAt: String(row.lastLoginAt || ""),
       createdAt: String(row.createdAt || ""),
-      branch: owner.branch || "",
-      branchId: owner.branchId || "",
+      // The owner link wins: a branch's own admin should read as that branch
+      // even if the scope column has drifted.
+      branch: owner.branch || branchNames.get(ownBranchId) || "",
+      branchId: owner.branchId || ownBranchId,
       organization: owner.organization || "",
     };
   });
+
+  // Sorted here rather than in the query: two queries are merged, so neither
+  // one's ordering survives the merge.
+  users.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return { success: true, data: users };
 }
@@ -3567,4 +3618,67 @@ export async function deleteUser(id: string) {
   if (error) throw new Error(error.message);
   assertRemoved(data, "That user");
   return { success: true as const };
+}
+
+/**
+ * What each role may hand out.
+ *
+ * This mirrors the `GRANTABLE` table inside the create-staff-user edge
+ * function. The function is the authority -- it re-checks every request
+ * against the caller's own token -- and this copy only decides which options
+ * are worth offering, so nobody is shown a role the server will refuse.
+ *
+ * Nobody can mint a role above their own. A branch admin staffing their branch
+ * cannot create another branch admin, because that account would not be
+ * confined to the branch they are confined to.
+ */
+const GRANTABLE_ROLES: Record<string, SystemRole[]> = {
+  SUPER_ADMIN: ["SUPER_ADMIN", "ORGANIZATION_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "RECEPTIONIST", "TEACHER", "STAFF"],
+  ORGANIZATION_ADMIN: ["ORGANIZATION_ADMIN", "BRANCH_ADMIN", "ACCOUNTANT", "RECEPTIONIST", "TEACHER", "STAFF"],
+  BRANCH_ADMIN: ["ACCOUNTANT", "RECEPTIONIST", "TEACHER", "STAFF"],
+};
+
+/** The roles this caller may create. Empty means they may not create logins. */
+export const grantableRoles = (role?: string | null): SystemRole[] =>
+  GRANTABLE_ROLES[(role ?? "").toUpperCase()] ?? [];
+
+export const canManageUsers = (role?: string | null): boolean => grantableRoles(role).length > 0;
+
+/**
+ * Creates a staff login, or resets the password on one that already exists.
+ *
+ * The account is minted by the create-staff-user edge function, which holds
+ * the service-role key -- signing up from the browser would swap out the
+ * admin's own session. The function writes both the Supabase Auth account and
+ * the `public.users` row, so a login always appears in the list that shows it.
+ *
+ * `branchId` is a request, not a decision: a branch admin always gets their own
+ * branch regardless of what is sent, and an org admin may leave it out to post
+ * someone to head office.
+ */
+export async function createStaffUser(input: {
+  name: string;
+  username: string;
+  password: string;
+  role: SystemRole;
+  email?: string;
+  phone?: string;
+  branchId?: string | null;
+}) {
+  await requireLiveSession();
+
+  const { data, error } = await supabase.functions.invoke("create-staff-user", { body: input });
+  if (error) await throwFunctionError("create-staff-user", error);
+  if (data?.error) throw new Error(data.error);
+  return { success: true, data } as {
+    success: true;
+    data: {
+      userId: string;
+      loginEmail: string;
+      username: string;
+      role: SystemRole;
+      branchId: string | null;
+      created: boolean;
+    };
+  };
 }

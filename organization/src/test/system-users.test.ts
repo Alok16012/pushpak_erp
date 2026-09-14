@@ -3,22 +3,34 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 /**
  * The All Users page listed four invented people and saved nothing.
  *
- * The real difficulty is that `users` has no branch or organisation column to
- * scope a query with — the relationship points the other way, from
- * `organizations.userId` and `branches.userId` at the login. These pin that
- * resolution down, and pin down that a write which touched no row is reported
- * as a failure rather than as success.
+ * The real difficulty is that `users` grew two ways of saying where a login
+ * belongs. The older one points the other way — from `organizations.userId`
+ * and `branches.userId` at the login — and can only name an account that
+ * *owns* something. The newer `users.organizationId`, added by
+ * user-management.sql, is the only one that can place a receptionist. These
+ * pin down that both are read and merged, that a database without the
+ * migration still works, and that a write which touched no row is reported as
+ * a failure rather than as success.
  */
 type Row = Record<string, unknown>;
 
+/** Keyed by table, except `users_scoped`, which is the second `users` read. */
 const rows: Record<string, Row[]> = {};
+const errors: Record<string, { code?: string; message?: string } | null> = {};
 const calls: Array<{
   table: string;
   filters: Record<string, unknown>;
+  excluded?: Record<string, unknown>;
   ids?: unknown[];
   updated?: unknown;
   selected?: string;
 }> = [];
+
+/** The two `users` reads differ by the scope column, which only the second has. */
+const keyFor = (table: string, call: (typeof calls)[number]) =>
+  table === "users" && ("organizationId" in call.filters || "branchId" in call.filters)
+    ? "users_scoped"
+    : table;
 
 function builder(table: string) {
   const call: (typeof calls)[number] = { table, filters: {} };
@@ -37,6 +49,10 @@ function builder(table: string) {
       call.filters[column] = value;
       return chain;
     },
+    neq: (column: string, value: unknown) => {
+      call.excluded = { ...call.excluded, [column]: value };
+      return chain;
+    },
     is: (column: string, value: unknown) => {
       call.filters[column] = value;
       return chain;
@@ -47,8 +63,10 @@ function builder(table: string) {
     },
     order: () => chain,
     maybeSingle: () => Promise.resolve({ data: (rows[table] ?? [])[0] ?? null, error: null }),
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve({ data: rows[table] ?? [], error: null }).then(resolve),
+    then: (resolve: (value: unknown) => unknown) => {
+      const key = keyFor(table, call);
+      return Promise.resolve({ data: rows[key] ?? [], error: errors[key] ?? null }).then(resolve);
+    },
   };
   return chain;
 }
@@ -58,13 +76,17 @@ vi.mock("@/lib/supabase/client", () => ({
   supabaseUrl: "https://project.supabase.co",
 }));
 
-const { getUsers, updateUser, deleteUser, SYSTEM_ROLES } = await import("@/lib/supabase/data");
+const { getUsers, updateUser, deleteUser, SYSTEM_ROLES, grantableRoles, canManageUsers } =
+  await import("@/lib/supabase/data");
 
 const called = (table: string) => calls.find((call) => call.table === table);
+/** The scoped read is the `users` call that carries a scope column. */
+const scopedCall = () => calls.find((call) => keyFor(call.table, call) === "users_scoped");
 
 beforeEach(() => {
   calls.length = 0;
   for (const key of Object.keys(rows)) delete rows[key];
+  for (const key of Object.keys(errors)) delete errors[key];
 });
 
 describe("getUsers", () => {
@@ -137,6 +159,97 @@ describe("getUsers", () => {
 
     const { data } = await getUsers("o1", null);
     expect(data.map((row) => row.isActive)).toEqual([true, false]);
+  });
+
+  it("lists a staff login that owns neither a branch nor an organisation", async () => {
+    // The whole point of users.organizationId: a receptionist is named by no
+    // link, so before the column existed this row could not be listed at all.
+    rows.organizations = [{ id: "o1", name: "Org", userId: "u1" }];
+    rows.branches = [{ id: "b1", name: "Patna", userId: "u2" }];
+    rows.users = [];
+    rows.users_scoped = [
+      { id: "u9", name: "Priya", role: "RECEPTIONIST", userType: "BRANCH", organizationId: "o1", branchId: "b1" },
+    ];
+
+    const { data } = await getUsers("o1", null);
+    expect(data).toHaveLength(1);
+    expect(data[0].name).toBe("Priya");
+    // Named from the branch list, since no branches.userId points back at her.
+    expect(data[0].branch).toBe("Patna");
+  });
+
+  it("does not list the same person twice when both scopes find them", async () => {
+    rows.organizations = [{ id: "o1", name: "Org", userId: "u1" }];
+    rows.branches = [];
+    rows.users = [{ id: "u1", name: "Amar", role: "ORGANIZATION_ADMIN" }];
+    rows.users_scoped = [{ id: "u1", name: "Amar", role: "ORGANIZATION_ADMIN", organizationId: "o1" }];
+
+    const { data } = await getUsers("o1", null);
+    expect(data).toHaveLength(1);
+    // The owner link still wins, so the organisation name survives the merge.
+    expect(data[0].organization).toBe("Org");
+  });
+
+  it("leaves students out of the scoped read", async () => {
+    rows.organizations = [];
+    rows.branches = [];
+    await getUsers("o1", null);
+    expect(scopedCall()?.excluded).toMatchObject({ userType: "STUDENT" });
+  });
+
+  it("still lists the owners when the scope column has not been added yet", async () => {
+    // A database without user-management.sql answers 42703. That is a missing
+    // migration, not a failure -- the page must still show what it can.
+    rows.organizations = [{ id: "o1", name: "Org", userId: "u1" }];
+    rows.branches = [];
+    rows.users = [{ id: "u1", name: "Amar" }];
+    errors.users_scoped = { code: "42703", message: "column users.organizationId does not exist" };
+
+    const { data } = await getUsers("o1", null);
+    expect(data).toHaveLength(1);
+    expect(data[0].name).toBe("Amar");
+  });
+
+  it("does not swallow a real failure on the scoped read", async () => {
+    rows.organizations = [];
+    rows.branches = [];
+    errors.users_scoped = { code: "42501", message: "permission denied for table users" };
+
+    await expect(getUsers("o1", null)).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("grantableRoles", () => {
+  it("lets an organisation admin staff the institute", () => {
+    expect(grantableRoles("ORGANIZATION_ADMIN")).toContain("RECEPTIONIST");
+    expect(grantableRoles("ORGANIZATION_ADMIN")).toContain("BRANCH_ADMIN");
+  });
+
+  it("stops a branch admin minting anyone who could leave the branch", () => {
+    const allowed = grantableRoles("BRANCH_ADMIN");
+    expect(allowed).toContain("TEACHER");
+    // Either would escape the branch this admin is confined to.
+    expect(allowed).not.toContain("BRANCH_ADMIN");
+    expect(allowed).not.toContain("ORGANIZATION_ADMIN");
+  });
+
+  it("never offers a student login, which needs its own student record", () => {
+    for (const role of ["SUPER_ADMIN", "ORGANIZATION_ADMIN", "BRANCH_ADMIN"]) {
+      expect(grantableRoles(role)).not.toContain("STUDENT");
+    }
+  });
+
+  it("offers nothing to someone who may not create logins", () => {
+    expect(grantableRoles("TEACHER")).toEqual([]);
+    expect(grantableRoles(null)).toEqual([]);
+    expect(canManageUsers("RECEPTIONIST")).toBe(false);
+    expect(canManageUsers("ORGANIZATION_ADMIN")).toBe(true);
+  });
+
+  it("offers only roles the database will accept", () => {
+    for (const role of grantableRoles("SUPER_ADMIN")) {
+      expect(SYSTEM_ROLES).toContain(role);
+    }
   });
 });
 

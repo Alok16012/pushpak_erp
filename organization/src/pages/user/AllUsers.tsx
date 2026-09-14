@@ -35,14 +35,19 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, Shield, Mail, Phone, UserCheck, Building2 } from "lucide-react";
+import { Search, Shield, Mail, Phone, UserCheck, Building2, UserPlus } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   getUsers,
   updateUser,
   deleteUser,
+  createStaffUser,
+  getBranches,
+  grantableRoles,
+  canManageUsers,
   SYSTEM_ROLES,
   type SystemUserRow,
+  type SystemRole,
 } from "@/lib/supabase/data";
 
 /** `ORGANIZATION_ADMIN` is not a label. */
@@ -82,6 +87,31 @@ const AllUsers = () => {
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SystemUserRow | null>(null);
 
+  // Which roles this admin may hand out, decided by their own role. The edge
+  // function re-checks it; this only keeps the form from offering a role the
+  // server is going to refuse.
+  const creatableRoles = grantableRoles(user?.role);
+  const canAdd = canManageUsers(user?.role);
+  // A branch admin staffs their own branch and is given no choice about it, so
+  // the picker is only worth showing to someone who has branches to pick from.
+  const canChooseBranch = !!organizationId;
+
+  const [adding, setAdding] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string }>>([]);
+  // "none" rather than "": Radix rejects an empty SelectItem value, and head
+  // office is a real answer here, not a missing one.
+  const blankDraft = {
+    name: "",
+    username: "",
+    password: "",
+    role: (creatableRoles[0] ?? "STAFF") as SystemRole,
+    email: "",
+    phone: "",
+    branchId: "none",
+  };
+  const [draft, setDraft] = useState(blankDraft);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -101,6 +131,62 @@ const AllUsers = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const openAdd = async () => {
+    setDraft(blankDraft);
+    setAdding(true);
+    if (!canChooseBranch) return;
+    try {
+      const result = await getBranches(organizationId);
+      setBranchOptions(
+        (result.data as Array<{ id: string; name: string }>).map((row) => ({
+          id: row.id,
+          name: row.name || "Unnamed branch",
+        })),
+      );
+    } catch {
+      // The branch is optional -- somebody posted to head office has none -- so
+      // a failed list should not stop the user being created.
+      setBranchOptions([]);
+    }
+  };
+
+  const create = async () => {
+    if (!draft.name.trim() || !draft.username.trim() || !draft.password) {
+      toast({ title: "Name, login ID and password are required", variant: "destructive" });
+      return;
+    }
+    if (draft.password.length < 6) {
+      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+    setCreating(true);
+    try {
+      const result = await createStaffUser({
+        name: draft.name,
+        username: draft.username,
+        password: draft.password,
+        role: draft.role,
+        email: draft.email,
+        phone: draft.phone,
+        branchId: draft.branchId === "none" ? null : draft.branchId,
+      });
+      toast({
+        title: result.data.created ? "User created" : "Login updated",
+        description: `${draft.name.trim()} signs in as ${result.data.username}.`,
+      });
+      setAdding(false);
+      await load();
+    } catch (error) {
+      toast({
+        title: "Could not create the user",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const openEdit = (row: SystemUserRow) => {
     setEditing(row);
@@ -282,9 +368,17 @@ const AllUsers = () => {
           description="Staff logins for this organisation"
           breadcrumbs={[{ label: "User Management", href: "/user/all" }, { label: "All Users" }]}
           actions={
-            <Button variant="outline" asChild>
-              <Link to="/branch/view">Manage branch logins</Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" asChild>
+                <Link to="/branch/view">Manage branch logins</Link>
+              </Button>
+              {canAdd && (
+                <Button onClick={() => void openAdd()}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Add user
+                </Button>
+              )}
+            </div>
           }
         />
 
@@ -366,7 +460,9 @@ const AllUsers = () => {
               emptyMessage={
                 loading
                   ? "Loading users…"
-                  : "No staff logins yet. A branch gets one when you set its login from the branch page."
+                  : canAdd
+                    ? "No staff logins yet. Use Add user to create one, or set a branch's login from the branch page."
+                    : "No staff logins yet. A branch gets one when you set its login from the branch page."
               }
             />
             {/* Every enrolled student has a login too; they are managed with the
@@ -380,6 +476,131 @@ const AllUsers = () => {
             </p>
           </CardContent>
         </Card>
+
+        {/* Add */}
+        <Dialog open={adding} onOpenChange={(open) => !open && setAdding(false)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add user</DialogTitle>
+              <DialogDescription>
+                Creates the sign-in account and lists it here. The person signs in with the login ID, not an email
+                address.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-name">Full name</Label>
+                  <Input
+                    id="new-name"
+                    value={draft.name}
+                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                    placeholder="Priya Sharma"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-role">Role</Label>
+                  <Select
+                    value={draft.role}
+                    onValueChange={(value) => setDraft({ ...draft, role: value as SystemRole })}
+                  >
+                    <SelectTrigger id="new-role" aria-label="Role for the new user">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {creatableRoles.map((role) => (
+                        <SelectItem key={role} value={role}>
+                          {pretty(role)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-username">Login ID</Label>
+                  <Input
+                    id="new-username"
+                    value={draft.username}
+                    onChange={(event) => setDraft({ ...draft, username: event.target.value })}
+                    placeholder="priya.sharma"
+                  />
+                  <p className="text-xs text-muted-foreground">What they type to sign in. Letters, dots and numbers.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">Password</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={draft.password}
+                    onChange={(event) => setDraft({ ...draft, password: event.target.value })}
+                    placeholder="At least 6 characters"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Hand this to them directly — it is not emailed anywhere.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-email">Contact email</Label>
+                  <Input
+                    id="new-email"
+                    type="email"
+                    value={draft.email}
+                    onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-phone">Phone</Label>
+                  <Input
+                    id="new-phone"
+                    value={draft.phone}
+                    onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+
+              {canChooseBranch && (
+                <div className="space-y-2">
+                  <Label htmlFor="new-branch">Branch</Label>
+                  <Select value={draft.branchId} onValueChange={(value) => setDraft({ ...draft, branchId: value })}>
+                    <SelectTrigger id="new-branch" aria-label="Branch for the new user">
+                      <SelectValue placeholder="Select a branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Head office (no branch)</SelectItem>
+                      {branchOptions.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {/* Scope is what a role means in practice: a receptionist
+                      posted to a branch sees that branch, and one posted to head
+                      office sees the organisation. */}
+                  <p className="text-xs text-muted-foreground">
+                    Decides what they can see once they sign in.
+                  </p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAdding(false)} disabled={creating}>
+                Cancel
+              </Button>
+              <Button onClick={create} disabled={creating}>
+                {creating ? "Creating…" : "Create user"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* View */}
         <Dialog open={!!viewing} onOpenChange={(open) => !open && setViewing(null)}>
