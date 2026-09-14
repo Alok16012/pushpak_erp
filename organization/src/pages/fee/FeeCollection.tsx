@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CreditCard, Receipt, AlertCircle, CheckCircle, Plus, Printer, Download } from "lucide-react";
+import { CreditCard, Receipt, AlertCircle, CheckCircle, Plus, Printer, Download, FileText } from "lucide-react";
 import { downloadCsv } from "@/lib/export";
 import { compactRupees } from "@/lib/fees";
 import {
@@ -40,7 +40,7 @@ import {
 } from "@/lib/supabase/studentFee";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { feeReceiptPdf, feeStatementPdf } from "@/lib/documents";
+import { feeInvoicePdf, feeReceiptPdf, feeStatementPdf } from "@/lib/documents";
 
 interface FeeRecord {
   id: string;
@@ -315,8 +315,64 @@ export default function FeeCollection() {
     });
   };
 
+  /**
+   * The invoice document for a row that already exists as an invoice record.
+   *
+   * `totalAmount` is what every balance on this page is worked out from, so it
+   * is the single line item — a recorded discount or late fee is carried as a
+   * note rather than as an adjustment, because applying it here would print a
+   * total that disagreed with the one the student is being chased for.
+   */
+  const printInvoice = (record: FeeRecord) => {
+    if (!record.invoiceNo) {
+      toast({
+        title: "No invoice number",
+        description: "This row has no invoice record to print against.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const row = record.invoice;
+    const adjustments = [
+      toNumber(row.discount) ? `Discount recorded: INR ${toNumber(row.discount).toLocaleString("en-IN")}` : "",
+      toNumber(row.lateFee) ? `Late fee recorded: INR ${toNumber(row.lateFee).toLocaleString("en-IN")}` : "",
+      row.notes || "",
+    ].filter(Boolean);
+
+    feeInvoicePdf({
+      invoiceNo: record.invoiceNo,
+      issuedOn: row.createdAt,
+      dueDate: record.dueDate || null,
+      billTo: {
+        name: record.studentName,
+        rollNo: record.rollNo,
+        course: [record.course, record.courseCode].filter(Boolean).join(" · "),
+        phone: row.student?.phone,
+        email: row.student?.email,
+      },
+      items: [{ description: record.feeType, amount: record.totalAmount }],
+      paidAmount: record.paidAmount,
+      payments: (row.payments || [])
+        // A reversed payment was never money received, so it must not reduce
+        // the balance the invoice asks for.
+        .filter((payment) => !payment.reversedAt)
+        .map((payment) => ({
+          receiptNo: payment.receiptNo,
+          paidAt: payment.paidAt,
+          method: payment.method,
+          amount: toNumber(payment.amount),
+        })),
+      notes: adjustments.join("  |  ") || null,
+    });
+    toast({
+      title: "Invoice generated",
+      description: `Invoice ${record.invoiceNo} is in Downloads.`,
+    });
+  };
+
   const handleActions = (record: FeeRecord) => [
     { label: "Collect Payment", onClick: () => handleCollectFee(record) },
+    { label: "Generate Invoice", onClick: () => printInvoice(record) },
     { label: "Print Statement", onClick: () => printStatement(record) },
   ];
   const printStatement=(record:FeeRecord)=>{feeStatementPdf({...record,dueDate:record.dueDate?formatDate(record.dueDate):"—"});toast({title:"PDF statement generated",description:"The print-ready statement is in Downloads."})};
@@ -579,6 +635,14 @@ export default function FeeCollection() {
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setIsCollectDialogOpen(false)}>
               {collected ? "Close" : "Cancel"}
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => selectedRecord && printInvoice(selectedRecord)}
+            >
+              <FileText className="h-4 w-4" />
+              Invoice
             </Button>
             <Button variant="outline" className="gap-2" onClick={printReceipt}>
               <Printer className="h-4 w-4" />

@@ -263,6 +263,7 @@ export function StudentRoster({
               {[
                 "Student",
                 "Admission",
+                "Branch",
                 "Course",
                 "Father / Guardian",
                 "Contact",
@@ -316,16 +317,20 @@ export function StudentRoster({
                   </div>
                 </td>
 
-                {/* The branch sits with the admission rather than in a column
-                    of its own: an organisation admin sees every branch in one
-                    list, and a thirteenth column would not fit. */}
                 <td className="px-4 py-3.5">
                   <span className="whitespace-nowrap text-sm font-medium">{student.admissionNo}</span>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {[formatAdmissionDate(student.admissionDate), student.branch]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    {formatAdmissionDate(student.admissionDate)}
                   </p>
+                </td>
+
+                {/* An organisation admin sees every branch's students in one
+                    list, where nothing on the row said which branch a student
+                    belonged to. */}
+                <td className="px-4 py-3.5">
+                  <span className="whitespace-nowrap text-sm">
+                    {student.branch || "—"}
+                  </span>
                 </td>
 
                 {/* The course reads as a name, not a tag: a pill around a short

@@ -15,6 +15,26 @@ import {
 } from "./studentFee";
 import { feeStanding } from "../fees";
 
+/**
+ * Asserts that a delete actually removed something.
+ *
+ * PostgREST answers a write that matched no row with `200 OK` and an empty
+ * body — not an error — so every delete below reported success whether or not
+ * anything was deleted. The row then vanished from the list the user was
+ * looking at and came back on the next refresh, which is indistinguishable
+ * from the delete having been ignored.
+ *
+ * Two things silently match nothing: a branch filter built from an
+ * organisation admin's `undefined` branchId, and a row RLS will not let this
+ * login write. Neither can be told apart from here, so the message names both.
+ */
+function assertRemoved(rows: unknown[] | null, what: string) {
+  if (rows && rows.length > 0) return;
+  throw new Error(
+    `${what} was not removed — it no longer exists, or this login is not allowed to remove it.`,
+  );
+}
+
 /* ============================
    AUTH
    ============================ */
@@ -455,9 +475,19 @@ export async function updateStudent(id: string, branchId: string, input: Record<
   throw new Error("Could not save the student");
 }
 
-export async function deleteStudent(id: string, branchId: string) {
-  const { error } = await supabase.from("students").update({ deletedAt: new Date().toISOString() }).eq("id", id).eq("branchId", branchId);
+export async function deleteStudent(id: string, branchId: string | null) {
+  let query = supabase
+    .from("students")
+    .update({ deletedAt: new Date().toISOString() })
+    .eq("id", id);
+  // Applied only when there is one, exactly as `getStudent` and
+  // `getStudentRoster` do: an organisation admin has no branch of their own,
+  // sees every branch's students, and was filtering on `undefined` — which
+  // matches no row, so their deletes never removed anything.
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query.select("id");
   if (error) throw new Error(error.message);
+  assertRemoved(data, "That student");
   return { success: true };
 }
 
@@ -622,8 +652,13 @@ export async function updateCourse(id: string, input: Record<string, unknown>) {
 
 /** Soft delete, matching the `deletedAt is null` filter used when reading. */
 export async function deleteCourse(id: string) {
-  const { error } = await supabase.from("courses").update({ deletedAt: new Date().toISOString() }).eq("id", id);
+  const { data, error } = await supabase
+    .from("courses")
+    .update({ deletedAt: new Date().toISOString() })
+    .eq("id", id)
+    .select("id");
   if (error) throw new Error(error.message);
+  assertRemoved(data, "That course");
   return { success: true };
 }
 
@@ -731,8 +766,9 @@ export async function deleteBatch(id: string) {
     .eq("batchId", id)
     .is("deletedAt", null);
   if (count) throw new Error(`${count} student${count > 1 ? "s are" : " is"} still enrolled in this batch`);
-  const { error } = await supabase.from("batches").delete().eq("id", id);
+  const { data, error } = await supabase.from("batches").delete().eq("id", id).select("id");
   if (error) throw new Error(error.message);
+  assertRemoved(data, "That batch");
   return { success: true };
 }
 
@@ -1047,8 +1083,9 @@ export async function updateInvoice(id: string, _branchId: string, input: Record
 }
 
 export async function deleteInvoice(id: string, _branchId: string) {
-  const { error } = await supabase.from("fee_invoices").delete().eq("id", id);
+  const { data, error } = await supabase.from("fee_invoices").delete().eq("id", id).select("id");
   if (error) throw new Error(error.message);
+  assertRemoved(data, "That invoice");
   return { success: true };
 }
 
@@ -1520,9 +1557,12 @@ export async function getPendingEnquiries(branchId: string | null) {
   return { success: true, data: data || [] };
 }
 
-export async function deleteEnquiry(id: string, branchId: string) {
-  const { error } = await supabase.from("visit_enquiries").delete().eq("id", id).eq("branchId", branchId);
+export async function deleteEnquiry(id: string, branchId: string | null) {
+  let query = supabase.from("visit_enquiries").delete().eq("id", id);
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query.select("id");
   if (error) throw new Error(error.message);
+  assertRemoved(data, "That enquiry");
   return { success: true };
 }
 
@@ -1606,8 +1646,9 @@ export async function updateNotice(id: string, input: Record<string, unknown>) {
 }
 
 export async function deleteNotice(id: string) {
-  const { error } = await supabase.from("branch_notices").delete().eq("id", id);
+  const { data, error } = await supabase.from("branch_notices").delete().eq("id", id).select("id");
   if (error) throw new Error(error.message);
+  assertRemoved(data, "That notice");
   return { success: true };
 }
 
@@ -2066,8 +2107,13 @@ export async function getBranchDetails(organizationId: string, branchId: string)
 }
 
 export async function deleteBranch(id: string) {
-  const { error } = await supabase.from("branches").update({ deletedAt: new Date().toISOString() }).eq("id", id);
+  const { data, error } = await supabase
+    .from("branches")
+    .update({ deletedAt: new Date().toISOString() })
+    .eq("id", id)
+    .select("id");
   if (error) throw new Error(error.message);
+  assertRemoved(data, "That branch");
   return { success: true };
 }
 

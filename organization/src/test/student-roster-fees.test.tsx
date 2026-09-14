@@ -107,6 +107,23 @@ describe("StudentRoster money columns", () => {
     expect(within(row).getByText("ADCA-AI")).toBeInTheDocument();
   });
 
+  it("gives the branch a column of its own", () => {
+    roster([student()]);
+
+    // An organisation admin sees every branch's students in one list, where
+    // nothing on the row said which branch a student belonged to.
+    expect(screen.getByRole("columnheader", { name: "Branch" })).toBeInTheDocument();
+    const row = screen.getByText("Raj Shekhar").closest("tr")!;
+    expect(within(row).getByText("Kothrud")).toBeInTheDocument();
+  });
+
+  it("falls back to a dash for a student with no branch on the record", () => {
+    roster([student({ branch: "" })]);
+
+    const row = screen.getByText("Raj Shekhar").closest("tr")!;
+    expect(within(row).getByText("—")).toBeInTheDocument();
+  });
+
   it("leaves the code line out for a course that has none", () => {
     roster([student({ courseCode: "" })]);
 

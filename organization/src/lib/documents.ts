@@ -490,6 +490,203 @@ export function feeStatementPdf(record: {
   save(doc, `fee-statement-${record.rollNo}.pdf`);
 }
 
+const inr = (n: number) =>
+  `INR ${Math.round(n).toLocaleString("en-IN")}`;
+const asDate = (value?: string | null) =>
+  value ? new Date(value).toLocaleDateString("en-IN") : "-";
+
+export type InvoiceDocument = {
+  invoiceNo: string;
+  issuedOn?: string | null;
+  dueDate?: string | null;
+  billTo: {
+    name: string;
+    rollNo?: string;
+    course?: string;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+  };
+  items: Array<{ description: string; amount: number }>;
+  discount?: number;
+  lateFee?: number;
+  paidAmount: number;
+  payments?: Array<{
+    receiptNo?: string | null;
+    paidAt?: string | null;
+    method?: string | null;
+    amount: number;
+  }>;
+  notes?: string | null;
+};
+
+/**
+ * The invoice itself — the demand for payment, as against the receipt that
+ * acknowledges one and the statement that summarises a balance.
+ *
+ * It is the document a student or their employer is asked to pay against, so
+ * it carries what makes one payable: who it is billed to, what is being
+ * charged line by line, what has already been paid against it, and what is
+ * still owed by when. The fee pages could previously print a receipt and a
+ * statement but had nothing to issue up front.
+ */
+export function feeInvoicePdf(invoice: InvoiceDocument) {
+  const doc = new jsPDF();
+  const discount = invoice.discount ?? 0;
+  const lateFee = invoice.lateFee ?? 0;
+  const subtotal = invoice.items.reduce((sum, item) => sum + item.amount, 0);
+  const total = subtotal - discount + lateFee;
+  const balance = Math.max(0, total - invoice.paidAmount);
+  const overdue =
+    balance > 0 && !!invoice.dueDate && new Date(invoice.dueDate) < new Date();
+  const status =
+    balance <= 0 ? "PAID IN FULL" : overdue ? "OVERDUE" : invoice.paidAmount > 0 ? "PART PAID" : "UNPAID";
+
+  header(doc, "INVOICE", invoice.invoiceNo);
+
+  // Billed party on the left, the invoice's own particulars on the right, so
+  // the two blocks that get read first sit side by side.
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 110);
+  doc.text("BILL TO", 16, 52);
+  doc.setFontSize(13);
+  doc.setTextColor(24, 24, 27);
+  doc.setFont("helvetica", "bold");
+  doc.text(invoice.billTo.name || "-", 16, 60);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(90, 90, 100);
+  const billLines = [
+    invoice.billTo.rollNo && `Roll no. ${invoice.billTo.rollNo}`,
+    invoice.billTo.course,
+    invoice.billTo.phone,
+    invoice.billTo.email,
+    invoice.billTo.address,
+  ].filter(Boolean) as string[];
+  billLines.forEach((text, i) => doc.text(text, 16, 67 + i * 5));
+
+  const meta: Array<[string, string]> = [
+    ["INVOICE NO", invoice.invoiceNo],
+    ["INVOICE DATE", asDate(invoice.issuedOn ?? new Date().toISOString())],
+    ["DUE DATE", asDate(invoice.dueDate)],
+    ["STATUS", status],
+  ];
+  meta.forEach(([label, value], i) => {
+    const y = 52 + i * 12;
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 110);
+    doc.text(label, 194, y, { align: "right" });
+    doc.setFontSize(10);
+    const unsettled = label === "STATUS" && balance > 0;
+    doc.setTextColor(unsettled ? 180 : 24, unsettled ? 60 : 24, unsettled ? 60 : 27);
+    doc.text(value, 194, y + 5, { align: "right" });
+  });
+
+  // Line items.
+  let y = Math.max(100, 67 + billLines.length * 5 + 8);
+  doc.setFillColor(24, 24, 27);
+  doc.rect(16, y, 178, 9, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  doc.text("DESCRIPTION", 20, y + 6);
+  doc.text("AMOUNT", 190, y + 6, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  y += 9;
+
+  doc.setTextColor(24, 24, 27);
+  doc.setFontSize(10);
+  invoice.items.forEach((item, i) => {
+    if (i % 2 === 1) {
+      doc.setFillColor(248, 248, 248);
+      doc.rect(16, y, 178, 9, "F");
+    }
+    // A long fee description would otherwise run under the amount column.
+    const [text] = doc.splitTextToSize(item.description || "-", 128) as string[];
+    doc.text(text, 20, y + 6);
+    doc.text(inr(item.amount), 190, y + 6, { align: "right" });
+    y += 9;
+  });
+  doc.setDrawColor(220);
+  doc.line(16, y, 194, y);
+
+  // Totals, ending on what is actually owed.
+  y += 8;
+  const totals: Array<[string, string]> = [
+    ["Subtotal", inr(subtotal)],
+    ...(discount ? ([["Discount", `- ${inr(discount)}`]] as Array<[string, string]>) : []),
+    ...(lateFee ? ([["Late fee", inr(lateFee)]] as Array<[string, string]>) : []),
+    ["Total", inr(total)],
+    ["Amount paid", `- ${inr(invoice.paidAmount)}`],
+  ];
+  doc.setFontSize(10);
+  totals.forEach(([label, value]) => {
+    doc.setTextColor(90, 90, 100);
+    doc.text(label, 150, y, { align: "right" });
+    doc.setTextColor(24, 24, 27);
+    doc.text(value, 190, y, { align: "right" });
+    y += 7;
+  });
+
+  doc.setFillColor(245, 245, 245);
+  doc.roundedRect(110, y - 2, 84, 14, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(24, 24, 27);
+  doc.text("Balance due", 150, y + 7, { align: "right" });
+  doc.text(inr(balance), 190, y + 7, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  y += 22;
+
+  const received = (invoice.payments ?? []).filter((p) => p.amount > 0);
+  if (received.length) {
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 110);
+    doc.text("PAYMENTS RECEIVED", 16, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.setTextColor(24, 24, 27);
+    received.forEach((payment) => {
+      // Runs off the page once an invoice has been paid in many instalments.
+      if (y > 265) {
+        doc.addPage();
+        y = 24;
+      }
+      doc.text(asDate(payment.paidAt), 20, y);
+      doc.text(payment.receiptNo || "Provisional", 60, y);
+      doc.text((payment.method || "-").replace(/_/g, " "), 115, y);
+      doc.text(inr(payment.amount), 190, y, { align: "right" });
+      y += 6;
+    });
+    y += 4;
+  }
+
+  if (invoice.notes?.trim()) {
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 110);
+    doc.text("NOTES", 16, y);
+    doc.setFontSize(9);
+    doc.setTextColor(24, 24, 27);
+    doc
+      .splitTextToSize(invoice.notes.trim(), 178)
+      .slice(0, 4)
+      .forEach((text: string, i: number) => doc.text(text, 16, y + 6 + i * 5));
+  }
+
+  if (balance > 0) {
+    doc.setFontSize(8);
+    doc.setTextColor(110);
+    doc.text(
+      `Please settle ${inr(balance)} by ${asDate(invoice.dueDate)}. Quote invoice ${invoice.invoiceNo} with the payment.`,
+      16,
+      272,
+    );
+  }
+
+  footer(doc, instituteName());
+  save(doc, `invoice-${invoice.invoiceNo}.pdf`);
+}
+
 /**
  * Receipt for a single payment. `receiptNo` is omitted while the payment has
  * only been keyed in — the sheet then prints as provisional so a counter copy

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Download, IndianRupee, Receipt } from "lucide-react";
+import { Download, FileText, IndianRupee, Receipt } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { getStudentProfile, getStudentPortalInvoices, addPayment, submitPortalRe
 import { feeStanding } from "@/lib/fees";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
+import { feeInvoicePdf, feeReceiptPdf, feeStatementPdf } from "@/lib/documents";
 import { useAuth } from "@/contexts/AuthContext";
 import type { StudentProfile } from "@/data/student-portal";
 
@@ -30,7 +31,7 @@ interface PortalInvoice {
   status?: string;
   dueDate?: string;
   createdAt?: string;
-  payments?: { id?: string; amount: number; reversedAt?: string; method?: string; referenceNo?: string; paidAt?: string }[];
+  payments?: { id?: string; amount: number; reversedAt?: string; method?: string; receiptNo?: string; referenceNo?: string; paidAt?: string }[];
   student?: { firstName?: string; lastName?: string; enrollmentNo?: string };
 }
 
@@ -90,6 +91,72 @@ export default function MyFees() {
     const today = new Date().toISOString().slice(0, 10);
     if (invoice.dueDate && invoice.dueDate < today) return "OVERDUE";
     return "PARTIAL";
+  };
+
+  /**
+   * The three documents a student asks for on their own fees page. All three
+   * used to be buttons that toasted "coming soon"; the generators they need
+   * already existed and were only ever wired up on the branch-side fee pages.
+   */
+  const billTo = (invoice: PortalInvoice) => ({
+    name: profile?.name || [invoice.student?.firstName, invoice.student?.lastName].filter(Boolean).join(" "),
+    rollNo: profile?.rollNo || invoice.student?.enrollmentNo || "",
+    course: profile?.course || "",
+    phone: profile?.phone,
+    email: profile?.email,
+  });
+
+  const downloadInvoice = (invoice: PortalInvoice) => {
+    feeInvoicePdf({
+      invoiceNo: invoice.invoiceNo || invoice.id,
+      issuedOn: invoice.createdAt,
+      dueDate: invoice.dueDate,
+      billTo: billTo(invoice),
+      items: [{ description: invoice.description || "Fee", amount: Number(invoice.amount || 0) }],
+      paidAmount: Number(invoice.paid || 0),
+      payments: (invoice.payments || [])
+        .filter((payment) => !payment.reversedAt)
+        .map((payment) => ({
+          receiptNo: payment.receiptNo || payment.referenceNo,
+          paidAt: payment.paidAt,
+          method: payment.method,
+          amount: Number(payment.amount || 0),
+        })),
+    });
+    toast({ title: "Invoice downloaded", description: `Invoice ${invoice.invoiceNo || invoice.id} is in Downloads.` });
+  };
+
+  const downloadReceipt = (invoice: PortalInvoice) => {
+    // The latest receipt on the invoice — that is the one a student has just
+    // paid and come back for.
+    const payments = (invoice.payments || []).filter((payment) => !payment.reversedAt);
+    const latest = payments[payments.length - 1];
+    if (!latest) return toast({ title: "No payment yet", description: "There is nothing receipted against this invoice.", variant: "destructive" });
+    const bill = billTo(invoice);
+    feeReceiptPdf({
+      studentName: bill.name,
+      rollNo: bill.rollNo,
+      feeType: invoice.description || "Fee",
+      amount: Number(latest.amount || 0),
+      method: latest.method || "CASH",
+      receiptNo: latest.receiptNo || latest.referenceNo || undefined,
+      balanceAfter: balance(invoice),
+    });
+    toast({ title: "Receipt downloaded", description: "The receipt is in Downloads." });
+  };
+
+  const downloadStatement = (invoice: PortalInvoice) => {
+    const bill = billTo(invoice);
+    feeStatementPdf({
+      studentName: bill.name,
+      rollNo: bill.rollNo,
+      feeType: invoice.description || "Fee",
+      totalAmount: Number(invoice.amount || 0),
+      paidAmount: Number(invoice.paid || 0),
+      dueAmount: balance(invoice),
+      dueDate: invoice.dueDate || new Date().toISOString(),
+    });
+    toast({ title: "Statement downloaded", description: "The statement is in Downloads." });
   };
 
   const openPayment = (invoice: PortalInvoice) => {
@@ -206,8 +273,9 @@ export default function MyFees() {
                     <TableCell>
                       <div className="flex justify-end gap-1.5">
                         {bal > 0 && <Button size="sm" onClick={() => openPayment(invoice)}><IndianRupee className="mr-1 h-3.5 w-3.5" />Pay</Button>}
-                        {invoice.payments?.length ? <Button size="sm" variant="outline" onClick={() => toast({ title: "Receipt", description: "Receipt download coming soon." })}><Receipt className="mr-1 h-3.5 w-3.5" />Receipt</Button> : null}
-                        <Button size="sm" variant="ghost" onClick={() => toast({ title: "Statement", description: "Statement download coming soon." })}>Statement</Button>
+                        <Button size="sm" variant="outline" onClick={() => downloadInvoice(invoice)}><FileText className="mr-1 h-3.5 w-3.5" />Invoice</Button>
+                        {invoice.payments?.length ? <Button size="sm" variant="outline" onClick={() => downloadReceipt(invoice)}><Receipt className="mr-1 h-3.5 w-3.5" />Receipt</Button> : null}
+                        <Button size="sm" variant="ghost" onClick={() => downloadStatement(invoice)}>Statement</Button>
                       </div>
                     </TableCell>
                   </TableRow>
