@@ -77,3 +77,17 @@ export const canIssueStudentLogin = (role?: string | null): boolean =>
  */
 export const canManageCourses = (role?: string | null): boolean =>
   viewForRole(role) === "admin";
+
+/**
+ * Who may change the academic calendar.
+ *
+ * The same line as the course catalogue, and for the same reason: a session
+ * belongs to the institute, and moving its dates changes which admissions every
+ * branch is allowed to file. Branch staff read the sessions — the admission
+ * form needs them — but only the organisation writes them.
+ *
+ * This mirrors the RLS policy in `session-years.sql`, which is the authority.
+ * Here it only decides whether the buttons are worth showing.
+ */
+export const canManageSessions = (role?: string | null): boolean =>
+  viewForRole(role) === "admin";

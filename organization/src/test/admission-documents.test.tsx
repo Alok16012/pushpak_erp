@@ -30,6 +30,12 @@ vi.mock("@/lib/supabase/data", () => ({
   getBatches: () => Promise.resolve({ success: true, data: [] }),
   getBranches: () => Promise.resolve({ success: true, data: [] }),
   createStudent: (...args: unknown[]) => createStudent(...(args as [])),
+  // No sessions on file, which is what these fixtures describe. The two helpers
+  // return exactly this for an empty session list, so the stubs do not claim
+  // behaviour the real ones would not have.
+  getSessionYears: () => Promise.resolve({ success: true, data: [], stored: false }),
+  sessionYearsForDate: () => [],
+  admissionDateProblem: () => null,
 }));
 
 const AdmissionsWorkspace = (await import("@/pages/student/AdmissionsWorkspace")).default;

@@ -24,6 +24,10 @@ import {
   getStudent,
   updateStudent,
   getBranches,
+  getSessionYears,
+  sessionYearsForDate,
+  admissionDateProblem,
+  type SessionYear,
 } from "@/lib/supabase/data";
 import { INDIAN_STATES, districtsFor } from "@/data/indianStates";
 import { citiesFor } from "@/data/indianCities";
@@ -280,6 +284,12 @@ export default function AdmissionsWorkspace() {
     Array<{ id: string; name: string; courseId: string }>
   >([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  /**
+   * The academic sessions the institute has defined. Empty on a database where
+   * `session-years.sql` has not been run, and the academic year then falls back
+   * to the free-text box this field used to be.
+   */
+  const [sessions, setSessions] = useState<SessionYear[]>([]);
   const [documents, setDocuments] = useState<Record<string, AdmissionDocument>>(() => {
     try {
       const held = JSON.parse(localStorage.getItem(DOCUMENTS_KEY) || "{}");
@@ -367,7 +377,35 @@ export default function AdmissionsWorkspace() {
         .then((r) => setBranches(r.data as Array<{ id: string; name: string }>))
         .catch(() => setBranches([]));
     }
+    getSessionYears(organizationId)
+      .then((r) => setSessions(r.data))
+      .catch(() => setSessions([]));
   }, [organizationId, branchId]);
+
+  /**
+   * A new admission starts in the session the office is working in.
+   *
+   * Only when the box is empty, so a restored autosaved draft and a record
+   * being edited both keep the session they already name.
+   */
+  useEffect(() => {
+    if (editingId || !sessions.length) return;
+    setDraft((previous) => {
+      if (previous.academicYear) return previous;
+      const current = sessions.find((session) => session.isCurrent);
+      if (!current) return previous;
+      const today = new Date().toISOString().slice(0, 10);
+      return {
+        ...previous,
+        academicYear: current.name,
+        // Today, unless today is outside the session — filing into last year's
+        // session should land on a date that session will accept.
+        admissionDate:
+          previous.admissionDate ||
+          (today >= current.startDate && today <= current.endDate ? today : current.startDate),
+      };
+    });
+  }, [sessions, editingId]);
 
   // Batches belong to a branch, so they reload whenever the target branch moves.
   useEffect(() => {
@@ -404,6 +442,71 @@ export default function AdmissionsWorkspace() {
       return next;
     });
 
+  /**
+   * The academic year and the admission date describe the same fact, so they
+   * are kept in step instead of being two boxes that can contradict each other.
+   *
+   * `students.academicYear` is a text column and holds the session's name, which
+   * is what every other screen already reads. A record admitted before sessions
+   * existed holds whatever was typed into the free-text box, and that value is
+   * still offered so editing such a student does not quietly relabel them.
+   */
+  const selectedSession = sessions.find((s) => s.name === draft.academicYear) ?? null;
+  const sessionsForDate = sessionYearsForDate(sessions, draft.admissionDate);
+  const sessionOptions: Array<[string, string]> = (() => {
+    // Once there is an admission date, only the session that date falls inside
+    // is offered — the rest cannot accept this admission. With no date yet,
+    // every session still open is offered so the session can be picked first.
+    const offered =
+      draft.admissionDate && sessionsForDate.length
+        ? sessionsForDate
+        : sessions.filter((s) => s.status !== "CLOSED" || s.name === draft.academicYear);
+    const options = offered.map(
+      (s) => [s.name, `${s.name} (${s.startDate} to ${s.endDate})`] as [string, string],
+    );
+    if (draft.academicYear && !offered.some((s) => s.name === draft.academicYear)) {
+      options.unshift([draft.academicYear, draft.academicYear]);
+    }
+    return options;
+  })();
+  /** The rule: an admission cannot be dated before its academic year began. */
+  const dateProblem = admissionDateProblem(selectedSession, draft.admissionDate);
+
+  const changeAdmissionDate = (value: string) =>
+    setDraft((p) => {
+      const matches = sessionYearsForDate(sessions, value);
+      // The date leads: whichever session contains it is the session this
+      // admission is in. A pick that still fits is left alone, which is what
+      // matters when an institute deliberately overlaps two sessions.
+      const fits = matches.some((s) => s.name === p.academicYear);
+      return {
+        ...p,
+        admissionDate: value,
+        academicYear: fits || !matches.length ? p.academicYear : matches[0].name,
+      };
+    });
+
+  const changeSession = (name: string) =>
+    setDraft((p) => {
+      const picked = sessions.find((s) => s.name === name);
+      if (!picked) return { ...p, academicYear: name };
+      const today = new Date().toISOString().slice(0, 10);
+      const insideAlready =
+        p.admissionDate >= picked.startDate && p.admissionDate <= picked.endDate;
+      return {
+        ...p,
+        academicYear: name,
+        // Moving the session to one that would refuse the date on screen moves
+        // the date with it, rather than leaving the form in a state it will
+        // not save. Today when the new session is open, its first day if not.
+        admissionDate: insideAlready
+          ? p.admissionDate
+          : today >= picked.startDate && today <= picked.endDate
+            ? today
+            : picked.startDate,
+      };
+    });
+
   const requiredDocuments = ADMISSION_DOCUMENTS.filter((doc) => doc.required);
   const missingDocuments = requiredDocuments.filter((doc) => !documents[doc.id]);
 
@@ -426,6 +529,25 @@ export default function AdmissionsWorkspace() {
       toast({
         title: "Choose a branch",
         description: "An admission has to be filed against a branch.",
+        variant: "destructive",
+      });
+      setStep(1);
+      return;
+    }
+    // The admission date has to sit inside the academic year it claims. Checked
+    // here as well as on the box itself, because `min`/`max` on a date input is
+    // advisory — a typed date gets past it in several browsers.
+    if (dateProblem) {
+      toast({ title: "Check the admission date", description: dateProblem, variant: "destructive" });
+      setStep(1);
+      return;
+    }
+    // Only once the institute has sessions on file. Before that the box is free
+    // text and there is nothing to be consistent with.
+    if (sessions.length && !draft.academicYear) {
+      toast({
+        title: "Choose the academic session",
+        description: "An admission is filed against a session year.",
         variant: "destructive",
       });
       setStep(1);
@@ -767,19 +889,56 @@ export default function AdmissionsWorkspace() {
                     />
                   </Field>
                 )}
-                <Field l="Academic year">
-                  <Input
-                    placeholder="2026-27"
-                    value={draft.academicYear}
-                    onChange={(e) => set("academicYear", e.target.value)}
-                  />
+                <Field l="Academic session">
+                  {sessions.length ? (
+                    <>
+                      <Picker
+                        value={draft.academicYear}
+                        onChange={changeSession}
+                        options={sessionOptions}
+                        placeholder="Choose session"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {draft.admissionDate && sessionsForDate.length
+                          ? "The session this admission date falls in."
+                          : "Pick the session; the admission date is kept inside it."}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Input
+                        placeholder="2026-27"
+                        value={draft.academicYear}
+                        onChange={(e) => set("academicYear", e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        No session years are set up yet. Add them under Session Year to have this
+                        checked against the admission date.
+                      </p>
+                    </>
+                  )}
                 </Field>
                 <Field l="Admission date">
                   <Input
                     type="date"
                     value={draft.admissionDate}
-                    onChange={(e) => set("admissionDate", e.target.value)}
+                    // The session's own dates bound the picker, so the date that
+                    // breaks the rule is hard to pick in the first place.
+                    min={selectedSession?.startDate}
+                    max={selectedSession?.endDate}
+                    onChange={(e) => changeAdmissionDate(e.target.value)}
+                    aria-invalid={!!dateProblem}
                   />
+                  {dateProblem ? (
+                    <p className="text-xs text-destructive">{dateProblem}</p>
+                  ) : (
+                    selectedSession && (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedSession.name} runs {selectedSession.startDate} to{" "}
+                        {selectedSession.endDate}.
+                      </p>
+                    )
+                  )}
                 </Field>
                 <Field l="Courses" wide>
                   <MultiSelect

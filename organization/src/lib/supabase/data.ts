@@ -1940,7 +1940,8 @@ export async function updateBranch(id: string, organizationId: string, input: Re
 
 const functionNotDeployed = (name: string) =>
   `The "${name}" function has not been deployed to this Supabase project, so there was nothing to mint the login. ` +
-  `Run \`supabase functions deploy ${name}\`; until then the account has to be added under Authentication in the Supabase dashboard.`;
+  `Run \`supabase functions deploy ${name}\`, or paste supabase/functions/${name}/index.ts into Edge Functions ` +
+  `in the Supabase dashboard and deploy it there.`;
 
 /**
  * Separates "never deployed" from "deployed but unreachable".
@@ -3350,6 +3351,261 @@ export async function getFeeTypes() {
 
 export async function getFeeGroups() {
   return { success: true, data: [] };
+}
+
+/* ============================
+   SESSION YEARS
+   ============================ */
+
+export type SessionYearStatus = "ACTIVE" | "UPCOMING" | "CLOSED";
+
+export interface SessionYear {
+  id: string;
+  organizationId: string | null;
+  name: string;
+  /** `yyyy-mm-dd`, as the `date` column gives it back. */
+  startDate: string;
+  endDate: string;
+  status: SessionYearStatus;
+  /** The session new admissions default to. At most one per organisation. */
+  isCurrent: boolean;
+  description: string;
+  createdAt: string;
+}
+
+/**
+ * `session_years` ships in `session-years.sql`.
+ *
+ * Matched on the codes, not on the table name appearing in the message: a
+ * PostgREST permission failure reads "permission denied for table
+ * session_years", so a substring test would file an RLS refusal as a missing
+ * migration and hand the caller an empty list instead of an error.
+ */
+const isMissingSessionTable = (error: { code?: string; message?: string } | null) =>
+  error?.code === "PGRST205" ||
+  error?.code === "42P01" ||
+  /relation "?(public\.)?session_years"? does not exist/i.test(error?.message || "");
+
+/**
+ * Dates are compared as `yyyy-mm-dd` strings throughout this section, never as
+ * `Date` objects. `new Date("2026-04-01")` is parsed as UTC midnight but read
+ * back in local time, so in any timezone behind UTC it is the 31st of March --
+ * which would put an admission on the first day of a session outside it. The
+ * string form sorts correctly and has no timezone to get wrong.
+ */
+const asDay = (value: unknown) => String(value ?? "").slice(0, 10);
+
+function mapSessionYear(row: Record<string, unknown>): SessionYear {
+  return {
+    id: String(row.id),
+    organizationId: (row.organizationId as string) ?? null,
+    name: (row.name as string) || "",
+    startDate: asDay(row.startDate),
+    endDate: asDay(row.endDate),
+    status: ((row.status as string) || "ACTIVE").toUpperCase() as SessionYearStatus,
+    isCurrent: row.isCurrent === true,
+    description: (row.description as string) || "",
+    createdAt: String(row.createdAt ?? ""),
+  };
+}
+
+/**
+ * Every session this institute has, newest first.
+ *
+ * `stored: false` means the migration has not been run. The admission form
+ * reads that as "offer a free-text academic year", which is what the field was
+ * before this existed -- so the page keeps working rather than presenting an
+ * empty dropdown nobody can get past.
+ */
+export async function getSessionYears(organizationId: string | null) {
+  let query = supabase
+    .from("session_years")
+    .select("*")
+    .is("deletedAt", null)
+    .order("startDate", { ascending: false });
+  if (organizationId) query = query.eq("organizationId", organizationId);
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingSessionTable(error)) {
+      return { success: true, data: [] as SessionYear[], stored: false };
+    }
+    throw new Error(error.message);
+  }
+  return { success: true, data: (data || []).map(mapSessionYear), stored: true };
+}
+
+/**
+ * The fields a session is allowed to set, and the reasons it can be refused.
+ *
+ * Checked here as well as by the database's own constraint so the form can say
+ * which box is wrong. The constraint is what actually guarantees it.
+ */
+export type SessionYearInput = {
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  status?: SessionYearStatus;
+  description?: string;
+};
+
+function sessionPayload(input: SessionYearInput) {
+  const payload: Record<string, unknown> = {};
+  if (input.name !== undefined) payload.name = input.name.trim();
+  if (input.startDate !== undefined) payload.startDate = asDay(input.startDate);
+  if (input.endDate !== undefined) payload.endDate = asDay(input.endDate);
+  if (input.status !== undefined) payload.status = input.status;
+  // A cleared description is stored as null rather than "", so the column reads
+  // as "nothing was written" rather than as an empty note.
+  if (input.description !== undefined) payload.description = input.description.trim() || null;
+  return payload;
+}
+
+/** The checks the form can explain, in the order the boxes appear. */
+export function sessionYearProblem(input: SessionYearInput): string | null {
+  const name = (input.name ?? "").trim();
+  const startDate = asDay(input.startDate);
+  const endDate = asDay(input.endDate);
+  if (!name) return "Give the session a name.";
+  if (!startDate) return "Choose the date the session starts.";
+  if (!endDate) return "Choose the date the session ends.";
+  if (endDate <= startDate) return "The session has to end after it starts.";
+  return null;
+}
+
+export async function createSessionYear(
+  organizationId: string | null,
+  input: SessionYearInput,
+) {
+  const problem = sessionYearProblem(input);
+  if (problem) throw new Error(problem);
+  const { data, error } = await supabase
+    .from("session_years")
+    .insert({ ...sessionPayload(input), organizationId })
+    .select("*")
+    .single();
+  if (error) throw new Error(describeSessionRejection(error));
+  return { success: true, data: mapSessionYear(data as Record<string, unknown>) };
+}
+
+export async function updateSessionYear(id: string, input: SessionYearInput) {
+  // An edit that only moves one date still has to end up with a valid range, so
+  // the caller passes the whole session back rather than the changed field.
+  const problem = sessionYearProblem(input);
+  if (problem) throw new Error(problem);
+  const { data, error } = await supabase
+    .from("session_years")
+    .update({ ...sessionPayload(input), updatedAt: nowIso() })
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(describeSessionRejection(error));
+  assertWritten(data, "That session");
+  return { success: true };
+}
+
+/** Soft delete, matching the `deletedAt is null` filter used when reading. */
+export async function deleteSessionYear(id: string) {
+  const { data, error } = await supabase
+    .from("session_years")
+    .update({ deletedAt: nowIso(), isCurrent: false, updatedAt: nowIso() })
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(describeSessionRejection(error));
+  assertRemoved(data, "That session");
+  return { success: true };
+}
+
+/**
+ * Move the "current session" flag.
+ *
+ * The old one is cleared first because a unique index allows only one current
+ * session per organisation -- setting the new one first would be refused by the
+ * database rather than quietly leaving two.
+ */
+export async function setCurrentSessionYear(organizationId: string | null, id: string) {
+  // The organisation is taken from the session being promoted rather than from
+  // the caller. A SUPER_ADMIN carries no organizationId, and an unscoped
+  // "clear the current flag" would clear it for every institute in the
+  // database -- silently, since clearing a flag that is already clear is not
+  // an error.
+  const { data: target, error: findError } = await supabase
+    .from("session_years")
+    .select("id,organizationId")
+    .eq("id", id)
+    .maybeSingle();
+  if (findError) throw new Error(describeSessionRejection(findError));
+  if (!target) throw new Error("That session no longer exists.");
+  const owner = ((target as Record<string, unknown>).organizationId as string) ?? organizationId;
+
+  let clear = supabase
+    .from("session_years")
+    .update({ isCurrent: false, updatedAt: nowIso() })
+    .eq("isCurrent", true);
+  // `eq` cannot express "is null", and the two are not interchangeable here:
+  // an unscoped filter is what the comment above warns about.
+  clear = owner ? clear.eq("organizationId", owner) : clear.is("organizationId", null);
+  const { error: clearError } = await clear.select("id");
+  if (clearError) throw new Error(describeSessionRejection(clearError));
+
+  const { data, error } = await supabase
+    .from("session_years")
+    .update({ isCurrent: true, updatedAt: nowIso() })
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(describeSessionRejection(error));
+  assertWritten(data, "That session");
+  return { success: true };
+}
+
+/** A database without `session-years.sql` should say so, not report a 404. */
+function describeSessionRejection(error: { code?: string; message?: string }): string {
+  if (isMissingSessionTable(error)) {
+    return "Session years are not set up on this database yet. Run supabase/schema/session-years.sql in the Supabase SQL editor, then try again.";
+  }
+  if (error.code === "23505") {
+    return "Another session is already the current one. Refresh the page and try again.";
+  }
+  return error.message || "Could not save the session";
+}
+
+/**
+ * The sessions an admission on `day` could belong to.
+ *
+ * A session whose range contains the date, which is normally exactly one. Two
+ * would mean overlapping sessions, and both are offered rather than guessing --
+ * an institute that runs a short bridging session deliberately overlaps them.
+ *
+ * A closed session is still offered when the date falls inside it: back-dating
+ * an admission into last year's session is a real thing an office does when
+ * catching up on paperwork, and refusing it would send them to the free-text
+ * box instead.
+ */
+export function sessionYearsForDate(sessions: SessionYear[], day: string): SessionYear[] {
+  const date = asDay(day);
+  if (!date) return [];
+  return sessions.filter((s) => s.startDate <= date && date <= s.endDate);
+}
+
+/**
+ * Why `day` cannot be the admission date for `session`, or null if it can.
+ *
+ * This is the rule the admission form enforces: an admission cannot be dated
+ * before its academic year began. The upper bound comes with it -- a date after
+ * the session ended is the same mistake pointing the other way, and a form that
+ * refused only one of them would look arbitrary.
+ */
+export function admissionDateProblem(
+  session: SessionYear | null | undefined,
+  day: string,
+): string | null {
+  const date = asDay(day);
+  if (!session || !date) return null;
+  if (date < session.startDate) {
+    return `${session.name} starts on ${session.startDate}. An admission cannot be dated before its academic year.`;
+  }
+  if (date > session.endDate) {
+    return `${session.name} ended on ${session.endDate}. Pick the session this admission actually falls in.`;
+  }
+  return null;
 }
 
 /* ============================
