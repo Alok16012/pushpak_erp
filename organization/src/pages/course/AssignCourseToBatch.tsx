@@ -49,6 +49,9 @@ interface Course {
   id: string;
   name: string;
   code: string;
+  /** A course the organisation has switched off. It stays in the catalogue so
+   *  it can be switched back on, but it is not handed to anyone. */
+  isActive?: boolean;
 }
 
 interface Batch {
@@ -146,6 +149,8 @@ export default function AssignCourseToBatch() {
   const { toast } = useToast();
   const [assignments, setAssignments] = useState<CourseAssignment[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
+  /** An inactive course cannot be given to a branch, so it is not offered. */
+  const assignable = courses.filter((course) => course.isActive !== false);
   const [branchOptions, setBranchOptions] = useState<BranchOption[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [offeredCourseIds, setOfferedCourseIds] = useState<Set<string>>(new Set());
@@ -347,7 +352,16 @@ export default function AssignCourseToBatch() {
     // table yet, so they stay in this session.
     const teachers = [...selectedTeachers];
     try {
-      await setBranchCourseOffered(selectedBranch, course.id);
+      const offered = await setBranchCourseOffered(selectedBranch, course.id);
+      // The catalogue may have changed under this screen since it loaded.
+      if (!offered.success) {
+        toast({
+          title: "Could not give this course to the branch",
+          description: offered.error,
+          variant: "destructive",
+        });
+        return;
+      }
       setOfferedCourseIds((prev) => new Set(prev).add(course.id));
     } catch (err) {
       toast({
@@ -501,7 +515,7 @@ export default function AssignCourseToBatch() {
                     <SelectValue placeholder="Choose a course" />
                   </SelectTrigger>
                   <SelectContent>
-                    {courses.map((course) => (
+                    {assignable.map((course) => (
                       <SelectItem key={course.id} value={course.id}>
                         {course.name} ({course.code})
                         {offeredCourseIds.has(course.id) ? " · already assigned" : ""}

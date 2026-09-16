@@ -568,6 +568,11 @@ export async function getBranchCourseIds(branchId: string | null) {
  * Deliberately not an upsert: `branch_courses` is unique on (branchId,
  * courseId), and PostgREST's upsert would write the freshly generated `id` over
  * the existing row's primary key on conflict.
+ *
+ * A course the organisation has switched off cannot be given out. "Inactive"
+ * was a label and nothing else -- it appeared on the catalogue row and stopped
+ * nothing -- so a retired course could still be handed to a branch, which would
+ * then admit students into it.
  */
 export async function setBranchCourseOffered(
   branchId: string,
@@ -575,6 +580,22 @@ export async function setBranchCourseOffered(
   isOffered = true,
 ) {
   if (!branchId || !courseId) return { success: false as const, error: "Missing branch or course" };
+
+  // Only on the way in: taking a course back off a branch must keep working
+  // however the course itself stands.
+  if (isOffered) {
+    const { data: course } = await supabase
+      .from("courses")
+      .select("name, isActive")
+      .eq("id", courseId)
+      .maybeSingle();
+    if (course && course.isActive === false) {
+      return {
+        success: false as const,
+        error: `"${course.name}" is inactive. Make it active in the course catalogue before giving it to a branch.`,
+      };
+    }
+  }
 
   const { data: existing, error: findError } = await supabase
     .from("branch_courses")

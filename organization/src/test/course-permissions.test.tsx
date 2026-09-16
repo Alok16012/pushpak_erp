@@ -48,8 +48,15 @@ vi.mock("@/contexts/AuthContext", () => ({
 vi.mock("@/components/layout/AppLayout", () => ({
   AppLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
+/** Held in a box so a test can empty the catalogue without remocking it. */
+const catalogue = {
+  rows: [
+    { id: "c1", name: "ADCA", code: "ADCA12", durationMonths: 12, baseFee: 8500, isActive: true },
+  ] as Array<Record<string, unknown>>,
+};
+
 vi.mock("@/lib/supabase/data", () => ({
-  getCourses: () => Promise.resolve({ success: true, data: [] }),
+  getCourses: () => Promise.resolve({ success: true, data: catalogue.rows }),
   getBatches: () => Promise.resolve({ success: true, data: [] }),
   getBatchesByOrg: () => Promise.resolve({ success: true, data: [] }),
   getBranches: () => Promise.resolve({ success: true, data: [] }),
@@ -82,7 +89,27 @@ describe("Courses & batches actions", () => {
     expect(screen.getByRole("button", { name: /new batch/i })).toBeInTheDocument();
   });
 
+  // A branch could open the course edit form and only find out at save that it
+  // was not allowed to write it.
+  it("gives a branch no way to edit or delete a course it was assigned", async () => {
+    role.current = "FRANCHISE";
+    render(<AcademicsWorkspace />);
+
+    expect(await screen.findByText("ADCA")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /edit adca/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /delete adca/i })).toBeNull();
+  });
+
+  it("keeps both for the organisation, whose catalogue it is", async () => {
+    role.current = "ORGANIZATION_ADMIN";
+    render(<AcademicsWorkspace />);
+
+    expect(await screen.findByRole("button", { name: /edit adca/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /delete adca/i })).toBeInTheDocument();
+  });
+
   it("tells a branch where its courses come from instead of pointing at a button it cannot see", async () => {
+    catalogue.rows = [];
     role.current = "FRANCHISE";
     render(<AcademicsWorkspace />);
 

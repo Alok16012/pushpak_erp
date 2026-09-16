@@ -278,13 +278,28 @@ export default function AdmissionsWorkspace() {
       return blank;
     }
   });
-  const [courses, setCourses] = useState<Array<{ id: string; name: string }>>(
-    [],
-  );
+  const [courses, setCourses] = useState<
+    Array<{ id: string; name: string; isActive?: boolean }>
+  >([]);
   const [batches, setBatches] = useState<
     Array<{ id: string; name: string; courseId: string }>
   >([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  /**
+   * The courses this admission may be filed under: the active ones, plus any
+   * the student is already on.
+   *
+   * A course the organisation has switched off should take no new admissions --
+   * "inactive" was a label that stopped nothing before -- but dropping it from
+   * the list while editing a student who is on it would quietly take their
+   * course away the next time the form was saved.
+   */
+  const courseOptions = courses
+    .filter((c) => c.isActive !== false || draft.courseIds.includes(c.id))
+    .map((c) => ({
+      value: c.id,
+      label: c.isActive === false ? `${c.name} (inactive)` : c.name,
+    }));
   /**
    * The academic sessions the institute has defined. Empty on a database where
    * `session-years.sql` has not been run, and the academic year then falls back
@@ -371,7 +386,7 @@ export default function AdmissionsWorkspace() {
   // let a rejected query escape as an unhandled promise.
   useEffect(() => {
     getCourses(organizationId, branchId ?? null)
-      .then((r) => setCourses(r.data as Array<{ id: string; name: string }>))
+      .then((r) => setCourses(r.data as Array<{ id: string; name: string; isActive?: boolean }>))
       .catch(() => setCourses([]));
     if (!branchId) {
       getBranches(organizationId)
@@ -939,7 +954,7 @@ export default function AdmissionsWorkspace() {
                 </Field>
                 <Field l="Courses" wide>
                   <MultiSelect
-                    options={courses.map((c) => ({ value: c.id, label: c.name }))}
+                    options={courseOptions}
                     value={draft.courseIds}
                     onChange={(next) =>
                       setDraft((p) => ({

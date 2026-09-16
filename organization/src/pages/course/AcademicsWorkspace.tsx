@@ -163,6 +163,17 @@ export default function AcademicsWorkspace() {
   const confirmDelete = async () => {
     if (!pendingDelete) return;
     const { kind, id, name } = pendingDelete;
+    // The same line the save already drew: a branch deletes its own batches,
+    // never the organisation's courses.
+    if (kind === "course" && !mayManageCourses) {
+      setPendingDelete(null);
+      toast({
+        title: "Courses are managed by the organisation",
+        description: "Your branch runs the courses it is assigned.",
+        variant: "destructive",
+      });
+      return;
+    }
     setPendingDelete(null);
     try {
       await (kind === "course" ? deleteCourse(id) : deleteBatch(id));
@@ -630,11 +641,18 @@ export default function AcademicsWorkspace() {
                   <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
                     {c.isActive ? "Active" : "Inactive"}
                   </p>
-                  <RowActions
-                    label={c.name}
-                    onEdit={() => editCourse(c)}
-                    onDelete={() => setPendingDelete({ kind: "course", id: c.id, name: c.name })}
-                  />
+                  {/* A branch runs the courses it is given; the catalogue
+                      itself belongs to the organisation, which is the same line
+                      the RLS policy on `courses` draws. The buttons used to be
+                      here for everyone, so a branch could open the edit form
+                      and only find out at save. */}
+                  {mayManageCourses && (
+                    <RowActions
+                      label={c.name}
+                      onEdit={() => editCourse(c)}
+                      onDelete={() => setPendingDelete({ kind: "course", id: c.id, name: c.name })}
+                    />
+                  )}
                 </div>
               ))}
             </div>
