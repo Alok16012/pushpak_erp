@@ -464,9 +464,22 @@ export async function createStudent(branchId: string, input: Record<string, unkn
   throw new Error("Could not allocate an application number");
 }
 
-export async function updateStudent(id: string, branchId: string, input: Record<string, unknown>) {
-  const attempt = (body: Record<string, unknown>) =>
-    supabase.from("students").update(body).eq("id", id).eq("branchId", branchId).select("*").single();
+export async function updateStudent(
+  id: string,
+  branchId: string | null | undefined,
+  input: Record<string, unknown>,
+) {
+  // Narrowed to one branch's own students only when the caller has a branch --
+  // the same rule `deleteStudent` and `getStudent` follow. An organisation
+  // admin has none, and filtering on `branchId = ""` matched no row at all: the
+  // save came back as PostgREST's "Cannot coerce the result to a single JSON
+  // object", which reads like a parsing fault rather than a filter that cannot
+  // match. RLS is what keeps a branch to its own students.
+  const attempt = (body: Record<string, unknown>) => {
+    let query = supabase.from("students").update(body).eq("id", id);
+    if (branchId) query = query.eq("branchId", branchId);
+    return query.select("*").single();
+  };
 
   // Same bargain as `createStudent`: an edit that touches a column this database
   // has not gained yet still saves everything else rather than failing whole.
@@ -1546,10 +1559,31 @@ export async function createEnquiry(branchId: string, input: Record<string, unkn
   return { success: true, data };
 }
 
-export async function updateEnquiry(id: string, branchId: string, input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("visit_enquiries").update(input).eq("id", id).eq("branchId", branchId).select("*").single();
+/**
+ * `branchId` narrows the write to one branch's own rows, and is optional
+ * because head office has no branch of its own.
+ *
+ * It used to be applied unconditionally, so every write an administrator made
+ * -- a follow-up, a conversion, closing an enquiry -- filtered on `branchId =
+ * ""`, matched no row, and came back as PostgREST's "Cannot coerce the result
+ * to a single JSON object". The row was never the problem; the filter was.
+ * RLS is what actually keeps a branch to its own enquiries.
+ */
+export async function updateEnquiry(
+  id: string,
+  branchId: string | null | undefined,
+  input: Record<string, unknown>,
+) {
+  let query = supabase.from("visit_enquiries").update(input).eq("id", id);
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query.select("*");
   if (error) throw new Error(describeEnumRejection(error, "Could not update the visit"));
-  return { success: true, data };
+  // No row matched: the enquiry is another branch's, or somebody removed it
+  // while this screen was open. Either way it is not a JSON coercion problem.
+  if (!data || data.length === 0) {
+    throw new Error("That enquiry could not be found — it may belong to another branch.");
+  }
+  return { success: true, data: data[0] };
 }
 
 export async function getPendingEnquiries(branchId: string | null) {
