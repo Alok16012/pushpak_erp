@@ -17,11 +17,14 @@ import { Plus, MessageSquare, UserPlus, Clock, CheckCircle, Phone, Download } fr
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getEnquiries, createEnquiry, updateEnquiry } from "@/lib/supabase/data";
+import { getEnquiries, createEnquiry, updateEnquiry, getBranches } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 
 interface Enquiry {
   id: string;
+  /** Which branch the enquiry came in at. Head office sees every branch's, so
+   *  without this the list is a pile of enquiries from nowhere in particular. */
+  branchId?: string;
   visitorName: string;
   phone: string;
   email?: string;
@@ -55,6 +58,7 @@ export default function BranchEnquiry() {
   const { user } = useAuth();
   const branchId = user?.branchId || "";
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [branchNames, setBranchNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [form, setForm] = useState(BLANK);
@@ -67,8 +71,21 @@ export default function BranchEnquiry() {
   const load = async () => {
     setLoading(true);
     try {
-      const result = await getEnquiries(user?.branchId || "");
+      // The branches come along for the names: the enquiry rows carry a
+      // `branchId` and nothing a person can read.
+      const [result, branches] = await Promise.all([
+        getEnquiries(user?.branchId || ""),
+        getBranches(user?.organizationId || null).catch(() => ({ data: [] })),
+      ]);
       setEnquiries(result.data as unknown as Enquiry[]);
+      setBranchNames(
+        Object.fromEntries(
+          ((branches.data ?? []) as Array<{ id: string; name: string }>).map((branch) => [
+            branch.id,
+            branch.name,
+          ]),
+        ),
+      );
     } catch {
       toast({ title: "Failed to load enquiries", variant: "destructive" });
     } finally {
@@ -174,6 +191,12 @@ export default function BranchEnquiry() {
     { label: "Mark as Closed", onClick: () => setClosing(enquiry), destructive: true },
   ];
 
+  /** A branch login sees only its own enquiries, so a column repeating its own
+   *  name on every row is noise. Head office sees them all, and needs it. */
+  const showBranch = !branchId;
+  const branchOf = (item: Enquiry) =>
+    (item.branchId && branchNames[item.branchId]) || (item.branchId ? "Unknown branch" : "—");
+
   const today = new Date().toISOString().slice(0, 10);
   const dueCount = enquiries.filter(
     (e) => e.followUpDate && e.followUpDate <= today && e.status !== "CONVERTED" && e.status !== "CLOSED",
@@ -185,6 +208,17 @@ export default function BranchEnquiry() {
       header: "Date",
       cell: (item) => new Date(item.visitDate).toLocaleDateString("en-IN"),
     },
+    ...(showBranch
+      ? [
+          {
+            key: "branchId" as keyof Enquiry,
+            header: "Branch",
+            cell: (item: Enquiry) => (
+              <span className="whitespace-nowrap text-sm">{branchOf(item)}</span>
+            ),
+          },
+        ]
+      : []),
     {
       key: "visitorName",
       header: "Enquirer",
@@ -246,6 +280,7 @@ export default function BranchEnquiry() {
     downloadCsv(
       "branch-enquiries.csv",
       enquiries.map((e) => ({
+        Branch: branchOf(e),
         Visitor: e.visitorName,
         Phone: e.phone,
         Email: e.email ?? "",
