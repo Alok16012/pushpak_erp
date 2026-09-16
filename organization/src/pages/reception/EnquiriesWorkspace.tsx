@@ -86,6 +86,8 @@ type EnquiryRow = {
   source: string;
   visitDate: string | null;
   followUpDate: string | null;
+  followUpTime: string;
+  followUpNotes: string;
   callType: string;
   checkOut: string | null;
 };
@@ -251,7 +253,76 @@ export default function EnquiriesWorkspace() {
     [liveRecords],
   );
   /** Optimistic status change, rolled back if the write is rejected. */
+  /**
+   * Flagging a visit for follow-up asks when to follow it up.
+   *
+   * The column has always had a date to show and the registration form could
+   * set one, but marking an existing visitor for follow-up set the status
+   * alone -- so the row said "Follow-up" with no day against it, and a list of
+   * people to call back with no dates on it is not a list anyone can work.
+   */
+  const [followingUp, setFollowingUp] = useState<EnquiryRow | null>(null);
+  const [followUp, setFollowUp] = useState({ date: "", time: "", notes: "" });
+
+  const openFollowUp = (row: EnquiryRow) => {
+    // Tomorrow, which is when a front desk calls somebody back.
+    const day = row.followUpDate ? new Date(row.followUpDate) : new Date(Date.now() + 86400000);
+    const local = new Date(day.getTime() - day.getTimezoneOffset() * 60000);
+    setFollowUp({
+      date: local.toISOString().slice(0, 10),
+      time: row.followUpTime || "",
+      notes: row.followUpNotes || "",
+    });
+    setFollowingUp(row);
+  };
+
+  const saveFollowUp = async (row: EnquiryRow) => {
+    const { date, time, notes } = followUp;
+    const patch = {
+      status: "CONTACTED",
+      followUpDate: date ? toIsoTimestamp(date) : null,
+      followUpTime: time || null,
+      followUpNotes: notes || null,
+    };
+    const snapshot = liveRecords;
+    setLiveRecords((prev) =>
+      prev.map((r) =>
+        r.id === row.id
+          ? {
+              ...r,
+              status: "CONTACTED",
+              followUpDate: patch.followUpDate,
+              followUpTime: time,
+              followUpNotes: notes,
+            }
+          : r,
+      ),
+    );
+    setFollowingUp(null);
+    try {
+      await updateEnquiry(row.id, row.branchIdRef || targetBranchId, patch);
+      toast({
+        title: "Flagged for follow-up",
+        description: date
+          ? `${row.name || "Visitor"} to be called back on ${formatDate(patch.followUpDate)}.`
+          : `${row.name || "Visitor"} flagged, with no date set.`,
+      });
+    } catch (error) {
+      setLiveRecords(snapshot);
+      toast({
+        title: "Could not save the follow-up",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
+
   const setRecordStatus = async (row: EnquiryRow, next: string) => {
+    // Follow-up is the one status that needs a second answer: when.
+    if (next === "CONTACTED") {
+      openFollowUp(row);
+      return;
+    }
     const previous = row.status;
     setLiveRecords((prev) => prev.map((r) => (r.id === row.id ? { ...r, status: next } : r)));
     try {
@@ -395,6 +466,8 @@ export default function EnquiriesWorkspace() {
           source: String(item.source ?? ""),
           visitDate: (item.visitDate as string) ?? null,
           followUpDate: (item.followUpDate as string) ?? null,
+          followUpTime: String(item.followUpTime ?? ""),
+          followUpNotes: String(item.followUpNotes ?? ""),
           callType: String(item.call_type ?? ""),
           checkOut: (item.check_out as string) ?? null,
         })),
@@ -691,7 +764,13 @@ export default function EnquiriesWorkspace() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
-                          {formatDate(r.followUpDate)}
+                          {r.followUpDate ? (
+                            formatDate(r.followUpDate)
+                          ) : r.status === "CONTACTED" ? (
+                            <span className="text-warning">No date set</span>
+                          ) : (
+                            "—"
+                          )}
                           {r.callType ? <div className="text-[10px]">{r.callType}</div> : null}
                         </td>
                         <td className="px-4">
@@ -1186,6 +1265,59 @@ export default function EnquiriesWorkspace() {
           </div>
         </Card>
       )}
+
+      {/* When to call them back. Defaulted to tomorrow, which is what a front
+          desk means by "follow up", and clearable for a flag with no date. */}
+      <Dialog open={followingUp !== null} onOpenChange={(open) => !open && setFollowingUp(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Follow up with {followingUp?.name || "visitor"}</DialogTitle>
+            <DialogDescription>
+              Puts them on the follow-up list, against the day you mean to call.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="follow-up-date">Follow-up date</Label>
+                <Input
+                  id="follow-up-date"
+                  type="date"
+                  value={followUp.date}
+                  onChange={(e) => setFollowUp((f) => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="follow-up-time">Time</Label>
+                <Input
+                  id="follow-up-time"
+                  type="time"
+                  value={followUp.time}
+                  onChange={(e) => setFollowUp((f) => ({ ...f, time: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="follow-up-notes">Note</Label>
+              <Textarea
+                id="follow-up-notes"
+                rows={2}
+                placeholder="What to say when you call."
+                value={followUp.notes}
+                onChange={(e) => setFollowUp((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFollowingUp(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => followingUp && void saveFollowUp(followingUp)}>
+              Save follow-up
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* When the visitor left. Defaulted to now, because that is the answer
           most of the time -- and editable, because a front desk stamps people

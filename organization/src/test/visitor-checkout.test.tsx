@@ -83,11 +83,37 @@ describe("where a visit has got to", () => {
   it("moves the row to the status that was marked", async () => {
     open();
     await rowMenu();
+    fireEvent.click(await screen.findByText(/mark as converted/i));
+
+    await waitFor(() => expect(updateEnquiry).toHaveBeenCalled());
+    const [, , payload] = updateEnquiry.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(payload.status).toBe("CONVERTED");
+
+    const row = (await screen.findAllByText("Sunita Rao"))[0].closest("tr")!;
+    expect(within(row).getByText("Converted")).toBeInTheDocument();
+  });
+
+  it("asks when to call back before putting anyone on the follow-up list", async () => {
+    // A follow-up list with no dates on it is not a list anyone can work.
+    open();
+    await rowMenu();
     fireEvent.click(await screen.findByText(/mark as follow-up/i));
+
+    const date = (await screen.findByLabelText(/follow-up date/i)) as HTMLInputElement;
+    // Tomorrow, which is what a front desk means by "follow up".
+    expect(date.value).toBe(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+
+    fireEvent.change(date, { target: { value: "2026-09-25" } });
+    fireEvent.change(screen.getByLabelText(/^note$/i), { target: { value: "Wants the fee split" } });
+    fireEvent.click(screen.getByRole("button", { name: /save follow-up/i }));
 
     await waitFor(() => expect(updateEnquiry).toHaveBeenCalled());
     const [, , payload] = updateEnquiry.mock.calls[0] as [string, string, Record<string, unknown>];
     expect(payload.status).toBe("CONTACTED");
+    // Stored as the instant local midnight falls on, which is what the rest of
+    // the app writes and what the column reads back as that day.
+    expect(new Date(String(payload.followUpDate)).getDate()).toBe(25);
+    expect(payload.followUpNotes).toBe("Wants the fee split");
 
     const row = (await screen.findAllByText("Sunita Rao"))[0].closest("tr")!;
     expect(within(row).getByText("Follow-up")).toBeInTheDocument();
