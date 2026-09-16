@@ -88,7 +88,7 @@ const AllUsers = () => {
 
   const [viewing, setViewing] = useState<SystemUserRow | null>(null);
   const [editing, setEditing] = useState<SystemUserRow | null>(null);
-  const [form, setForm] = useState({ name: "", phone: "", role: "", isActive: true });
+  const [form, setForm] = useState({ name: "", phone: "", role: "", roleId: "", isActive: true });
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SystemUserRow | null>(null);
 
@@ -231,7 +231,15 @@ const AllUsers = () => {
     setEditing(row);
     // Controlled, not `defaultValue`: the old form read nothing back, so every
     // keystroke was thrown away when the dialog closed.
-    setForm({ name: row.name, phone: row.phone, role: row.role, isActive: row.isActive });
+    setForm({
+      name: row.name,
+      phone: row.phone,
+      role: row.role,
+      // "none" rather than "": Radix rejects an empty item value, and holding
+      // no role of the institute's own is a real answer here.
+      roleId: row.roleId || "none",
+      isActive: row.isActive,
+    });
   };
 
   const save = async () => {
@@ -242,13 +250,22 @@ const AllUsers = () => {
     }
     setSaving(true);
     try {
+      const chosen = offeredRoles.find((role) => role.id === form.roleId) ?? null;
       await updateUser(editing.id, {
         name: form.name,
         phone: form.phone,
-        role: form.role,
+        // A role of the institute's own decides what the account is: its base
+        // is what the database reads, so the two cannot be left disagreeing.
+        role: chosen ? chosen.baseRole : form.role,
         isActive: form.isActive,
       });
-      toast({ title: "User updated", description: `${form.name.trim()} has been saved.` });
+      if (form.roleId !== (editing.roleId || "none")) {
+        await setUserRole(editing.id, chosen ? chosen.id : null);
+      }
+      toast({
+        title: "User updated",
+        description: `${form.name.trim()} has been saved${chosen ? ` as ${chosen.name}` : ""}.`,
+      });
       setEditing(null);
       await load();
     } catch (error) {
@@ -331,12 +348,17 @@ const AllUsers = () => {
       key: "role",
       header: "Role",
       sortable: true,
-      cell: (row) => (
-        <Badge className={roleBadgeClass(row.role)}>
-          <Shield className="mr-1 h-3 w-3" />
-          {pretty(row.role)}
-        </Badge>
-      ),
+      // The institute's own name for the job where it has one, so the list
+      // reads the way the office talks rather than the way the enum does.
+      cell: (row) => {
+        const own = roles.find((role) => role.id === row.roleId);
+        return (
+          <Badge className={roleBadgeClass(row.role)}>
+            <Shield className="mr-1 h-3 w-3" />
+            {own ? own.name : pretty(row.role)}
+          </Badge>
+        );
+      },
     },
     {
       key: "branch",
@@ -749,6 +771,41 @@ const AllUsers = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-role">Role</Label>
+                    {offeredRoles.length > 0 ? (
+                      <Select
+                        value={form.roleId}
+                        onValueChange={(value) => setForm({ ...form, roleId: value })}
+                      >
+                        <SelectTrigger id="edit-role" aria-label="Role">
+                          <SelectValue placeholder="Select role" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {/* Nobody is forced into one: a login left without a
+                              role falls back to its level's built-in menu. */}
+                          <SelectItem value="none">No role of its own</SelectItem>
+                          {ownRoles.length > 0 && (
+                            <SelectGroup>
+                              <SelectLabel>Your roles</SelectLabel>
+                              {ownRoles.map((role) => (
+                                <SelectItem key={role.id} value={role.id}>
+                                  {role.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          )}
+                          {builtInRoles.length > 0 && (
+                            <SelectGroup>
+                              <SelectLabel>Built in</SelectLabel>
+                              {builtInRoles.map((role) => (
+                                <SelectItem key={role.id} value={role.id}>
+                                  {role.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    ) : (
                     <Select value={form.role} onValueChange={(value) => setForm({ ...form, role: value })}>
                       <SelectTrigger id="edit-role" aria-label="Role">
                         <SelectValue placeholder="Select role" />
@@ -761,6 +818,7 @@ const AllUsers = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-status">Status</Label>

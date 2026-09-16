@@ -3704,6 +3704,9 @@ export interface SystemUserRow {
   branchId: string;
   /** The organisation this login owns, if it owns one. */
   organization: string;
+  /** The institute's own role this login was given, if any. Blank means it
+   *  falls back to the built-in role for whatever it was minted as. */
+  roleId: string;
 }
 
 /** The scope columns arrive with user-management.sql; until it is run the
@@ -3823,6 +3826,7 @@ export async function getUsers(
       branch: owner.branch || branchNames.get(ownBranchId) || "",
       branchId: owner.branchId || ownBranchId,
       organization: owner.organization || "",
+      roleId: String(row.roleId || ""),
     };
   });
 
@@ -4127,12 +4131,28 @@ export async function getUserModules(userId: string | null) {
   if (!userId) return { success: true as const, data: [] as string[] };
   const { data, error } = await supabase
     .from("users")
-    .select("roleId")
+    .select('"roleId", role, "organizationId"')
     .eq("id", userId)
     .maybeSingle();
   if (error || !data) return { success: true as const, data: [] as string[] };
-  const roleId = (data as { roleId?: string }).roleId;
-  if (!roleId) return { success: true as const, data: [] as string[] };
-  const role = await getRole(roleId).catch(() => null);
-  return { success: true as const, data: role?.data?.modules ?? [] };
+  const row = data as { roleId?: string; role?: string; organizationId?: string };
+
+  // The role the login was actually given.
+  if (row.roleId) {
+    const role = await getRole(row.roleId).catch(() => null);
+    return { success: true as const, data: role?.data?.modules ?? [] };
+  }
+
+  /*
+   * Nobody was given one -- every login that existed before roles did. Fall
+   * back to the institute's built-in role for whatever this account was minted
+   * as, which is what an administrator means by narrowing "Accountant": every
+   * accountant, not only the ones hired since. An explicit role always wins
+   * over this.
+   */
+  const roles = await getRoles(row.organizationId ?? null).catch(() => null);
+  const builtIn = roles?.data.find(
+    (role) => role.isSystem && role.baseRole === String(row.role || "").toUpperCase(),
+  );
+  return { success: true as const, data: builtIn?.modules ?? [] };
 }
