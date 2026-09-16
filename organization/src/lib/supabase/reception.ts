@@ -102,7 +102,12 @@ export const toDepartmentEnum = (label?: string) =>
 
 export type MovementRow = {
   id: string;
+  /** The branch whose register this row is in -- who recorded it. */
   branch_id: string | null;
+  /** The branch at the other end: where a dispatch is going, or where a
+   *  receipt came from. Null for anyone who is not a branch -- a courier, a
+   *  vendor, a student -- who stays in `party`. */
+  counterparty_branch_id: string | null;
   direction: string | null;
   item: string | null;
   item_id: string | null;
@@ -120,17 +125,31 @@ export type MovementRow = {
 };
 
 const MOVEMENT_COLUMNS =
-  "id,branch_id,direction,item,item_id,category,party,quantity,department,status,courier,tracking,notes,dispatch_date,receive_date,created_at";
+  "id,branch_id,counterparty_branch_id,direction,item,item_id,category,party,quantity,department,status,courier,tracking,notes,dispatch_date,receive_date,created_at";
+
+/** The same list without the column that arrives with
+ *  add-item-movement-branch.sql, so a database that has not had it yet still
+ *  reads its register instead of failing the select outright. */
+const MOVEMENT_COLUMNS_LEGACY = MOVEMENT_COLUMNS.replace(",counterparty_branch_id", "");
+
+const isMissingCounterparty = (error: { code?: string; message?: string } | null) =>
+  error?.code === "42703" ||
+  error?.code === "PGRST204" ||
+  /counterparty_branch_id/i.test(error?.message || "");
 
 export async function getItemMovements(branchId: string | null) {
-  let query = supabase
-    .from("item_movements")
-    .select(MOVEMENT_COLUMNS)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (branchId) query = query.eq("branch_id", branchId);
+  const read = (columns: string) => {
+    let query = supabase
+      .from("item_movements")
+      .select(columns)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (branchId) query = query.eq("branch_id", branchId);
+    return query;
+  };
 
-  const { data, error } = await query;
+  let { data, error } = await read(MOVEMENT_COLUMNS);
+  if (error && isMissingCounterparty(error)) ({ data, error } = await read(MOVEMENT_COLUMNS_LEGACY));
   if (error) throw new Error(error.message);
   return { success: true, data: (data || []) as unknown as MovementRow[] };
 }
@@ -150,11 +169,15 @@ export async function createItemMovement(
   }
   if (branchId) payload.branch_id = branchId;
 
-  const { data, error } = await supabase
-    .from("item_movements")
-    .insert(payload)
-    .select(MOVEMENT_COLUMNS)
-    .single();
+  const write = (body: Record<string, unknown>, columns: string) =>
+    supabase.from("item_movements").insert(body).select(columns).single();
+
+  let { data, error } = await write(payload, MOVEMENT_COLUMNS);
+  if (error && isMissingCounterparty(error)) {
+    // Save the movement without the branch rather than losing the whole record.
+    const { counterparty_branch_id: _dropped, ...rest } = payload;
+    ({ data, error } = await write(rest, MOVEMENT_COLUMNS_LEGACY));
+  }
   if (error) throw new Error(error.message);
   return { success: true, data: data as unknown as MovementRow };
 }

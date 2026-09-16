@@ -23,9 +23,12 @@ import {
   updateItemMovement,
   type MovementRow,
 } from "@/lib/supabase/reception";
+import { getBranches } from "@/lib/supabase/data";
 
 interface Movement {
   id: string;
+  /** The branch at the other end, where there is one. */
+  counterpartyBranchId: string;
   direction: string;
   item: string;
   itemId: string;
@@ -58,6 +61,7 @@ const ATTENTION = ["Needs review", "Pending pickup"];
  */
 const fromRow = (row: MovementRow): Movement => ({
   id: String(row.id),
+  counterpartyBranchId: row.counterparty_branch_id || "",
   direction: row.direction || "Received",
   item: row.item || "Unnamed item",
   itemId: row.item_id || "—",
@@ -80,6 +84,7 @@ const DRAFT_KEY = "movement-draft";
 const stages = ["Movement", "Item", "Logistics", "Review"];
 type Draft = {
   direction: string;
+  counterpartyBranchId: string;
   item: string;
   itemId: string;
   category: string;
@@ -97,6 +102,7 @@ type Draft = {
 
 const blankDraft: Draft = {
   direction: "",
+  counterpartyBranchId: "",
   item: "",
   itemId: "",
   category: "",
@@ -114,7 +120,13 @@ const blankDraft: Draft = {
 
 export default function ItemMovementWorkspace() {
   const { toast } = useToast();
-  const { branchId } = useAuth();
+  const { branchId, organizationId } = useAuth();
+  /** The institute's branches, for naming the other end of a movement. */
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const branchNames = useMemo(
+    () => Object.fromEntries(branches.map((branch) => [branch.id, branch.name])),
+    [branches],
+  );
   const [movements, setMovements] = useState<Movement[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -140,6 +152,7 @@ export default function ItemMovementWorkspace() {
     setDirection(directionForPath);
   }, [directionForPath]);
   const [showFilters, setShowFilters] = useState(false);
+  const [counterparty, setCounterparty] = useState("all");
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState("all");
   const [draft, setDraft] = useState<Draft>(() => {
@@ -157,8 +170,14 @@ export default function ItemMovementWorkspace() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getItemMovements(branchId);
+      // The branches come along for their names: a movement row carries the
+      // other end's id and nothing a person can read.
+      const [result, branchList] = await Promise.all([
+        getItemMovements(branchId),
+        getBranches(organizationId ?? null).catch(() => ({ data: [] })),
+      ]);
       setMovements((result.data ?? []).map(fromRow));
+      setBranches((branchList.data ?? []) as Array<{ id: string; name: string }>);
     } catch (error) {
       toast({
         title: "Could not load the movement register",
@@ -168,19 +187,27 @@ export default function ItemMovementWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [branchId, toast]);
+  }, [branchId, organizationId, toast]);
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(movements)); }, [movements]);
   useEffect(() => { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); }, [draft]);
+
+  /** Named rather than shown as an id, and "—" for a movement that was not to
+   *  or from a branch at all. */
+  const branchName = (row: Movement) =>
+    row.counterpartyBranchId
+      ? branchNames[row.counterpartyBranchId] || "Unknown branch"
+      : "—";
 
   const departments = useMemo(() => Array.from(new Set(movements.map((r) => r.department).filter(Boolean))).sort(), [movements]);
   const rows = useMemo(() => movements.filter((r) =>
     (direction === "all" || r.direction === direction) &&
     (department === "all" || r.department === department) &&
     (status === "all" || r.status === status) &&
+    (counterparty === "all" || r.counterpartyBranchId === counterparty) &&
     Object.values(r).join(" ").toLowerCase().includes(query.toLowerCase())
-  ), [movements, query, direction, department, status]);
+  ), [movements, query, direction, department, status, counterparty]);
 
   const tiles = [
     { l: "Received today", v: String(movements.filter((r) => r.direction === "Received" && isToday(r.receiveDate)).length), i: ArrowDownLeft },
@@ -212,6 +239,7 @@ export default function ItemMovementWorkspace() {
         item_id: draft.itemId || undefined,
         category: draft.category || undefined,
         party: draft.party || undefined,
+        counterparty_branch_id: draft.counterpartyBranchId || undefined,
         quantity: Number(draft.qty) || 0,
         department: draft.department || undefined,
         status: draft.direction === "Dispatched" ? "In transit" : "Completed",
@@ -286,6 +314,7 @@ export default function ItemMovementWorkspace() {
         "Item ID": r.itemId,
         Category: r.category,
         Quantity: r.qty,
+        Branch: branchName(r),
         Party: r.party,
         Department: r.department,
         Status: r.status,
@@ -355,6 +384,19 @@ export default function ItemMovementWorkspace() {
               </div>
               {showFilters && (
                 <div className="flex flex-col gap-3 border-b bg-muted/20 p-4 md:flex-row md:items-center">
+                  <Select value={counterparty} onValueChange={setCounterparty}>
+                    <SelectTrigger className="md:w-52">
+                      <SelectValue placeholder="Branch" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All branches</SelectItem>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={department} onValueChange={setDepartment}>
                     <SelectTrigger className="md:w-52">
                       <SelectValue placeholder="Department" />
@@ -386,6 +428,7 @@ export default function ItemMovementWorkspace() {
                       <th className="px-4 py-3 font-medium">Item ID</th>
                       <th className="px-4 py-3 font-medium">Category</th>
                       <th className="px-4 py-3 font-medium">Qty</th>
+                      <th className="px-4 py-3 font-medium">Branch</th>
                       <th className="px-4 py-3 font-medium">Party</th>
                       <th className="px-4 py-3 font-medium">Department</th>
                       <th className="px-4 py-3 font-medium">Status</th>
@@ -411,6 +454,7 @@ export default function ItemMovementWorkspace() {
                         <td className="px-4 py-3">
                           <span className="font-medium">{r.qty}</span>
                         </td>
+                        <td className="px-4 py-3 whitespace-nowrap">{branchName(r)}</td>
                         <td className="px-4 py-3">{r.party}</td>
                         <td className="px-4 py-3 text-muted-foreground">{r.department}</td>
                         <td className="px-4 py-3"><span className="rounded-full bg-muted px-2.5 py-1 text-xs">{r.status}</span></td>
@@ -521,6 +565,28 @@ export default function ItemMovementWorkspace() {
               )}
               {stage === 2 && (
                 <Step title="Where is it going?" sub="Sender fields adapt naturally to the movement direction.">
+                  {/* Which branch is at the other end. Optional, because
+                      plenty of movements are to and from people who are not
+                      branches at all -- a vendor, a courier, a student -- and
+                      those are named in the field below instead. */}
+                  <Field label={draft.direction === "Received" ? "Received from branch" : "Dispatched to branch"}>
+                    <Select
+                      value={draft.counterpartyBranchId || "none"}
+                      onValueChange={(v) => setDraftField("counterpartyBranchId", v === "none" ? "" : v)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not a branch</SelectItem>
+                        {branches.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
                   <Field label={draft.direction === "Received" ? "Sender" : "Recipient"}>
                     <Input value={draft.party} onChange={(e) => setDraftField("party", e.target.value)} placeholder="Person or organisation" />
                   </Field>
@@ -559,6 +625,13 @@ export default function ItemMovementWorkspace() {
                       {draft.category ? `Category: ${draft.category}` : ""}
                     </p>
                     <p className="mt-1 text-sm text-muted-foreground">{draft.party || "Party not added"} - {draft.department || "No department"}</p>
+                    {/* Checked before it enters the register, not after. */}
+                    {draft.counterpartyBranchId && (
+                      <p className="mt-1 text-sm">
+                        {draft.direction === "Received" ? "From" : "To"} branch:{" "}
+                        <strong>{branchNames[draft.counterpartyBranchId] || "Unknown branch"}</strong>
+                      </p>
+                    )}
                     {draft.dispatchDate && <p className="mt-1 text-xs text-muted-foreground">Dispatched: {draft.dispatchDate}</p>}
                     {draft.receiveDate && <p className="mt-1 text-xs text-muted-foreground">Received: {draft.receiveDate}</p>}
                   </div>
