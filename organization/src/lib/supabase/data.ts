@@ -411,7 +411,15 @@ export async function nextApplicationNo() {
  * will not have. Losing the section, roll number or the extra courses is a far
  * better outcome than losing the admission.
  */
-const STUDENT_OPTIONAL_COLUMNS = ["section", "rollNo", "courseIds"];
+const STUDENT_OPTIONAL_COLUMNS = [
+  "section",
+  "rollNo",
+  "courseIds",
+  // Who brought the admission in. They arrive with add-student-referral.sql.
+  "referralName",
+  "referralCode",
+  "referralPosition",
+];
 
 const isMissingStudentColumn = (error: { code?: string; message?: string } | null) =>
   error?.code === "PGRST204" ||

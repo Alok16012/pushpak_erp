@@ -101,6 +101,10 @@ type Draft = {
   localGuardianRelation: string;
   localGuardianPhone: string;
   localGuardianAddress: string;
+  // Who brought this admission in.
+  referralName: string;
+  referralCode: string;
+  referralPosition: string;
 };
 
 const blank: Draft = {
@@ -157,6 +161,9 @@ const blank: Draft = {
   localGuardianRelation: "",
   localGuardianPhone: "",
   localGuardianAddress: "",
+  referralName: "",
+  referralCode: "",
+  referralPosition: "",
 };
 
 /** NOT NULL on `students` - the insert fails with an opaque error without them. */
@@ -177,7 +184,7 @@ const REQUIRED: Array<[keyof Draft, string]> = [
 /** Integer columns - a blank string is rejected, so they are dropped instead. */
 const NUMERIC: Array<keyof Draft> = ["tenthYearOfPassing", "twelfthYearOfPassing"];
 
-const steps = ["Personal", "Academic", "Guardian", "Documents", "Review"];
+const steps = ["Personal", "Academic", "Guardian", "Documents", "Referral", "Review"];
 
 /**
  * The paperwork an admission collects. `required` is what the office is meant
@@ -1257,6 +1264,35 @@ export default function AdmissionsWorkspace() {
               </div>
             )}
             {step === 4 && (
+              <>
+                <Section title="Referral information" />
+                <p className="sm:col-span-2 -mt-2 text-xs text-muted-foreground">
+                  Who brought this admission in. Leave it blank for a walk-in.
+                </p>
+                <Field l="Referral name">
+                  <Input
+                    value={draft.referralName}
+                    onChange={(e) => set("referralName", e.target.value)}
+                    placeholder="Person or institute who referred"
+                  />
+                </Field>
+                <Field l="Referral code">
+                  <Input
+                    value={draft.referralCode}
+                    onChange={(e) => set("referralCode", e.target.value.toUpperCase())}
+                    placeholder="e.g. REF-2026-014"
+                  />
+                </Field>
+                <Field l="Referral position">
+                  <Input
+                    value={draft.referralPosition}
+                    onChange={(e) => set("referralPosition", e.target.value)}
+                    placeholder="Partner, staff, student, agent…"
+                  />
+                </Field>
+              </>
+            )}
+            {step === 5 && (
               <div className="sm:col-span-2 space-y-4">
                 <div className="rounded-2xl border bg-muted/30 p-5">
                   <p className="text-xl font-semibold">
@@ -1296,6 +1332,16 @@ export default function AdmissionsWorkspace() {
                         .filter(Boolean)
                         .join(" · ")}
                     />
+                    {/* Only when there is one: a walk-in should not be reviewed
+                        against an empty referral line. */}
+                    {(draft.referralName || draft.referralCode) && (
+                      <Row
+                        k="Referred by"
+                        v={[draft.referralName, draft.referralPosition, draft.referralCode]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      />
+                    )}
                   </dl>
                 </div>
                 {(() => {

@@ -97,7 +97,8 @@ describe("Admission documents", () => {
       "2. Academic",
       "3. Guardian",
       "4. Documents",
-      "5. Review",
+      "5. Referral",
+      "6. Review",
     ]);
   });
 
@@ -190,7 +191,7 @@ describe("Admission documents", () => {
     fireEvent.click(within(card("10th Marksheet")).getByRole("button", { name: /upload/i }));
     await waitFor(() => expect(within(card("10th Marksheet")).getByText(FILE.name)).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
+    fireEvent.click(screen.getByRole("button", { name: /6\. Review/ }));
     fireEvent.click(screen.getByRole("button", { name: /complete admission/i }));
 
     await waitFor(() => expect(createStudent).toHaveBeenCalled());
@@ -207,7 +208,7 @@ describe("Admission documents", () => {
       <AdmissionsWorkspace />
     </MemoryRouter>,
   );
-    fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
+    fireEvent.click(screen.getByRole("button", { name: /6\. Review/ }));
     fireEvent.click(screen.getByRole("button", { name: /complete admission/i }));
 
     await waitFor(() => expect(createStudent).toHaveBeenCalled());
@@ -225,7 +226,7 @@ describe("Admission documents", () => {
       <AdmissionsWorkspace />
     </MemoryRouter>,
   );
-    fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
+    fireEvent.click(screen.getByRole("button", { name: /6\. Review/ }));
 
     expect(screen.getByText(/documents outstanding/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /complete admission/i }));

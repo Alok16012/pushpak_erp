@@ -210,7 +210,7 @@ describe("Admission session", () => {
     await pickDate("Admission date", "2020-01-01");
     await waitFor(() => expect(dateText("Admission date")).toContain("01 Jan 2020"));
 
-    fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
+    fireEvent.click(screen.getByRole("button", { name: /6\. Review/ }));
     fireEvent.click(screen.getByRole("button", { name: /complete admission/i }));
 
     await waitFor(() =>
@@ -244,7 +244,7 @@ describe("Admission session", () => {
     draft({ ...COMPLETE, admissionDate: "2026-07-15", academicYear: "Session 2026-2027" });
     await renderForm();
 
-    fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
+    fireEvent.click(screen.getByRole("button", { name: /6\. Review/ }));
     fireEvent.click(screen.getByRole("button", { name: /complete admission/i }));
 
     await waitFor(() => expect(created).toHaveLength(1));
