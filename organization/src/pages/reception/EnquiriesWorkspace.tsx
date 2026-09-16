@@ -4,6 +4,14 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { EditableSelect } from "@/components/ui/EditableSelect";
@@ -136,6 +144,20 @@ const emptyDraft: Draft = {
   notes: "",
 };
 
+/** How long a visitor was in the building, once they have been stamped out. */
+const stayed = (row: { visitDate?: string; checkOut?: string | null }): string => {
+  if (!row.checkOut || !row.visitDate) return "";
+  const minutes = Math.round(
+    (new Date(row.checkOut).getTime() - new Date(row.visitDate).getTime()) / 60000,
+  );
+  // A clock-out earlier than the arrival is a typo, not a negative visit.
+  if (!Number.isFinite(minutes) || minutes <= 0) return "";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+};
+
 export default function EnquiriesWorkspace() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -235,6 +257,60 @@ export default function EnquiriesWorkspace() {
       });
     }
   };
+  /**
+   * Stamps when a visitor left.
+   *
+   * The log recorded an arrival and nothing else: `check_out` was read, shown
+   * and exported, but no screen could ever write it, so "On premises" only ever
+   * counted up. The time is editable rather than fixed to now -- a front desk
+   * stamps people out when it gets a moment, which is rarely the moment they
+   * walked out -- and a visitor who has left is a visit that is done, so the
+   * entry is marked completed with it.
+   */
+  const [checkingOut, setCheckingOut] = useState<EnquiryRow | null>(null);
+  const [checkOutAt, setCheckOutAt] = useState("");
+
+  const openCheckOut = (row: EnquiryRow) => {
+    const at = row.checkOut ? new Date(row.checkOut) : new Date();
+    // `datetime-local` wants the local wall clock, not an ISO instant.
+    const local = new Date(at.getTime() - at.getTimezoneOffset() * 60000);
+    setCheckOutAt(local.toISOString().slice(0, 16));
+    setCheckingOut(row);
+  };
+
+  const saveCheckOut = async (row: EnquiryRow, when: string | null) => {
+    const stamp = when ? new Date(when).toISOString() : null;
+    const snapshot = liveRecords;
+    setLiveRecords((prev) =>
+      prev.map((r) =>
+        r.id === row.id
+          ? { ...r, checkOut: stamp, status: stamp ? "CLOSED" : r.status }
+          : r,
+      ),
+    );
+    setCheckingOut(null);
+    try {
+      await updateEnquiry(row.id, row.branchIdRef || targetBranchId, {
+        // snake_case in the live schema, as with check_in.
+        check_out: stamp,
+        ...(stamp ? { status: "CLOSED" } : {}),
+      });
+      toast({
+        title: stamp ? "Visitor checked out" : "Check-out cleared",
+        description: stamp
+          ? `${row.name || "Visitor"} left at ${formatDateTime(stamp, "")}.`
+          : `${row.name || "Visitor"} is back on the premises list.`,
+      });
+    } catch (error) {
+      setLiveRecords(snapshot);
+      toast({
+        title: "Could not save the check-out",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+    }
+  };
+
   const removeRecord = async (row: EnquiryRow) => {
     if (!window.confirm(`Remove ${row.name || "this visitor"} from the log? This cannot be undone.`)) return;
     const snapshot = liveRecords;
@@ -584,11 +660,18 @@ export default function EnquiriesWorkspace() {
                         <td className="px-4 py-3 text-muted-foreground">
                           <div className="text-xs">{r.date}</div>
                           <div className="text-xs">
-                            {r.checkOut
-                              ? `→ ${formatDateTime(r.checkOut)}`
-                              : r.status === "CLOSED"
-                                ? "Checked out"
-                                : "Active"}
+                            {r.checkOut ? (
+                              <>
+                                {`→ ${formatDateTime(r.checkOut)}`}
+                                {stayed(r) && (
+                                  <span className="ml-1 text-[10px]">({stayed(r)})</span>
+                                )}
+                              </>
+                            ) : r.status === "CLOSED" ? (
+                              "Checked out"
+                            ) : (
+                              "Still inside"
+                            )}
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
@@ -612,6 +695,15 @@ export default function EnquiriesWorkspace() {
                               <DropdownMenuItem onSelect={() => void setRecordStatus(r, "CLOSED")}>
                                 Mark completed
                               </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onSelect={() => openCheckOut(r)}>
+                                {r.checkOut ? "Edit check-out time" : "Check out now"}
+                              </DropdownMenuItem>
+                              {r.checkOut && (
+                                <DropdownMenuItem onSelect={() => void saveCheckOut(r, null)}>
+                                  Clear check-out
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onSelect={() => {
@@ -1078,6 +1170,43 @@ export default function EnquiriesWorkspace() {
           </div>
         </Card>
       )}
+
+      {/* When the visitor left. Defaulted to now, because that is the answer
+          most of the time -- and editable, because a front desk stamps people
+          out when it gets a moment. */}
+      <Dialog open={checkingOut !== null} onOpenChange={(open) => !open && setCheckingOut(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Check out {checkingOut?.name || "visitor"}</DialogTitle>
+            <DialogDescription>
+              Stamps when they left and marks the visit completed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="check-out-at">Out time</Label>
+            <Input
+              id="check-out-at"
+              type="datetime-local"
+              value={checkOutAt}
+              onChange={(e) => setCheckOutAt(e.target.value)}
+            />
+            {checkingOut?.date && (
+              <p className="text-xs text-muted-foreground">Checked in {checkingOut.date}.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCheckingOut(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => checkingOut && void saveCheckOut(checkingOut, checkOutAt)}
+              disabled={!checkOutAt}
+            >
+              Save out time
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
