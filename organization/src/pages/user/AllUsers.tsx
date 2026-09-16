@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -43,11 +43,14 @@ import {
   deleteUser,
   createStaffUser,
   getBranches,
+  getRoles,
+  setUserRole,
   grantableRoles,
   canManageUsers,
   SYSTEM_ROLES,
   type SystemUserRow,
   type SystemRole,
+  type RoleRow,
 } from "@/lib/supabase/data";
 
 /** `ORGANIZATION_ADMIN` is not a label. */
@@ -96,6 +99,19 @@ const AllUsers = () => {
   // the picker is only worth showing to someone who has branches to pick from.
   const canChooseBranch = !!organizationId;
 
+  /**
+   * The institute's own roles. The dropdown offers these by name -- a person is
+   * given "Counsellor", not STAFF -- and each carries the base role the account
+   * is actually minted as. An organisation that has not run roles.sql has none,
+   * and the dropdown falls back to the eight built-in ones.
+   */
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const grantableSet = useMemo(() => new Set<string>(creatableRoles), [creatableRoles]);
+  const offeredRoles = useMemo(
+    () => roles.filter((role) => grantableSet.has(role.baseRole)),
+    [roles, grantableSet],
+  );
+
   const [adding, setAdding] = useState(false);
   const [creating, setCreating] = useState(false);
   const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string }>>([]);
@@ -106,6 +122,8 @@ const AllUsers = () => {
     username: "",
     password: "",
     role: (creatableRoles[0] ?? "STAFF") as SystemRole,
+    /** The institute's role, when it has any. "" means none was chosen. */
+    roleId: "",
     email: "",
     phone: "",
     branchId: "none",
@@ -115,8 +133,12 @@ const AllUsers = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getUsers(organizationId, branchId);
+      const [result, roleList] = await Promise.all([
+        getUsers(organizationId, branchId),
+        getRoles(organizationId).catch(() => ({ data: [] as RoleRow[] })),
+      ]);
       setUsers(result.data);
+      setRoles(roleList.data);
     } catch (error) {
       toast({
         title: "Could not load users",
@@ -162,18 +184,27 @@ const AllUsers = () => {
     }
     setCreating(true);
     try {
+      const chosen = offeredRoles.find((role) => role.id === draft.roleId) ?? null;
       const result = await createStaffUser({
         name: draft.name,
         username: draft.username,
         password: draft.password,
-        role: draft.role,
+        // The account is always minted as one of the eight the database knows;
+        // the institute's own role is a name and a menu on top of that.
+        role: chosen ? chosen.baseRole : draft.role,
         email: draft.email,
         phone: draft.phone,
         branchId: draft.branchId === "none" ? null : draft.branchId,
       });
+      // A separate write, and deliberately after the account exists: this is an
+      // ordinary update the admin's own session may make, so adding roles never
+      // needed the deployed edge function to be changed.
+      if (chosen) await setUserRole(result.data.userId, chosen.id);
       toast({
         title: result.data.created ? "User created" : "Login updated",
-        description: `${draft.name.trim()} signs in as ${result.data.username}.`,
+        description: `${draft.name.trim()} signs in as ${result.data.username}${
+          chosen ? ` as ${chosen.name}` : ""
+        }.`,
       });
       setAdding(false);
       await load();
@@ -501,20 +532,43 @@ const AllUsers = () => {
                 <div className="space-y-2">
                   <Label htmlFor="new-role">Role</Label>
                   <Select
-                    value={draft.role}
-                    onValueChange={(value) => setDraft({ ...draft, role: value as SystemRole })}
+                    value={offeredRoles.length ? draft.roleId : draft.role}
+                    onValueChange={(value) =>
+                      setDraft(
+                        offeredRoles.length
+                          ? { ...draft, roleId: value }
+                          : { ...draft, role: value as SystemRole },
+                      )
+                    }
                   >
                     <SelectTrigger id="new-role" aria-label="Role for the new user">
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      {creatableRoles.map((role) => (
-                        <SelectItem key={role} value={role}>
-                          {pretty(role)}
-                        </SelectItem>
-                      ))}
+                      {/* The institute's own roles once it has them; the eight
+                          built-in ones only while roles.sql has not been run. */}
+                      {(offeredRoles.length ? offeredRoles : creatableRoles).map((role) =>
+                        typeof role === "string" ? (
+                          <SelectItem key={role} value={role}>
+                            {pretty(role)}
+                          </SelectItem>
+                        ) : (
+                          <SelectItem key={role.id} value={role.id}>
+                            {role.name}
+                          </SelectItem>
+                        ),
+                      )}
                     </SelectContent>
                   </Select>
+                  {offeredRoles.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Roles and what each one opens are set under{" "}
+                      <Link to="/user/roles" className="text-primary hover:underline">
+                        User Roles
+                      </Link>
+                      .
+                    </p>
+                  )}
                 </div>
               </div>
 

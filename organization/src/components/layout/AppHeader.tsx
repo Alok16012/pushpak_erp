@@ -7,20 +7,20 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useTheme } from "next-themes";
-import { menuForView } from "@/lib/navigation";
+import { menuFor } from "@/lib/navigation";
 import { VIEWS } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import { getNotices } from "@/lib/supabase/data";
 
 export function AppHeader() {
   const { resolvedTheme, setTheme } = useTheme();
-  const { user, view, logout } = useAuth();
+  const { user, view, allowedPaths, logout } = useAuth();
   const onDashboard = useLocation().pathname === VIEWS[view].home;
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [notices, setNotices] = useState<Array<{ id: string; title: string; publishDate?: string }>>([]);
   // Search only ever offers pages this authorisation can actually open.
-  const destinations = useMemo(() => menuForView(view).flatMap(group => group.items.map(item => ({ ...item, group: group.title }))), [view]);
+  const destinations = useMemo(() => menuFor(view, allowedPaths).flatMap(group => group.items.map(item => ({ ...item, group: group.title }))), [view, allowedPaths]);
   const results = query.trim() ? destinations.filter(item => `${item.title} ${item.group}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : destinations.slice(0, 6);
 
   // The bell used to be inert with a permanent unread dot; it now opens the

@@ -340,6 +340,13 @@ const EXTRA_PATHS: Record<View, string[]> = {
   student: ["/", "/me"],
 };
 
+/** Every path that is a menu item of a view, which is what a tick refers to. */
+const MENU_PATHS: Record<View, Set<string>> = {
+  admin: new Set(),
+  franchise: new Set(),
+  student: new Set(),
+};
+
 const ALLOWED: Record<View, Set<string>> = {
   admin: new Set(),
   franchise: new Set(),
@@ -347,7 +354,10 @@ const ALLOWED: Record<View, Set<string>> = {
 };
 (Object.keys(MENUS) as View[]).forEach((view) => {
   MENUS[view].forEach((group) =>
-    group.items.forEach((item) => ALLOWED[view].add(item.url)),
+    group.items.forEach((item) => {
+      ALLOWED[view].add(item.url);
+      MENU_PATHS[view].add(item.url);
+    }),
   );
   EXTRA_PATHS[view].forEach((path) => ALLOWED[view].add(path));
 });
@@ -364,3 +374,63 @@ export function canAccess(view: View, pathname: string): boolean {
 }
 
 export const homeFor = (view: View) => VIEWS[view].home;
+
+/**
+ * Every page a view can open, as the permission picker lists them: grouped the
+ * way the sidebar groups them, so an administrator ticking boxes is looking at
+ * the menu they are building.
+ */
+export const modulesForView = (view: View): Array<{ group: string; items: Array<{ title: string; url: string }> }> =>
+  MENUS[view].map((group) => ({
+    group: group.title,
+    items: group.items.map((item) => ({ title: item.title, url: item.url })),
+  }));
+
+/**
+ * The menu a person actually gets: their view's menu, narrowed to the pages
+ * their role was granted.
+ *
+ * An empty `allowed` means the role has been given no list of its own, which is
+ * how every account behaved before roles existed -- so it gets the whole view.
+ * A group with nothing left in it disappears rather than sitting there empty.
+ */
+export function menuFor(view: View, allowed?: string[] | null): MenuItem[] {
+  const menu = MENUS[view];
+  if (!allowed || allowed.length === 0) return menu;
+  const granted = new Set(allowed);
+  return menu
+    .map((group) => ({ ...group, items: group.items.filter((item) => granted.has(item.url)) }))
+    .filter((group) => group.items.length > 0);
+}
+
+/**
+ * The gate `ProtectedRoute` runs, narrowed by the role's own list.
+ *
+ * The view is still the outer boundary: a role cannot be granted a page its
+ * view was never authorised for, because that is the line the database keeps
+ * too. Within the view, an empty list means everything -- the behaviour before
+ * roles existed -- and a list means exactly what it says, plus the view's
+ * landing and sibling paths, which are not menu items anyone can tick.
+ */
+export function canAccessWithRole(
+  view: View,
+  pathname: string,
+  allowed?: string[] | null,
+): boolean {
+  if (!canAccess(view, pathname)) return false;
+  if (!allowed || allowed.length === 0) return true;
+
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  const granted = new Set(allowed);
+  if (granted.has(path) || EXTRA_PATHS[view].includes(path)) return true;
+
+  // A page that IS a menu item and was not ticked is refused, or the tick
+  // would mean nothing to anyone who knows the URL.
+  if (MENU_PATHS[view].has(path)) return false;
+
+  // What is left is a path no picker can offer: `/student/add` behind the New
+  // admission button, the workspaces that answer to several URLs. Those follow
+  // the section they belong to, so granting a section's page carries them.
+  const section = path.split("/")[1] ?? "";
+  return [...granted].some((url) => url.split("/")[1] === section);
+}

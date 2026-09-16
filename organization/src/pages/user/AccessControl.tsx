@@ -1,399 +1,255 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Loader2, Save, Shield } from "lucide-react";
+
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { useNavigate } from "react-router-dom";
-import { Shield, Lock, Eye, Edit, Save, RefreshCcw } from "lucide-react";
+import { getRoles, updateRole, canManageUsers, type RoleRow } from "@/lib/supabase/data";
+import { modulesForView } from "@/lib/navigation";
+import { viewForRole, type View } from "@/lib/roles";
 
-interface PermissionCategory {
-  id: string;
-  name: string;
-  description: string;
-  permissions: Permission[];
-}
+/**
+ * What each role may open.
+ *
+ * The page used to show a fixed list of invented permissions -- "Export
+ * Reports", "Delete Student" -- whose switches were wired to nothing at all.
+ * These are the real pages of the app, grouped as the sidebar groups them, and
+ * ticking one is what puts it in that role's menu.
+ *
+ * Granting is bounded by the role's own level: a branch role cannot be handed
+ * an organisation page, because the database would refuse the data behind it
+ * anyway. Nothing ticked means the whole menu for that level, which is how
+ * every account behaved before roles existed.
+ */
+export default function AccessControl() {
+  const { toast } = useToast();
+  const { user, organizationId } = useAuth();
+  const [params, setParams] = useSearchParams();
 
-interface Permission {
-  id: string;
-  name: string;
-  description: string;
-  enabled: boolean;
-  locked?: boolean;
-}
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [granted, setGranted] = useState<string[]>([]);
 
-const CATEGORIES: PermissionCategory[] = [
-  {
-    id: "dashboard",
-    name: "Dashboard",
-    description: "Access to dashboard and overview features",
-    permissions: [
-      { id: "view_dashboard", name: "View Dashboard", description: "Access to main dashboard", enabled: true },
-      { id: "view_analytics", name: "View Analytics", description: "Access to analytics data", enabled: true },
-      { id: "export_reports", name: "Export Reports", description: "Download reports", enabled: false },
-    ],
-  },
-  {
-    id: "student_management",
-    name: "Student Management",
-    description: "Manage student records and admissions",
-    permissions: [
-      { id: "view_students", name: "View Students", description: "View student list", enabled: true },
-      { id: "add_student", name: "Add Student", description: "Create new student", enabled: false },
-      { id: "edit_student", name: "Edit Student", description: "Modify student data", enabled: false },
-      { id: "delete_student", name: "Delete Student", description: "Remove student", enabled: false, locked: true },
-    ],
-  },
-  {
-    id: "attendance",
-    name: "Attendance Management",
-    description: "Manage attendance tracking",
-    permissions: [
-      { id: "mark_attendance", name: "Mark Attendance", description: "Mark daily attendance", enabled: true },
-      { id: "view_attendance", name: "View Attendance", description: "View attendance records", enabled: true },
-      { id: "edit_attendance", name: "Edit Attendance", description: "Modify attendance", enabled: false },
-      { id: "export_attendance", name: "Export Attendance", description: "Download attendance data", enabled: false },
-    ],
-  },
-  {
-    id: "exam_management",
-    name: "Exam & Marks",
-    description: "Manage exams and marks",
-    permissions: [
-      { id: "create_exam", name: "Create Exam", description: "Schedule new exam", enabled: false },
-      { id: "view_exam", name: "View Exams", description: "View exam schedule", enabled: true },
-      { id: "assign_marks", name: "Assign Marks", description: "Enter student marks", enabled: false },
-      { id: "edit_marks", name: "Edit Marks", description: "Modify marks", enabled: false, locked: true },
-    ],
-  },
-  {
-    id: "fee_management",
-    name: "Fee Management",
-    description: "Manage fee collection and tracking",
-    permissions: [
-      { id: "collect_fee", name: "Collect Fee", description: "Receive fee payments", enabled: false },
-      { id: "view_fee", name: "View Fee Records", description: "View fee details", enabled: true },
-      { id: "refund_fee", name: "Process Refund", description: "Issue refunds", enabled: false, locked: true },
-      { id: "fee_reports", name: "Fee Reports", description: "Generate fee reports", enabled: false },
-    ],
-  },
-  {
-    id: "user_management",
-    name: "User Management",
-    description: "Manage system users and roles",
-    permissions: [
-      { id: "view_users", name: "View Users", description: "View user list", enabled: true },
-      { id: "add_user", name: "Add User", description: "Create new user", enabled: false },
-      { id: "edit_user", name: "Edit User", description: "Modify user data", enabled: false },
-      { id: "delete_user", name: "Delete User", description: "Remove user", enabled: false, locked: true },
-      { id: "manage_roles", name: "Manage Roles", description: "Assign roles", enabled: false, locked: true },
-    ],
-  },
-];
+  const mayEdit = viewForRole(user?.role) === "admin" && canManageUsers(user?.role);
+  const roleId = params.get("role") ?? "";
+  const role = roles.find((r) => r.id === roleId) ?? null;
 
-const ALL_PERMISSIONS = CATEGORIES.flatMap((c) => c.permissions);
-
-const BASE_ROLES = ["Admin", "Manager", "Employee", "HR Manager"];
-
-const defaultsFor = (role: string): Record<string, boolean> =>
-  Object.fromEntries(
-    ALL_PERMISSIONS.map((permission) => {
-      if (role === "Admin") return [permission.id, true];
-      if (role === "Manager") return [permission.id, permission.enabled];
-      if (role === "HR Manager")
-        return [
-          permission.id,
-          permission.enabled || ["add_user", "edit_user", "export_attendance"].includes(permission.id),
-        ];
-      return [permission.id, permission.id.startsWith("view_") || permission.id === "mark_attendance"];
-    }),
+  /** The pages this role's level can reach at all — the ceiling on the ticks. */
+  const groups = useMemo(
+    () => (role ? modulesForView(viewForRole(role.baseRole)) : []),
+    [role],
+  );
+  const everyPath = useMemo(
+    () => groups.flatMap((group) => group.items.map((item) => item.url)),
+    [groups],
   );
 
-const defaultMatrix = () =>
-  Object.fromEntries(BASE_ROLES.map((role) => [role, defaultsFor(role)]));
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    getRoles(organizationId)
+      .then((result) => {
+        if (!live) return;
+        setRoles(result.data);
+        if (!params.get("role") && result.data.length) {
+          setParams({ role: result.data[0].id }, { replace: true });
+        }
+      })
+      .catch((error: unknown) =>
+        toast({
+          title: "Could not load the roles",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "destructive",
+        }),
+      )
+      .finally(() => live && setLoading(false));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId]);
 
-const ROLES_KEY = "erp-access-roles";
-const MATRIX_KEY = "erp-access-matrix";
+  // The ticks follow whichever role is being looked at.
+  useEffect(() => {
+    setGranted(role?.modules ?? []);
+  }, [role?.id, role?.modules]);
 
-const AccessControl = () => {
-  const { toast } = useToast();
-  const navigate = useNavigate();
-  const [roles, setRoles] = useState<string[]>(() => {
+  const toggle = (url: string, on: boolean) =>
+    setGranted((list) => (on ? [...new Set([...list, url])] : list.filter((p) => p !== url)));
+
+  const toggleGroup = (urls: string[], on: boolean) =>
+    setGranted((list) =>
+      on ? [...new Set([...list, ...urls])] : list.filter((p) => !urls.includes(p)),
+    );
+
+  const save = async () => {
+    if (!role) return;
+    setSaving(true);
     try {
-      const stored = localStorage.getItem(ROLES_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch { /* fall through */ }
-    return BASE_ROLES;
-  });
-  const [matrix, setMatrix] = useState<Record<string, Record<string, boolean>>>(() => {
-    try {
-      const stored = localStorage.getItem(MATRIX_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch { /* fall through */ }
-    return defaultMatrix();
-  });
-  const [selectedRole, setSelectedRole] = useState("Manager");
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [customOpen, setCustomOpen] = useState(false);
-  const [newRole, setNewRole] = useState("");
-
-  useEffect(() => { localStorage.setItem(ROLES_KEY, JSON.stringify(roles)); }, [roles]);
-  useEffect(() => { localStorage.setItem(MATRIX_KEY, JSON.stringify(matrix)); }, [matrix]);
-
-  const grants = matrix[selectedRole] ?? defaultsFor(selectedRole);
-  const grantedCount = ALL_PERMISSIONS.filter((p) => grants[p.id]).length;
-
-  const handleTogglePermission = (permissionId: string, value: boolean) => {
-    setMatrix((current) => ({
-      ...current,
-      [selectedRole]: { ...(current[selectedRole] ?? defaultsFor(selectedRole)), [permissionId]: value },
-    }));
-  };
-
-  const handleSaveChanges = () => {
-    toast({
-      title: "Settings Saved",
-      description: `${selectedRole} now has ${grantedCount} of ${ALL_PERMISSIONS.length} permissions.`,
-    });
-  };
-
-  const handleResetToDefault = () => {
-    setMatrix((current) => ({ ...current, [selectedRole]: defaultsFor(selectedRole) }));
-    toast({
-      title: "Settings Reset",
-      description: `${selectedRole} permissions are back to their defaults.`,
-    });
-  };
-
-  const createCustomRole = () => {
-    const name = newRole.trim();
-    if (!name) {
-      toast({ title: "Name required", description: "Enter a name for the new role.", variant: "destructive" });
-      return;
+      // Everything ticked is stored as nothing: "the whole menu" should keep
+      // meaning the whole menu even after a page is added to the app later.
+      const modules = granted.length === everyPath.length ? [] : granted;
+      await updateRole(role.id, { modules });
+      setRoles((list) => list.map((r) => (r.id === role.id ? { ...r, modules } : r)));
+      toast({
+        title: "Permissions saved",
+        description:
+          modules.length === 0
+            ? `${role.name} gets every page for its level.`
+            : `${role.name} gets ${modules.length} page(s). Anyone signed in sees the change on their next page load.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Could not save the permissions",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-    if (roles.some((r) => r.toLowerCase() === name.toLowerCase())) {
-      toast({ title: "Role exists", description: `${name} is already in the list.`, variant: "destructive" });
-      return;
-    }
-    setRoles((list) => [...list, name]);
-    setMatrix((current) => ({ ...current, [name]: { ...grants } }));
-    setSelectedRole(name);
-    setNewRole("");
-    setCustomOpen(false);
-    toast({ title: "Role created", description: `${name} starts as a copy of ${selectedRole}.` });
   };
 
   return (
     <AppLayout>
-      <div className="container mx-auto p-6">
-        <PageHeader
-          title="Access Control"
-          description="Manage role-based permissions and access control"
-          breadcrumbs={[
-            { label: "User Management", href: "/user/access-control" },
-            { label: "Access Control" },
-          ]}
-          actions={
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleResetToDefault}>
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                Reset to Default
-              </Button>
-              <Button onClick={handleSaveChanges}>
-                <Save className="mr-2 h-4 w-4" />
-                Save Changes
-              </Button>
-            </div>
-          }
-        />
+      <PageHeader
+        title="Access Control"
+        description="Tick the pages each role may open. Everything unticked disappears from their menu."
+        breadcrumbs={[{ label: "User Management", href: "/user/all" }, { label: "Access Control" }]}
+        actions={
+          mayEdit &&
+          role && (
+            <Button className="gap-2" onClick={save} disabled={saving}>
+              <Save className="h-4 w-4" />
+              {saving ? "Saving…" : "Save permissions"}
+            </Button>
+          )
+        }
+      />
 
-        {/* Role Selection */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Configure Permissions For Role
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <Label htmlFor="role-select">Select Role:</Label>
-              <select
-                id="role-select"
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {roles.map((role) => (
-                  <option key={role} value={role}>{role}</option>
-                ))}
-              </select>
-              <Badge variant="secondary">
-                {grantedCount} of {ALL_PERMISSIONS.length} granted
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              Configure what users with the <strong>{selectedRole}</strong> role can access and do in the system
+      {loading ? (
+        <div className="grid place-items-center py-16">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : roles.length === 0 ? (
+        <Card className="border-warning/40 bg-warning/5">
+          <CardContent className="p-4 text-sm">
+            <p className="font-medium">Roles are not set up on this database yet.</p>
+            <p className="mt-1 text-muted-foreground">
+              Run <code>supabase/schema/roles.sql</code> in the Supabase SQL editor. Until then
+              everyone keeps the menu their built-in role has always had.
             </p>
           </CardContent>
         </Card>
-
-        {/* Permission Categories */}
-        <div className="space-y-6 mt-6">
-          {CATEGORIES.map((category) => (
-            <Card key={category.id}>
-              <CardHeader>
-                <CardTitle className="text-lg">{category.name}</CardTitle>
-                <p className="text-sm text-muted-foreground">{category.description}</p>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {category.permissions.map((permission) => (
-                    <div key={permission.id} className="flex items-center justify-between">
-                      <div className="space-y-0.5 flex-1">
-                        <div className="flex items-center gap-2">
-                          <Label htmlFor={permission.id} className="font-medium cursor-pointer">
-                            {permission.name}
-                          </Label>
-                          {permission.locked && (
-                            <Lock className="h-3 w-3 text-muted-foreground" />
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">{permission.description}</p>
-                      </div>
-                      <Switch
-                        id={permission.id}
-                        checked={Boolean(grants[permission.id])}
-                        disabled={permission.locked && selectedRole !== "Admin"}
-                        onCheckedChange={(value) => handleTogglePermission(permission.id, value)}
-                      />
-                    </div>
-                  ))}
+      ) : (
+        <div className="space-y-4">
+          <Card>
+            <CardContent className="flex flex-wrap items-end gap-4 p-4">
+              <div className="w-full max-w-xs space-y-2">
+                <Label htmlFor="role-picker">Role</Label>
+                <Select
+                  value={roleId}
+                  onValueChange={(value) => setParams({ role: value }, { replace: true })}
+                >
+                  <SelectTrigger id="role-picker">
+                    <SelectValue placeholder="Select role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {role && (
+                <p className="text-xs text-muted-foreground">
+                  {role.description || "No description"}
+                  <br />
+                  {granted.length === 0
+                    ? "Nothing ticked — this role gets every page its level allows."
+                    : `${granted.length} of ${everyPath.length} pages granted.`}
+                </p>
+              )}
+              {role && mayEdit && (
+                <div className="ml-auto flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setGranted(everyPath)}>
+                    Select all
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setGranted([])}>
+                    Clear
+                  </Button>
                 </div>
-                {category.id !== CATEGORIES[CATEGORIES.length - 1].id && (
-                  <Separator className="mt-4" />
-                )}
-              </CardContent>
-            </Card>
-          ))}
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {groups.map((group) => {
+              const urls = group.items.map((item) => item.url);
+              const all = urls.every((url) => granted.includes(url));
+              return (
+                <Card key={group.group}>
+                  <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                      {group.group}
+                    </CardTitle>
+                    <Checkbox
+                      checked={all}
+                      disabled={!mayEdit}
+                      aria-label={`Grant all of ${group.group}`}
+                      onCheckedChange={(value) => toggleGroup(urls, value === true)}
+                    />
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {group.items.map((item) => (
+                      <label
+                        key={item.url}
+                        className="flex cursor-pointer items-center gap-2 text-sm"
+                      >
+                        <Checkbox
+                          checked={granted.includes(item.url)}
+                          disabled={!mayEdit}
+                          aria-label={item.title}
+                          onCheckedChange={(value) => toggle(item.url, value === true)}
+                        />
+                        <span>{item.title}</span>
+                      </label>
+                    ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {role && (
+            <p className="text-xs text-muted-foreground">
+              These decide the menu and the pages this app will open. The database keeps its own
+              rules on top — a branch role cannot read another branch's records whatever is ticked
+              here.{" "}
+              <Badge variant="outline" className="ml-1">
+                {role.isSystem ? "Built-in role" : "Custom role"}
+              </Badge>
+            </p>
+          )}
         </div>
-
-        {/* Legend */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">Permission Legend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-green-500"></div>
-                <span>Enabled - Permission is granted</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-gray-300"></div>
-                <span>Disabled - Permission is not granted</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Lock className="h-4 w-4 text-muted-foreground" />
-                <span>Locked - System protected permission</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Quick Actions */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Button variant="outline" className="justify-start" onClick={() => setPreviewOpen(true)}>
-                <Eye className="mr-2 h-4 w-4" />
-                Preview Role View
-              </Button>
-              <Button variant="outline" className="justify-start" onClick={() => setCustomOpen(true)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Customize Role
-              </Button>
-              <Button variant="outline" className="justify-start" onClick={() => navigate("/user/roles")}>
-                <Shield className="mr-2 h-4 w-4" />
-                View All Roles
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>What a {selectedRole} can do</DialogTitle>
-              <DialogDescription>
-                {grantedCount} of {ALL_PERMISSIONS.length} permissions are granted.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {CATEGORIES.map((category) => {
-                const allowed = category.permissions.filter((p) => grants[p.id]);
-                return (
-                  <div key={category.id}>
-                    <p className="text-sm font-medium">{category.name}</p>
-                    {allowed.length ? (
-                      <ul className="mt-1 list-disc pl-5 text-sm text-muted-foreground">
-                        {allowed.map((p) => (
-                          <li key={p.id}>{p.name}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-sm text-muted-foreground">No access</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Customize Role</DialogTitle>
-              <DialogDescription>
-                Create a new role starting from the {selectedRole} permission set.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
-              <Label htmlFor="new-role">Role name</Label>
-              <Input
-                id="new-role"
-                placeholder="e.g., Front Desk Supervisor"
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && createCustomRole()}
-              />
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setCustomOpen(false)}>Cancel</Button>
-              <Button onClick={createCustomRole}>Create Role</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+      )}
     </AppLayout>
   );
-};
-
-export default AccessControl;
+}

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { viewForRole } from "@/lib/roles";
+import { getUserModules } from "@/lib/supabase/data";
 
 type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
 
@@ -9,6 +10,8 @@ type Auth = {
   branchId: string | null;
   organizationId: string | null;
   view: "admin" | "franchise" | "student";
+  /** Pages this person's role grants. Empty means everything their view allows. */
+  allowedPaths: string[];
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
@@ -17,6 +20,7 @@ type Auth = {
 const Context = createContext<Auth | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [allowedPaths, setAllowedPaths] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const view = viewForRole(user?.role);
@@ -70,6 +74,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  /**
+   * The role's own menu, re-read whenever the account changes. It is not in the
+   * token on purpose -- an administrator narrowing a role should not have to
+   * wait for everyone to sign in again.
+   */
+  useEffect(() => {
+    if (!user?.id) {
+      setAllowedPaths([]);
+      return;
+    }
+    let live = true;
+    getUserModules(user.id)
+      .then((result) => live && setAllowedPaths(result.data))
+      // A database without roles.sql grants the view's whole menu, as before.
+      .catch(() => live && setAllowedPaths([]));
+    return () => {
+      live = false;
+    };
+  }, [user?.id]);
+
   const login = async (identifier: string, password: string) => {
     const email = identifier.includes("@") ? identifier : `${identifier}@pushpak.local`;
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -88,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         branchId: user?.branchId || null,
         organizationId: user?.organizationId || null,
         view,
+        allowedPaths,
         login,
         logout,
         loading,

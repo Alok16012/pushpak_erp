@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { canAccess } from "@/lib/navigation";
+import { canAccessWithRole } from "@/lib/navigation";
 import NotAuthorized from "@/pages/NotAuthorized";
 
 /**
@@ -20,7 +20,7 @@ import NotAuthorized from "@/pages/NotAuthorized";
  * refused and a reload does not silently land somewhere else.
  */
 export function ProtectedRoute() {
-  const { user, view, loading } = useAuth();
+  const { user, view, allowedPaths, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -33,7 +33,8 @@ export function ProtectedRoute() {
 
   if (!user) return <Navigate to="/login" replace state={{ from: location }} />;
 
-  if (!canAccess(view, location.pathname)) return <NotAuthorized />;
+  // The view is the outer boundary; the person's role narrows it from there.
+  if (!canAccessWithRole(view, location.pathname, allowedPaths)) return <NotAuthorized />;
 
   return <Outlet />;
 }

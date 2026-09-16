@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Check, Cloud, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { menuForView } from "@/lib/navigation";
+import { menuFor } from "@/lib/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -12,8 +12,8 @@ const formRoutes = /\/(create|add|setup|template|allocation|assign|collection|ma
 export function WorkspaceBar() {
   const location = useLocation();
   const { toast } = useToast();
-  const { view } = useAuth();
-  const group = useMemo(() => menuForView(view).find(item => item.items.some(child => location.pathname === child.url)), [location.pathname, view]);
+  const { view, allowedPaths } = useAuth();
+  const group = useMemo(() => menuFor(view, allowedPaths).find(item => item.items.some(child => location.pathname === child.url)), [location.pathname, view, allowedPaths]);
   const isWorkflow = formRoutes.test(location.pathname);
   const [progress, setProgress] = useState(0);
 

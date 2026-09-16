@@ -1,13 +1,12 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Pencil, Plus, Shield, SlidersHorizontal, Trash2, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable } from "@/components/ui/DataTable";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -15,414 +14,422 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Shield, Users, Edit, Trash2, Check, Search } from "lucide-react";
+import { canManageUsers, grantableRoles } from "@/lib/supabase/data";
+import {
+  createRole,
+  deleteRole,
+  getRoleUserCounts,
+  getRoles,
+  updateRole,
+  type RoleRow,
+  type SystemRole,
+} from "@/lib/supabase/data";
+import { viewForRole } from "@/lib/roles";
 
-interface Role {
-  id: string;
-  roleName: string;
-  description: string;
-  userCount: number;
-  permissions: string[];
-  isDefault: boolean;
-  createdDate: string;
-}
+/**
+ * The institute's own roles.
+ *
+ * This page used to list four roles -- Admin, Manager, Employee, HR Manager --
+ * that existed nowhere but this file: creating one did nothing, and the Add
+ * User dialog offered a different list entirely. These are the real ones now,
+ * and what each may open is set next door under Access Control.
+ *
+ * A role's `base` is the part the database enforces: an account is minted as
+ * one of the eight `SystemRole` values, because every RLS policy reads that.
+ * A role named "Counsellor" is a base of STAFF wearing a name, and its module
+ * list only narrows what that base could already reach.
+ */
 
-// Sample data - replace with actual API data
-const sampleRoles: Role[] = [
-  {
-    id: "1",
-    roleName: "Admin",
-    description: "Full system access with all permissions",
-    userCount: 5,
-    permissions: ["all"],
-    isDefault: false,
-    createdDate: "2024-01-01",
+/** What a base role means, in the words an administrator picks it by. */
+const BASE_LABELS: Record<string, { label: string; help: string }> = {
+  ORGANIZATION_ADMIN: {
+    label: "Organisation-wide",
+    help: "Sees every branch, and the institute's settings.",
   },
-  {
-    id: "2",
-    roleName: "Manager",
-    description: "Can manage team and view reports",
-    userCount: 12,
-    permissions: ["view_reports", "manage_team", "approve_requests"],
-    isDefault: true,
-    createdDate: "2024-01-05",
+  BRANCH_ADMIN: {
+    label: "Runs a branch",
+    help: "One branch, with its staff and its admissions.",
   },
-  {
-    id: "3",
-    roleName: "Employee",
-    description: "Basic employee access",
-    userCount: 50,
-    permissions: ["view_profile", "mark_attendance"],
-    isDefault: true,
-    createdDate: "2024-01-10",
-  },
-  {
-    id: "4",
-    roleName: "HR Manager",
-    description: "Human resources management",
-    userCount: 3,
-    permissions: ["manage_employees", "view_attendance", "manage_leave"],
-    isDefault: false,
-    createdDate: "2024-01-15",
-  },
-];
+  ACCOUNTANT: { label: "Branch staff — accounts", help: "One branch, fees side." },
+  RECEPTIONIST: { label: "Branch staff — front desk", help: "One branch, reception side." },
+  TEACHER: { label: "Branch staff — teaching", help: "One branch, classes and marks." },
+  STAFF: { label: "Branch staff — general", help: "One branch, whatever you grant." },
+};
 
-const UserRoles = () => {
+const baseLabel = (base: string) => BASE_LABELS[base]?.label ?? base;
+
+const BLANK = { name: "", description: "", baseRole: "STAFF" as SystemRole };
+
+export default function UserRoles() {
   const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [roles] = useState<Role[]>(sampleRoles);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const navigate = useNavigate();
+  const { user, organizationId } = useAuth();
 
-  const handleDeleteRole = (id: string) => {
-    toast({
-      title: "Role Deleted",
-      description: "The role has been removed successfully.",
-      variant: "destructive",
-    });
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [notInstalled, setNotInstalled] = useState(false);
+  const [editing, setEditing] = useState<RoleRow | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState(BLANK);
+  const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<RoleRow | null>(null);
+
+  // A branch admin may staff their own branch, so they see the roles they can
+  // hand out; only the organisation shapes the roles themselves.
+  const mayEdit = viewForRole(user?.role) === "admin" && canManageUsers(user?.role);
+  const bases = useMemo(
+    () => grantableRoles(user?.role).filter((role) => role !== "SUPER_ADMIN"),
+    [user?.role],
+  );
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [list, used] = await Promise.all([
+        getRoles(organizationId),
+        getRoleUserCounts(organizationId),
+      ]);
+      setRoles(list.data);
+      setCounts(used.data);
+      // An organisation with no roles at all means roles.sql has not been run:
+      // the app still works on its eight built-in roles, so say that plainly
+      // rather than showing an empty table as though none had been made.
+      setNotInstalled(list.data.length === 0);
+    } catch (error) {
+      toast({
+        title: "Could not load the roles",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const columns = [
-    {
-      key: "roleName" as keyof Role,
-      header: "Role Name",
-      cell: (item: Role) => (
-        <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-purple-600" />
-          <span className="font-medium">{item.roleName}</span>
-        </div>
-      ),
-    },
-    {
-      key: "description" as keyof Role,
-      header: "Description",
-    },
-    {
-      key: "userCount" as keyof Role,
-      header: "Users",
-      cell: (item: Role) => (
-        <div className="flex items-center gap-2">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          <span>{item.userCount} users</span>
-        </div>
-      ),
-    },
-    {
-      key: "permissions" as keyof Role,
-      header: "Permissions",
-      cell: (item: Role) => (
-        <div className="flex gap-1 flex-wrap">
-          {item.permissions.slice(0, 3).map((perm, index) => (
-            <Badge key={index} variant="secondary" className="text-xs">
-              {perm.replace(/_/g, " ")}
-            </Badge>
-          ))}
-          {item.permissions.length > 3 && (
-            <Badge variant="outline" className="text-xs">
-              +{item.permissions.length - 3} more
-            </Badge>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "isDefault" as keyof Role,
-      header: "Default",
-      cell: (item: Role) =>
-        item.isDefault ? (
-          <Check className="h-4 w-4 text-green-600" />
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-    },
-    {
-      key: "actions",
-      header: "Actions",
-      cell: (item: Role) => (
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSelectedRole(item);
-              setIsEditDialogOpen(true);
-            }}
-          >
-            <Edit className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleDeleteRole(item.id)}
-            disabled={item.isDefault}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      ),
-    },
-  ];
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId]);
 
-  const filteredRoles = roles.filter((role) =>
-    role.roleName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    role.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const openCreate = () => {
+    setDraft({ ...BLANK, baseRole: (bases[bases.length - 1] ?? "STAFF") as SystemRole });
+    setCreating(true);
+  };
+
+  const openEdit = (role: RoleRow) => {
+    setDraft({ name: role.name, description: role.description, baseRole: role.baseRole });
+    setEditing(role);
+  };
+
+  const save = async () => {
+    const name = draft.name.trim();
+    if (!name) {
+      toast({ title: "Give the role a name", variant: "destructive" });
+      return;
+    }
+    if (!organizationId) {
+      toast({ title: "No organisation assigned", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editing) {
+        // A built-in role's base is fixed: the eight are what the database
+        // knows, and renaming one must not quietly re-point it somewhere else.
+        await updateRole(editing.id, {
+          name,
+          description: draft.description,
+          ...(editing.isSystem ? {} : { baseRole: draft.baseRole }),
+        });
+        toast({ title: "Role saved", description: `"${name}" updated.` });
+      } else {
+        await createRole(organizationId, {
+          name,
+          description: draft.description,
+          baseRole: draft.baseRole,
+        });
+        toast({
+          title: "Role created",
+          description: `"${name}" can now be given out under Add user. Set what it opens under Access Control.`,
+        });
+      }
+      setEditing(null);
+      setCreating(false);
+      await load();
+    } catch (error) {
+      toast({
+        title: editing ? "Could not save the role" : "Could not create the role",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      await deleteRole(pendingDelete.id);
+      toast({
+        title: "Role deleted",
+        description: `"${pendingDelete.name}" is gone. Anyone holding it keeps their login and falls back to their base menu.`,
+      });
+      setPendingDelete(null);
+      await load();
+    } catch (error) {
+      toast({
+        title: "Could not delete the role",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <AppLayout>
-      <div className="container mx-auto p-6">
-        <PageHeader
-          title="User Roles"
-          description="Manage user roles and permissions"
-          breadcrumbs={[
-            { label: "User Management", href: "/user/roles" },
-            { label: "User Roles" },
-          ]}
-          actions={
-            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create New Role
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Create New Role</DialogTitle>
-                  <DialogDescription>
-                    Define a new role with specific permissions
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="roleName">Role Name</Label>
-                    <Input id="roleName" placeholder="Enter role name" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Input id="description" placeholder="Enter role description" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Permissions</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {["View Reports", "Manage Team", "Approve Requests", "Manage Employees"].map((permission) => (
-                        <div key={permission} className="flex items-center space-x-2">
-                          <Checkbox id={permission} />
-                          <Label htmlFor={permission} className="text-sm">
-                            {permission}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={() => {
-                    toast({
-                      title: "Role Created",
-                      description: "New role has been created successfully.",
-                    });
-                    setIsCreateDialogOpen(false);
-                  }}>
-                    Create Role
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          }
-        />
-
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Roles</CardTitle>
-              <Shield className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{roles.length}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Defined roles
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Default Roles</CardTitle>
-              <Check className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {roles.filter(r => r.isDefault).length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                System default roles
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Custom Roles</CardTitle>
-              <Edit className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
-                {roles.filter(r => !r.isDefault).length}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Custom defined roles
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filters and Table */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>All Roles</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search roles..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+      <PageHeader
+        title="User Roles"
+        description="The jobs people do at this institute, and what each of them may open."
+        breadcrumbs={[{ label: "User Management", href: "/user/all" }, { label: "User Roles" }]}
+        actions={
+          mayEdit && (
+            <div className="flex gap-2">
+              <Button variant="outline" className="gap-2" onClick={() => navigate("/user/access")}>
+                <SlidersHorizontal className="h-4 w-4" />
+                Access control
+              </Button>
+              <Button className="gap-2" onClick={openCreate} disabled={notInstalled}>
+                <Plus className="h-4 w-4" />
+                New role
+              </Button>
             </div>
+          )
+        }
+      />
 
-            <DataTable
-              columns={columns}
-              data={filteredRoles}
-              searchable={false}
-              emptyMessage="No roles found"
-            />
-          </CardContent>
-        </Card>
-
-        {/* Permissions Info Card */}
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle>About Roles & Permissions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>
-              • Roles define what users can do in the system based on their assigned permissions
-            </p>
-            <p>
-              • Default roles are system-defined and cannot be deleted
-            </p>
-            <p>
-              • Custom roles can be created with specific permission sets
-            </p>
-            <p>
-              • Each user can be assigned one or more roles
-            </p>
-            <p>
-              • Permissions control access to specific features and actions
+      {notInstalled && !loading && (
+        <Card className="mb-4 border-warning/40 bg-warning/5">
+          <CardContent className="p-4 text-sm">
+            <p className="font-medium">Roles are not set up on this database yet.</p>
+            <p className="mt-1 text-muted-foreground">
+              Run <code>supabase/schema/roles.sql</code> in the Supabase SQL editor. Until then
+              everyone keeps the menu their built-in role has always had, and nothing here can be
+              saved.
             </p>
           </CardContent>
         </Card>
+      )}
 
-        {/* Edit Role Dialog */}
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Edit Role</DialogTitle>
-              <DialogDescription>
-                Update role information and permissions
-              </DialogDescription>
-            </DialogHeader>
-            {selectedRole && (
-              <form className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-roleName">Role Name</Label>
-                  <Input
-                    id="edit-roleName"
-                    defaultValue={selectedRole.roleName}
-                    disabled={selectedRole.isDefault}
-                  />
-                  {selectedRole.isDefault && (
-                    <p className="text-xs text-muted-foreground">
-                      System default roles cannot be renamed
+      {loading ? (
+        <div className="grid place-items-center py-16">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {roles.map((role) => (
+            <Card key={role.id}>
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-semibold">
+                      <Shield className="h-4 w-4 text-primary" />
+                      {role.name}
                     </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {role.description || "No description"}
+                    </p>
+                  </div>
+                  {role.isSystem ? (
+                    <Badge variant="secondary" className="shrink-0">
+                      Built in
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="shrink-0">
+                      Custom
+                    </Badge>
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit-description">Description</Label>
-                  <Input
-                    id="edit-description"
-                    defaultValue={selectedRole.description}
-                    disabled={selectedRole.isDefault}
-                  />
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span className="rounded-md bg-muted px-2 py-1">{baseLabel(role.baseRole)}</span>
+                  <span className="inline-flex items-center gap-1">
+                    <Users className="h-3.5 w-3.5" />
+                    {counts[role.id] ?? 0} {(counts[role.id] ?? 0) === 1 ? "user" : "users"}
+                  </span>
+                  <span>
+                    {role.modules.length === 0
+                      ? "Full menu for its level"
+                      : `${role.modules.length} pages`}
+                  </span>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Permissions</Label>
-                  <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-2 border rounded-md">
-                    {[
-                      "View Dashboard",
-                      "View Analytics",
-                      "Export Reports",
-                      "Manage Team",
-                      "Approve Requests",
-                      "Manage Employees",
-                      "View Attendance",
-                      "Manage Leave"
-                    ].map((permission) => (
-                      <div key={permission} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`edit-perm-${permission}`}
-                          defaultChecked={selectedRole.permissions.includes(permission.toLowerCase().replace(/ /g, '_')) || selectedRole.permissions.includes('all')}
-                          disabled={selectedRole.isDefault}
-                        />
-                        <Label
-                          htmlFor={`edit-perm-${permission}`}
-                          className="text-sm font-normal cursor-pointer"
-                        >
-                          {permission}
-                        </Label>
-                      </div>
-                    ))}
+                {mayEdit && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => openEdit(role)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => navigate(`/user/access?role=${role.id}`)}
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Permissions
+                    </Button>
+                    {!role.isSystem && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="ml-auto text-destructive"
+                        aria-label={`Delete ${role.name}`}
+                        onClick={() => setPendingDelete(role)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
-                </div>
-              </form>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  toast({
-                    title: "Role Updated",
-                    description: "Role has been updated successfully.",
-                  });
-                  setIsEditDialogOpen(false);
-                }}
-                disabled={selectedRole?.isDefault}
+                )}
+              </CardContent>
+            </Card>
+          ))}
+          {roles.length === 0 && !notInstalled && (
+            <p className="text-sm text-muted-foreground">No roles yet.</p>
+          )}
+        </div>
+      )}
+
+      <Dialog
+        open={creating || editing !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreating(false);
+            setEditing(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editing ? `Edit ${editing.name}` : "New role"}</DialogTitle>
+            <DialogDescription>
+              The name is yours to choose. The level decides what the database itself lets this
+              role do — the pages it sees are set under Access Control.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="role-name">Role name *</Label>
+              <Input
+                id="role-name"
+                placeholder="Counsellor"
+                value={draft.name}
+                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role-description">Description</Label>
+              <Textarea
+                id="role-description"
+                rows={2}
+                placeholder="What this person does at the institute."
+                value={draft.description}
+                onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role-base">Level *</Label>
+              <Select
+                value={draft.baseRole}
+                onValueChange={(value) => setDraft((d) => ({ ...d, baseRole: value as SystemRole }))}
+                disabled={Boolean(editing?.isSystem)}
               >
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+                <SelectTrigger id="role-base">
+                  <SelectValue placeholder="Select level" />
+                </SelectTrigger>
+                <SelectContent>
+                  {bases.map((base) => (
+                    <SelectItem key={base} value={base}>
+                      {baseLabel(base)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {editing?.isSystem
+                  ? "A built-in role's level cannot change — the database keys its own rules on it."
+                  : BASE_LABELS[draft.baseRole]?.help}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreating(false);
+                setEditing(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving…" : editing ? "Save role" : "Create role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{pendingDelete?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {counts[pendingDelete?.id ?? ""] ?? 0} login(s) hold this role. They keep working and
+              fall back to the menu their level has always had — but they lose whatever this role
+              granted them.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete role</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
-};
-
-export default UserRoles;
+}

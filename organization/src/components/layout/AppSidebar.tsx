@@ -11,7 +11,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { menuForView } from "@/lib/navigation";
+import { menuFor } from "@/lib/navigation";
 import { VIEWS } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -43,11 +43,11 @@ const IDLE =
 export function AppSidebar() {
   const location = useLocation();
   const { state } = useSidebar();
-  const { view } = useAuth();
+  const { view, allowedPaths } = useAuth();
   const collapsed = state === "collapsed";
   // The signed-in authorisation decides the whole navigation surface: a menu a
   // view cannot open is never rendered, so there is no route to guess at.
-  const groups = menuForView(view);
+  const groups = menuFor(view, allowedPaths);
   const home = VIEWS[view].home;
   const isActive = (url: string) => location.pathname === url;
 

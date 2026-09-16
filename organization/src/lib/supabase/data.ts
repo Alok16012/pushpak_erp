@@ -3938,3 +3938,201 @@ export async function createStaffUser(input: {
     };
   };
 }
+
+/* ============================
+   ROLES (an institute's own)
+   ============================ */
+
+/**
+ * A role as the institute defines it: its own name for a job, and the pages
+ * that job may open.
+ *
+ * `baseRole` is the part the database enforces. Every RLS policy in the schema
+ * reads `users.role` through jwt_role(), so an account is always minted as one
+ * of the eight `SystemRole` values -- a role named "HR Manager" is a
+ * `baseRole` of STAFF wearing a name. `modules` only narrows what that base can
+ * already reach; it is a menu, not a wall.
+ */
+export interface RoleRow {
+  id: string;
+  organizationId: string | null;
+  name: string;
+  description: string;
+  baseRole: SystemRole;
+  /** Navigation paths this role may open. Empty means everything its base can. */
+  modules: string[];
+  /** One of the eight the app ships with: renamable, not deletable. */
+  isSystem: boolean;
+}
+
+const mapRole = (row: Record<string, unknown>): RoleRow => ({
+  id: String(row.id || ""),
+  organizationId: (row.organizationId as string) ?? null,
+  name: String(row.name || ""),
+  description: String(row.description || ""),
+  baseRole: String(row.baseRole || "STAFF") as SystemRole,
+  modules: Array.isArray(row.modules) ? (row.modules as string[]) : [],
+  isSystem: Boolean(row.isSystem),
+});
+
+/** True while roles.sql has not been run; the app falls back to the eight. */
+const isMissingRolesTable = (error: { code?: string; message?: string } | null) =>
+  error?.code === "42P01" ||
+  error?.code === "PGRST205" ||
+  /relation .*roles.* does not exist|could not find the table/i.test(error?.message || "");
+
+/**
+ * Every role this organisation has. Empty -- rather than an error -- on a
+ * database where roles.sql has not been run yet, so every screen that reads
+ * this keeps working on the eight built-in roles alone.
+ */
+export async function getRoles(organizationId: string | null) {
+  if (!organizationId) return { success: true as const, data: [] as RoleRow[] };
+  const { data, error } = await supabase
+    .from("roles")
+    .select("*")
+    .eq("organizationId", organizationId)
+    .order("isSystem", { ascending: false })
+    .order("name");
+  if (error) {
+    if (isMissingRolesTable(error)) return { success: true as const, data: [] as RoleRow[] };
+    throw new Error(error.message);
+  }
+  return {
+    success: true as const,
+    data: (data || []).map((row) => mapRole(row as Record<string, unknown>)),
+  };
+}
+
+/** The one role a login holds, for building that person's own menu. */
+export async function getRole(id: string | null) {
+  if (!id) return { success: true as const, data: null };
+  const { data, error } = await supabase.from("roles").select("*").eq("id", id).maybeSingle();
+  if (error) {
+    if (isMissingRolesTable(error)) return { success: true as const, data: null };
+    throw new Error(error.message);
+  }
+  return {
+    success: true as const,
+    data: data ? mapRole(data as Record<string, unknown>) : null,
+  };
+}
+
+const describeRoleConflict = (error: { code?: string; message?: string }, name: string) =>
+  error.code === "23505"
+    ? `This institute already has a role called "${name}".`
+    : error.message;
+
+export async function createRole(
+  organizationId: string,
+  input: { name: string; description?: string; baseRole: SystemRole; modules?: string[] },
+) {
+  const payload = {
+    id: newId("role"),
+    organizationId,
+    name: input.name.trim(),
+    description: input.description?.trim() || null,
+    baseRole: input.baseRole,
+    modules: input.modules ?? [],
+    isSystem: false,
+  };
+  const { data, error } = await supabase.from("roles").insert(payload).select("*").single();
+  if (error) throw new Error(describeRoleConflict(error, payload.name));
+  return { success: true as const, data: mapRole(data as Record<string, unknown>) };
+}
+
+export async function updateRole(
+  id: string,
+  input: Partial<{ name: string; description: string; baseRole: SystemRole; modules: string[] }>,
+) {
+  const payload: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  if (input.name !== undefined) payload.name = input.name.trim();
+  if (input.description !== undefined) payload.description = input.description.trim() || null;
+  if (input.baseRole !== undefined) payload.baseRole = input.baseRole;
+  if (input.modules !== undefined) payload.modules = input.modules;
+
+  const { data, error } = await supabase
+    .from("roles")
+    .update(payload)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw new Error(describeRoleConflict(error, String(input.name ?? "")));
+  return { success: true as const, data: mapRole(data as Record<string, unknown>) };
+}
+
+/**
+ * Deletes a role. The logins holding it keep working -- `users.roleId` is set
+ * null by the foreign key and they fall back to their base role's own menu --
+ * but the caller is told how many were affected, because that is a decision
+ * worth seeing before it is made.
+ */
+export async function deleteRole(id: string) {
+  const { data, error } = await supabase.from("roles").delete().eq("id", id).select("id");
+  if (error) throw new Error(error.message);
+  assertRemoved(data, "That role");
+  return { success: true as const };
+}
+
+/** How many logins hold each role, for the roles list. */
+export async function getRoleUserCounts(organizationId: string | null) {
+  if (!organizationId) return { success: true as const, data: {} as Record<string, number> };
+  const { data, error } = await supabase
+    .from("users")
+    .select("roleId")
+    .eq("organizationId", organizationId);
+  if (error) {
+    if (isMissingUserScope(error) || isMissingRolesTable(error)) {
+      return { success: true as const, data: {} as Record<string, number> };
+    }
+    throw new Error(error.message);
+  }
+  const counts: Record<string, number> = {};
+  for (const row of data || []) {
+    const id = (row as { roleId?: string }).roleId;
+    if (id) counts[id] = (counts[id] || 0) + 1;
+  }
+  return { success: true as const, data: counts };
+}
+
+/**
+ * Puts a login under one of the institute's roles.
+ *
+ * Kept apart from creating the account on purpose: the account itself is minted
+ * by the edge function with the service-role key, and this is an ordinary write
+ * an administrator's own session is allowed to make. That means adding roles
+ * did not need the deployed function to be touched again.
+ */
+export async function setUserRole(userId: string, roleId: string | null) {
+  const { error } = await supabase.from("users").update({ roleId }).eq("id", userId);
+  if (error) {
+    // A database without roles.sql simply has no column to set.
+    if (isMissingRolesTable(error) || error.code === "PGRST204") return { success: true as const };
+    throw new Error(error.message);
+  }
+  return { success: true as const };
+}
+
+/**
+ * The pages the signed-in person's own role grants them.
+ *
+ * Read from the database rather than the token: the role's module list is
+ * edited by an administrator while people are signed in, and a JWT minted
+ * before that edit would carry the old menu until the next login.
+ *
+ * Returns an empty list for anyone whose role has none -- which every account
+ * had before roles existed -- and that reads as "everything this view allows".
+ */
+export async function getUserModules(userId: string | null) {
+  if (!userId) return { success: true as const, data: [] as string[] };
+  const { data, error } = await supabase
+    .from("users")
+    .select("roleId")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data) return { success: true as const, data: [] as string[] };
+  const roleId = (data as { roleId?: string }).roleId;
+  if (!roleId) return { success: true as const, data: [] as string[] };
+  const role = await getRole(roleId).catch(() => null);
+  return { success: true as const, data: role?.data?.modules ?? [] };
+}
