@@ -6,6 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { Switch } from "@/components/ui/switch";
 import { Building2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { getSessionYears, type SessionYear } from "@/lib/supabase/data";
+import { useAuth } from "@/contexts/AuthContext";
 
 /** The three the register knows. Anything else is typed in, not filed as
  *  "Other" -- a coaching centre is worth knowing about by name. */
@@ -15,11 +18,22 @@ const instituteTypes = [
   { value: "paramedical", label: "Paramedical Institute" },
 ];
 
-const academicYears = [
-  "2024-25", "2025-26", "2026-27", "2027-28"
-];
-
 export function BranchInfoSection() {
+  const { user } = useAuth();
+  const [sessions, setSessions] = useState<SessionYear[]>([]);
+
+  useEffect(() => {
+    const fetchSessions = async () => {
+      try {
+        const result = await getSessionYears(user?.organizationId || null);
+        setSessions(result.data || []);
+      } catch (error) {
+        console.error("Failed to fetch sessions", error);
+      }
+    };
+    fetchSessions();
+  }, [user?.organizationId]);
+
   return (
     <Card>
       <CardHeader>
@@ -70,9 +84,9 @@ export function BranchInfoSection() {
                 <SelectValue placeholder="Select academic year" />
               </SelectTrigger>
               <SelectContent>
-                {academicYears.map((year) => (
-                  <SelectItem key={year} value={year}>
-                    {year}
+                {sessions.map((session) => (
+                  <SelectItem key={session.id} value={session.name}>
+                    {session.name}
                   </SelectItem>
                 ))}
               </SelectContent>
