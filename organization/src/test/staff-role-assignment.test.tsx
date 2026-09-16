@@ -72,6 +72,23 @@ beforeEach(() => {
 });
 
 describe("giving a new login one of the institute's roles", () => {
+  it("puts the institute's own roles above the ones the app ships with", async () => {
+    getRoles.mockResolvedValue({
+      success: true,
+      data: [
+        ...ROLES,
+        { id: "role-staff", organizationId: "org1", name: "Staff", description: "", baseRole: "STAFF", modules: [], isSystem: true },
+      ],
+    });
+    open();
+    await waitFor(() => expect(getRoles).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /add user/i }));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: /role for the new user/i }), { key: "Enter" });
+
+    expect(await screen.findByText("Your roles")).toBeInTheDocument();
+    expect(screen.getByText("Built in")).toBeInTheDocument();
+  });
+
   it("offers the institute's roles by name, not the database's eight", async () => {
     open();
     await waitFor(() => expect(getRoles).toHaveBeenCalledWith("org1"));

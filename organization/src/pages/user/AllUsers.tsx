@@ -28,7 +28,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -111,6 +113,12 @@ const AllUsers = () => {
     () => roles.filter((role) => grantableSet.has(role.baseRole)),
     [roles, grantableSet],
   );
+  // The institute's own roles come first and on their own: those are the jobs
+  // this office actually has. The six the app ships with stay underneath --
+  // hiding them would leave nobody able to create a branch admin until a
+  // custom role had been made for it.
+  const ownRoles = useMemo(() => offeredRoles.filter((role) => !role.isSystem), [offeredRoles]);
+  const builtInRoles = useMemo(() => offeredRoles.filter((role) => role.isSystem), [offeredRoles]);
 
   const [adding, setAdding] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -545,19 +553,35 @@ const AllUsers = () => {
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      {/* The institute's own roles once it has them; the eight
-                          built-in ones only while roles.sql has not been run. */}
-                      {(offeredRoles.length ? offeredRoles : creatableRoles).map((role) =>
-                        typeof role === "string" ? (
-                          <SelectItem key={role} value={role}>
-                            {pretty(role)}
-                          </SelectItem>
-                        ) : (
-                          <SelectItem key={role.id} value={role.id}>
-                            {role.name}
-                          </SelectItem>
-                        ),
-                      )}
+                      {offeredRoles.length === 0
+                        ? // Only while roles.sql has not been run.
+                          creatableRoles.map((role) => (
+                            <SelectItem key={role} value={role}>
+                              {pretty(role)}
+                            </SelectItem>
+                          ))
+                        : [
+                            ownRoles.length > 0 && (
+                              <SelectGroup key="own">
+                                <SelectLabel>Your roles</SelectLabel>
+                                {ownRoles.map((role) => (
+                                  <SelectItem key={role.id} value={role.id}>
+                                    {role.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ),
+                            builtInRoles.length > 0 && (
+                              <SelectGroup key="built-in">
+                                <SelectLabel>Built in</SelectLabel>
+                                {builtInRoles.map((role) => (
+                                  <SelectItem key={role.id} value={role.id}>
+                                    {role.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ),
+                          ]}
                     </SelectContent>
                   </Select>
                   {offeredRoles.length > 0 && (
