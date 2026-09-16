@@ -70,6 +70,37 @@ beforeEach(() => {
   getEnquiries.mockResolvedValue({ success: true, data: [VISITOR] });
 });
 
+describe("where a visit has got to", () => {
+  // The bug: marking a visitor changed a status the table never showed, so
+  // every one of those menu items looked like it had done nothing at all.
+  it("shows the status on the row it belongs to", async () => {
+    open();
+    await waitFor(() => expect(getEnquiries).toHaveBeenCalled());
+    const row = (await screen.findAllByText("Sunita Rao"))[0].closest("tr")!;
+    expect(within(row).getByText("Checked in")).toBeInTheDocument();
+  });
+
+  it("moves the row to the status that was marked", async () => {
+    open();
+    await rowMenu();
+    fireEvent.click(await screen.findByText(/mark as follow-up/i));
+
+    await waitFor(() => expect(updateEnquiry).toHaveBeenCalled());
+    const [, , payload] = updateEnquiry.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(payload.status).toBe("CONTACTED");
+
+    const row = (await screen.findAllByText("Sunita Rao"))[0].closest("tr")!;
+    expect(within(row).getByText("Follow-up")).toBeInTheDocument();
+  });
+
+  it("calls the end of a visit what the office calls it", async () => {
+    open();
+    await rowMenu();
+    // "Mark completed" said nothing about what had completed.
+    expect(await screen.findByText(/mark as admission completed/i)).toBeInTheDocument();
+  });
+});
+
 describe("checking a visitor out", () => {
   it("counts a visitor who has not been stamped out as still on the premises", async () => {
     open();

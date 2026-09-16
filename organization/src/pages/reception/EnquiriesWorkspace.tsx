@@ -144,6 +144,18 @@ const emptyDraft: Draft = {
   notes: "",
 };
 
+/** The status pill, in the one style the row and the card both wear. */
+const statusBadge = (status: string) =>
+  `inline-block shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-medium ${
+    status === "NEW"
+      ? "bg-brand text-brand-foreground"
+      : status === "CONTACTED"
+        ? "bg-amber-500/15 text-amber-600"
+        : status === "CONVERTED"
+          ? "bg-success/15 text-success"
+          : "bg-muted"
+  }`;
+
 /** How long a visitor was in the building, once they have been stamped out. */
 const stayed = (row: { visitDate?: string; checkOut?: string | null }): string => {
   if (!row.checkOut || !row.visitDate) return "";
@@ -629,6 +641,7 @@ export default function EnquiriesWorkspace() {
                       <th className="px-4 py-3 font-medium">Purpose</th>
                       <th className="px-4 py-3 font-medium">Person to Meet</th>
                       <th className="px-4 py-3 font-medium">Source</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
                       <th className="px-4 py-3 font-medium">Check-in / out</th>
                       <th className="px-4 py-3 font-medium">Follow-up</th>
                       <th />
@@ -657,6 +670,11 @@ export default function EnquiriesWorkspace() {
                         <td className="px-4 py-3 text-xs text-muted-foreground">
                           {r.source || "—"}
                         </td>
+                        <td className="px-4 py-3">
+                          <span className={statusBadge(r.status)}>
+                            {ENQUIRY_STATUS_LABEL[r.status] || r.status}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-muted-foreground">
                           <div className="text-xs">{r.date}</div>
                           <div className="text-xs">
@@ -667,8 +685,6 @@ export default function EnquiriesWorkspace() {
                                   <span className="ml-1 text-[10px]">({stayed(r)})</span>
                                 )}
                               </>
-                            ) : r.status === "CLOSED" ? (
-                              "Checked out"
                             ) : (
                               "Still inside"
                             )}
@@ -686,15 +702,15 @@ export default function EnquiriesWorkspace() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => void setRecordStatus(r, "NEW")}>
-                                Mark checked in
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => void setRecordStatus(r, "CONTACTED")}>
-                                Flag for follow-up
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => void setRecordStatus(r, "CLOSED")}>
-                                Mark completed
-                              </DropdownMenuItem>
+                              {ENQUIRY_STATUSES.map((value) => (
+                                <DropdownMenuItem
+                                  key={value}
+                                  disabled={r.status === value}
+                                  onSelect={() => void setRecordStatus(r, value)}
+                                >
+                                  Mark as {(ENQUIRY_STATUS_LABEL[value] || value).toLowerCase()}
+                                </DropdownMenuItem>
+                              ))}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem onSelect={() => openCheckOut(r)}>
                                 {r.checkOut ? "Edit check-out time" : "Check out now"}
@@ -739,7 +755,7 @@ export default function EnquiriesWorkspace() {
                   <div key={r.id} className="p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0"><p className="font-semibold">{r.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{r.phone} · {r.purpose}</p></div>
-                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-medium ${r.status === "NEW" ? "bg-brand text-brand-foreground" : r.status === "CONTACTED" ? "bg-amber-500/15 text-amber-600" : "bg-muted"}`}>{ENQUIRY_STATUS_LABEL[r.status] || r.status}</span>
+                      <span className={statusBadge(r.status)}>{ENQUIRY_STATUS_LABEL[r.status] || r.status}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-3 text-xs">
                       <div><p className="text-muted-foreground">WhatsApp</p><p className="mt-1 font-medium">{r.whatsappNumber || "—"}</p></div>

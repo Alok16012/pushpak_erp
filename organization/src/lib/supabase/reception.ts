@@ -25,12 +25,18 @@ import { newId } from "@/lib/id";
 export const ENQUIRY_STATUSES = ["NEW", "CONTACTED", "CONVERTED", "CLOSED"] as const;
 export type EnquiryStatus = (typeof ENQUIRY_STATUSES)[number];
 
-/** Human labels for the four EnquiryStatus values. */
+/**
+ * Human labels for the four EnquiryStatus values. One map, read by the status
+ * column, the filter, the row menu and the CSV alike -- the menu used to carry
+ * its own wording, so an entry marked "completed" was filed under a word that
+ * appeared nowhere else on the page.
+ */
 export const ENQUIRY_STATUS_LABEL: Record<string, string> = {
   NEW: "Checked in",
   CONTACTED: "Follow-up",
   CONVERTED: "Converted",
-  CLOSED: "Completed",
+  // Most visits here are admission enquiries, and this is the end of one.
+  CLOSED: "Admission completed",
 };
 
 /** enum VisitPurpose */
