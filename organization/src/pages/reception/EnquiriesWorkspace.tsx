@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Dialog,
   DialogContent,
@@ -942,11 +943,7 @@ export default function EnquiriesWorkspace() {
 
                     <div className="grid gap-4 sm:grid-cols-3">
                       <Field label="Registration Date">
-                        <Input
-                          type="date"
-                          value={draft.registrationDate}
-                          onChange={(e) => update("registrationDate", e.target.value)}
-                        />
+                        <DatePicker value={draft.registrationDate} onChange={(v) => update("registrationDate", v)} />
                       </Field>
                       <Field label="ID Type">
                         <EditableSelect
@@ -1020,11 +1017,7 @@ export default function EnquiriesWorkspace() {
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field label="Visit Date">
-                        <Input
-                          type="date"
-                          value={draft.visitDate}
-                          onChange={(e) => update("visitDate", e.target.value)}
-                        />
+                        <DatePicker value={draft.visitDate} onChange={(v) => update("visitDate", v)} />
                       </Field>
                       <Field label="Visit Time">
                         <Input
@@ -1088,11 +1081,7 @@ export default function EnquiriesWorkspace() {
                 >
                   <div className="grid gap-4 md:grid-cols-2">
                     <Field label="Follow-up Call Date">
-                      <Input
-                        type="date"
-                        value={draft.followUpDate}
-                        onChange={(e) => update("followUpDate", e.target.value)}
-                      />
+                      <DatePicker value={draft.followUpDate} onChange={(v) => update("followUpDate", v)} />
                     </Field>
                     <Field label="Preferred Time">
                       <Input
@@ -1280,12 +1269,7 @@ export default function EnquiriesWorkspace() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="follow-up-date">Follow-up date</Label>
-                <Input
-                  id="follow-up-date"
-                  type="date"
-                  value={followUp.date}
-                  onChange={(e) => setFollowUp((f) => ({ ...f, date: e.target.value }))}
-                />
+                <DatePicker value={followUp.date} onChange={(v) => setFollowUp((f) => ({ ...f, date: v }))} id="follow-up-date" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="follow-up-time">Time</Label>

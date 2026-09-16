@@ -110,8 +110,9 @@ describe("admissions workspace", () => {
     expect(await screen.findByRole("heading", { name: "Edit student" })).toBeTruthy();
     expect(screen.getByDisplayValue("Asha")).toBeTruthy();
     expect(screen.getByDisplayValue("Verma")).toBeTruthy();
-    // Timestamps have to be cut back to yyyy-mm-dd or the date input shows blank.
-    expect(screen.getByDisplayValue("2004-06-01")).toBeTruthy();
+    // Timestamps have to be cut back to yyyy-mm-dd or the picker shows nothing;
+    // the calendar's trigger is what reads the day back.
+    expect(screen.getByText("01 Jun 2004")).toBeTruthy();
 
     // Step 2 and step 3 are part of the same record - the old edit dialog
     // exposed neither.

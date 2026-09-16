@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Plus, Video, Users, Calendar, Clock, Play } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -333,7 +334,7 @@ export default function ViewLiveClasses() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="class-date">Date</Label>
-                <Input id="class-date" type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} />
+                <DatePicker value={editing.date} onChange={(v) => setEditing({ ...editing, date: v })} id="class-date" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="class-time">Time</Label>

@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -1139,7 +1140,7 @@ export default function ViewBranch() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-directorDOB">Date of Birth</Label>
-                    <Input id="edit-directorDOB" type="date" value={editing.directorDOB} onChange={(e) => setEditing({ ...editing, directorDOB: e.target.value })} />
+                    <DatePicker value={editing.directorDOB} onChange={(v) => setEditing({ ...editing, directorDOB: v })} id="edit-directorDOB" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-directorBloodGroup">Blood Group</Label>
@@ -1156,15 +1157,15 @@ export default function ViewBranch() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="edit-registrationDate">Registration Date</Label>
-                    <Input id="edit-registrationDate" type="date" value={editing.registrationDate} onChange={(e) => setEditing({ ...editing, registrationDate: e.target.value })} />
+                    <DatePicker value={editing.registrationDate} onChange={(v) => setEditing({ ...editing, registrationDate: v })} id="edit-registrationDate" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-validDate">Valid Date</Label>
-                    <Input id="edit-validDate" type="date" value={editing.validDate} onChange={(e) => setEditing({ ...editing, validDate: e.target.value })} />
+                    <DatePicker value={editing.validDate} onChange={(v) => setEditing({ ...editing, validDate: v })} id="edit-validDate" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-expiryDate">Expiry Date</Label>
-                    <Input id="edit-expiryDate" type="date" value={editing.expiryDate} onChange={(e) => setEditing({ ...editing, expiryDate: e.target.value })} />
+                    <DatePicker value={editing.expiryDate} onChange={(v) => setEditing({ ...editing, expiryDate: v })} id="edit-expiryDate" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-referralCode">Referral Code</Label>

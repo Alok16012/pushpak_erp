@@ -127,8 +127,25 @@ const fieldUnder = (label: string) => {
 };
 
 const sessionTrigger = () => within(fieldUnder("Academic session")).getByRole("combobox");
-const dateBox = () =>
-  fieldUnder("Admission date").querySelector('input[type="date"]') as HTMLInputElement;
+/**
+ * The date is a calendar now, not a native box: open it, steer the month and
+ * year dropdowns, then click the day.
+ */
+const pickDate = async (fieldLabel: string, iso: string) => {
+  fireEvent.click(within(fieldUnder(fieldLabel)).getByRole("button"));
+  const [year, month, day] = iso.split("-").map(Number);
+  const selects = document.querySelectorAll("select");
+  fireEvent.change(selects[1], { target: { value: String(year) } });
+  fireEvent.change(selects[0], { target: { value: String(month - 1) } });
+  const cell = Array.from(document.querySelectorAll('button[name="day"]')).find(
+    (button) => button.textContent === String(day) && !button.hasAttribute("disabled"),
+  )!;
+  fireEvent.click(cell);
+};
+
+/** What the trigger reads, which is the value the form holds. */
+const dateText = (fieldLabel: string) =>
+  within(fieldUnder(fieldLabel)).getByRole("button").textContent ?? "";
 
 beforeEach(() => {
   toast.mockClear();
@@ -157,16 +174,17 @@ describe("Admission session", () => {
 
     // A date in the previous session: the academic year is that session now,
     // without the user having to change the second box to match the first.
-    fireEvent.change(dateBox(), { target: { value: "2025-07-15" } });
+    await pickDate("Admission date", "2025-07-15");
     await waitFor(() => expect(sessionTrigger()).toHaveTextContent("Session 2025-2026"));
   });
 
-  it("bounds the date box by the session's own dates", async () => {
+  it("reads the date back the way a person writes one", async () => {
     draft({ admissionDate: "2026-07-15", academicYear: "Session 2026-2027" });
     await renderForm();
 
-    expect(dateBox()).toHaveAttribute("min", "2026-04-01");
-    expect(dateBox()).toHaveAttribute("max", "2027-03-31");
+    // The native box showed the browser's own format, which differed from
+    // machine to machine; the calendar's trigger shows the day as written here.
+    expect(dateText("Admission date")).toContain("15 Jul 2026");
   });
 
   it("says so when the date falls before the academic year began", async () => {
@@ -175,19 +193,22 @@ describe("Admission session", () => {
 
     // Before every session on file, so no session claims it and the one already
     // chosen stays -- which is exactly the contradiction being reported.
-    fireEvent.change(dateBox(), { target: { value: "2020-01-01" } });
+    await pickDate("Admission date", "2020-01-01");
     await waitFor(() =>
       expect(screen.getByText(/cannot be dated before its academic year/i)).toBeInTheDocument(),
     );
-    expect(dateBox()).toHaveAttribute("aria-invalid", "true");
+    expect(within(fieldUnder("Admission date")).getByRole("button")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
   });
 
   it("refuses to file an admission dated outside the session it claims", async () => {
     draft({ ...COMPLETE, admissionDate: "2026-07-15", academicYear: "Session 2026-2027" });
     await renderForm();
 
-    fireEvent.change(dateBox(), { target: { value: "2020-01-01" } });
-    await waitFor(() => expect(dateBox()).toHaveValue("2020-01-01"));
+    await pickDate("Admission date", "2020-01-01");
+    await waitFor(() => expect(dateText("Admission date")).toContain("01 Jan 2020"));
 
     fireEvent.click(screen.getByRole("button", { name: /5\. Review/ }));
     fireEvent.click(screen.getByRole("button", { name: /complete admission/i }));
@@ -207,14 +228,15 @@ describe("Admission session", () => {
 
     // A date only ever belongs to one session here, so clear it to reach the
     // case where the session is picked first and every open one is offered.
-    fireEvent.change(dateBox(), { target: { value: "" } });
+    fireEvent.click(within(fieldUnder("Admission date")).getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: /^clear$/i }));
     fireEvent.keyDown(sessionTrigger(), { key: "Enter" });
     await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument());
     fireEvent.click(within(screen.getByRole("listbox")).getByText(/Session 2027-2028/));
 
     // Today is outside next year's session, so the date lands on its first day
     // rather than on a value the form would then refuse to save.
-    await waitFor(() => expect(dateBox()).toHaveValue("2027-04-01"));
+    await waitFor(() => expect(dateText("Admission date")).toContain("01 Apr 2027"));
     expect(screen.queryByText(/cannot be dated before/i)).not.toBeInTheDocument();
   });
 

@@ -1,5 +1,6 @@
  import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  import { Input } from "@/components/ui/input";
+ import { DatePicker } from "@/components/ui/date-picker";
  import { Label } from "@/components/ui/label";
  import { LayoutGrid, Calendar } from "lucide-react";
  
@@ -44,17 +45,17 @@
              </div>
              <div className="space-y-2">
                <Label htmlFor="validDate">Valid From</Label>
-               <Input id="validDate" name="validDate" type="date" />
+               <DatePicker id="validDate" name="validDate" />
              </div>
              <div className="space-y-2">
                <Label htmlFor="expiryDate">Expiry Date *</Label>
-               <Input id="expiryDate" name="expiryDate" type="date" />
+               <DatePicker id="expiryDate" name="expiryDate" />
              </div>
            </div>
            <div className="grid gap-4 md:grid-cols-2 mt-4">
              <div className="space-y-2">
                <Label htmlFor="renewalDate">Renewal Date</Label>
-               <Input id="renewalDate" name="renewalDate" type="date" />
+               <DatePicker id="renewalDate" name="renewalDate" />
              </div>
              <div className="space-y-2">
                <Label htmlFor="referralCode">Referral Code</Label>

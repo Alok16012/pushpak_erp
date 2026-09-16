@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -594,7 +595,7 @@ export default function FeeAllocation() {
             </div>
             <div className="space-y-2">
               <Label>Due Date</Label>
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <DatePicker value={dueDate} onChange={(v) => setDueDate(v)} />
             </div>
             <Button className="w-full" disabled={loading || saving || !selectedFeeGroup || !targetIds.length} onClick={allocateSelected}>
               {saving ? "Working…" : `Allocate to Selected${targetIds.length ? ` (${targetIds.length})` : ""}`}
@@ -694,7 +695,7 @@ export default function FeeAllocation() {
             </div>
             <div className="space-y-2">
               <Label>Due date</Label>
-              <Input type="date" value={changeDue} onChange={(e) => setChangeDue(e.target.value)} />
+              <DatePicker value={changeDue} onChange={(v) => setChangeDue(v)} />
             </div>
           </div>
           <DialogFooter>

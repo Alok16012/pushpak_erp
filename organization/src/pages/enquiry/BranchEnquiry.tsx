@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -376,7 +377,7 @@ export default function BranchEnquiry() {
               </div>
               <div className="space-y-2">
                 <Label>Follow-up Date</Label>
-                <Input type="date" value={form.followUpDate} onChange={(e) => set("followUpDate", e.target.value)} />
+                <DatePicker value={form.followUpDate} onChange={(v) => set("followUpDate", v)} />
               </div>
             </div>
             <div className="space-y-2">
@@ -475,7 +476,7 @@ export default function BranchEnquiry() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Next follow-up date</Label>
-                <Input type="date" value={followUpNext} onChange={(e) => setFollowUpNext(e.target.value)} />
+                <DatePicker value={followUpNext} onChange={(v) => setFollowUpNext(v)} />
               </div>
             </div>
           </div>

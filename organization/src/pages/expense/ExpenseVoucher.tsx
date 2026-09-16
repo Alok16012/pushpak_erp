@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -289,13 +290,7 @@ const ExpenseVoucher = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="date">Date *</Label>
-                <Input
-                  id="date"
-                  type="date"
-                  value={formData.date || ""}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  required
-                />
+                <DatePicker value={formData.date || ""} onChange={(v) => setFormData({ ...formData, date: v })} id="date" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="headId">Voucher Head *</Label>

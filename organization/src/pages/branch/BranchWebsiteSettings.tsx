@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -327,21 +328,21 @@ export default function BranchWebsiteSettings() {
                   <div className="space-y-2">
                     <Label htmlFor="registrationDate">Registration Date</Label>
                     <div className="relative">
-                      <Input id="registrationDate" type="date" value={form.registrationDate} onChange={(e) => set("registrationDate", e.target.value)} />
+                      <DatePicker value={form.registrationDate} onChange={(v) => set("registrationDate", v)} id="registrationDate" />
                       <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="expiryDate">Expiry Date</Label>
                     <div className="relative">
-                      <Input id="expiryDate" type="date" value={form.expiryDate} onChange={(e) => set("expiryDate", e.target.value)} />
+                      <DatePicker value={form.expiryDate} onChange={(v) => set("expiryDate", v)} id="expiryDate" />
                       <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="renewalDate">Renewal Date</Label>
                     <div className="relative">
-                      <Input id="renewalDate" type="date" value={form.renewalDate} onChange={(e) => set("renewalDate", e.target.value)} />
+                      <DatePicker value={form.renewalDate} onChange={(v) => set("renewalDate", v)} id="renewalDate" />
                       <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>

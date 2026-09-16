@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -531,12 +532,12 @@ export default function ItemMovementWorkspace() {
                   </Field>
                   {draft.direction === "Dispatched" && (
                     <Field label="Dispatch Date">
-                      <Input type="date" value={draft.dispatchDate} onChange={(e) => setDraftField("dispatchDate", e.target.value)} />
+                      <DatePicker value={draft.dispatchDate} onChange={(v) => setDraftField("dispatchDate", v)} />
                     </Field>
                   )}
                   {draft.direction === "Received" && (
                     <Field label="Receive Date">
-                      <Input type="date" value={draft.receiveDate} onChange={(e) => setDraftField("receiveDate", e.target.value)} />
+                      <DatePicker value={draft.receiveDate} onChange={(v) => setDraftField("receiveDate", v)} />
                     </Field>
                   )}
                   <Field label="Courier">

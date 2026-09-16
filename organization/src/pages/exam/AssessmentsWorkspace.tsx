@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -403,14 +404,7 @@ export default function AssessmentsWorkspace() {
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="space-y-2">
                     <Label htmlFor="examDate">Exam date *</Label>
-                    <Input
-                      id="examDate"
-                      type="date"
-                      value={draft.examDate}
-                      onChange={(e) =>
-                        setDraft((d) => ({ ...d, examDate: e.target.value }))
-                      }
-                    />
+                    <DatePicker value={draft.examDate} onChange={(v) => setDraft((d) => ({ ...d, examDate: v }))} id="examDate" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="maxMarks">Maximum marks *</Label>

@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -407,26 +408,11 @@ export function SessionYearsScreen({ openOnLoad = false }: { openOnLoad?: boolea
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="session-start">Start Date *</Label>
-                <Input
-                  id="session-start"
-                  type="date"
-                  value={draft.startDate}
-                  onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
-                  required
-                />
+                <DatePicker value={draft.startDate} onChange={(v) => setDraft({ ...draft, startDate: v })} id="session-start" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="session-end">End Date *</Label>
-                <Input
-                  id="session-end"
-                  type="date"
-                  value={draft.endDate}
-                  // An end before the start is refused by the database's own
-                  // constraint; `min` stops it being picked in the first place.
-                  min={draft.startDate || undefined}
-                  onChange={(e) => setDraft({ ...draft, endDate: e.target.value })}
-                  required
-                />
+                <DatePicker value={draft.endDate} onChange={(v) => setDraft({ ...draft, endDate: v })} id="session-end" />
               </div>
             </div>
             <div className="space-y-2">

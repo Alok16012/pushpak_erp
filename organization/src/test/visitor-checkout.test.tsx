@@ -99,11 +99,21 @@ describe("where a visit has got to", () => {
     await rowMenu();
     fireEvent.click(await screen.findByText(/mark as follow-up/i));
 
-    const date = (await screen.findByLabelText(/follow-up date/i)) as HTMLInputElement;
     // Tomorrow, which is what a front desk means by "follow up".
-    expect(date.value).toBe(new Date(Date.now() + 86400000).toISOString().slice(0, 10));
+    const tomorrow = new Date(Date.now() + 86400000);
+    const trigger = await screen.findByLabelText(/follow-up date/i);
+    expect(trigger.textContent).toContain(String(tomorrow.getDate()).padStart(2, "0"));
 
-    fireEvent.change(date, { target: { value: "2026-09-25" } });
+    // The calendar: steer its month and year, then click the day.
+    fireEvent.click(trigger);
+    const selects = document.querySelectorAll("select");
+    fireEvent.change(selects[1], { target: { value: "2026" } });
+    fireEvent.change(selects[0], { target: { value: "8" } });
+    fireEvent.click(
+      Array.from(document.querySelectorAll('button[name="day"]')).find(
+        (button) => button.textContent === "25",
+      )!,
+    );
     fireEvent.change(screen.getByLabelText(/^note$/i), { target: { value: "Wants the fee split" } });
     fireEvent.click(screen.getByRole("button", { name: /save follow-up/i }));
 

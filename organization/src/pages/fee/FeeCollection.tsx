@@ -15,6 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -535,12 +536,7 @@ export default function FeeCollection() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="invoiceDueDate">Due Date *</Label>
-              <Input
-                id="invoiceDueDate"
-                type="date"
-                value={invoice.dueDate}
-                onChange={(e) => setInvoice((i) => ({ ...i, dueDate: e.target.value }))}
-              />
+              <DatePicker value={invoice.dueDate} onChange={(v) => setInvoice((i) => ({ ...i, dueDate: v }))} id="invoiceDueDate" />
             </div>
           </div>
           <DialogFooter className="gap-2">

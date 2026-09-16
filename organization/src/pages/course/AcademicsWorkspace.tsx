@@ -4,6 +4,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -525,17 +526,13 @@ export default function AcademicsWorkspace() {
                     />
                   </Field>
                   <Field l="Start date *">
-                    <Input
-                      type="date"
-                      value={d.startDate || ""}
-                      onChange={(e) => setD((p) => ({ ...p, startDate: e.target.value }))}
-                    />
+                    <DatePicker value={d.startDate || ""} onChange={(v) => setD((p) => ({ ...p, startDate: v }))} />
                   </Field>
                   <Field l="End date">
-                    <Input
-                      type="date"
+                    <DatePicker
                       value={d.endDate || ""}
-                      onChange={(e) => setD((p) => ({ ...p, endDate: e.target.value }))}
+                      onChange={(v) => setD((p) => ({ ...p, endDate: v }))}
+                      min={d.startDate || undefined}
                     />
                   </Field>
                   <Field l="Course fee discount (₹)">

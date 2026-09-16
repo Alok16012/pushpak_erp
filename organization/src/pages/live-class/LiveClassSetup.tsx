@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -359,7 +360,7 @@ export default function LiveClassSetup() {
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
                   <Label htmlFor="date">Date *</Label>
-                  <Input id="date" type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
+                  <DatePicker value={form.date} onChange={(v) => set("date", v)} id="date" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="time">Start Time *</Label>

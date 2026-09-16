@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -173,12 +174,7 @@ export default function AttendanceReport() {
               <CardTitle>Select Date</CardTitle>
             </CardHeader>
             <CardContent>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full max-w-xs"
-              />
+              <DatePicker value={selectedDate} onChange={(v) => setSelectedDate(v)} />
             </CardContent>
           </Card>
           <SummaryCards

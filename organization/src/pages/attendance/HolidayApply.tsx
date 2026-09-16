@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -366,11 +367,11 @@ export default function HolidayApply() {
                 </div>
                 <div>
                   <Label>From Date</Label>
-                  <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+                  <DatePicker value={fromDate} onChange={(v) => setFromDate(v)} />
                 </div>
                 <div>
                   <Label>To Date</Label>
-                  <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+                  <DatePicker value={toDate} onChange={(v) => setToDate(v)} />
                 </div>
                 <div className="sm:col-span-2">
                   <Label>Reason</Label>

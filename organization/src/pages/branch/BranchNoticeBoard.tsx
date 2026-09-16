@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -463,11 +464,11 @@ export default function BranchNoticeBoard() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label>Publish Date</Label>
-                <Input type="date" value={draft.publishDate} onChange={(e) => set("publishDate", e.target.value)} />
+                <DatePicker value={draft.publishDate} onChange={(v) => set("publishDate", v)} />
               </div>
               <div className="space-y-2">
                 <Label>Expiry Date</Label>
-                <Input type="date" value={draft.expiryDate} onChange={(e) => set("expiryDate", e.target.value)} />
+                <DatePicker value={draft.expiryDate} onChange={(v) => set("expiryDate", v)} />
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-2">

@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -341,11 +342,11 @@ export default function VisitEnquiry() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="registrationDate">Registration Date</Label>
-                    <Input id="registrationDate" type="date" value={registrationDate} onChange={(e) => setRegistrationDate(e.target.value)} />
+                    <DatePicker value={registrationDate} onChange={(v) => setRegistrationDate(v)} id="registrationDate" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="visitDate">Visit Date *</Label>
-                    <Input id="visitDate" type="date" required value={visitDate} onChange={(e) => setVisitDate(e.target.value)} />
+                    <DatePicker value={visitDate} onChange={(v) => setVisitDate(v)} id="visitDate" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="visitTime">Visit Time *</Label>
@@ -428,7 +429,7 @@ export default function VisitEnquiry() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="followUpDate">Follow-up Call Date</Label>
-                    <Input id="followUpDate" type="date" value={followUpDate} onChange={(e) => setFollowUpDate(e.target.value)} />
+                    <DatePicker value={followUpDate} onChange={(v) => setFollowUpDate(v)} id="followUpDate" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="followUpTime">Preferred Time</Label>

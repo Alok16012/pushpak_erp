@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -733,11 +734,7 @@ export default function AdmissionsWorkspace() {
                   />
                 </Field>
                 <Field l="Date of birth" required>
-                  <Input
-                    type="date"
-                    value={draft.dateOfBirth}
-                    onChange={(e) => set("dateOfBirth", e.target.value)}
-                  />
+                  <DatePicker value={draft.dateOfBirth} onChange={(v) => set("dateOfBirth", v)} />
                 </Field>
                 <Field l="Gender" required>
                   <EditableSelect
@@ -919,15 +916,15 @@ export default function AdmissionsWorkspace() {
                   )}
                 </Field>
                 <Field l="Admission date">
-                  <Input
-                    type="date"
+                  {/* Deliberately not bounded by the session: picking a date
+                      in another year is how the session follows the date, which
+                      is the direction the office actually works in. A date
+                      outside the year it claims is flagged here and refused at
+                      save, which is the guard that matters. */}
+                  <DatePicker
                     value={draft.admissionDate}
-                    // The session's own dates bound the picker, so the date that
-                    // breaks the rule is hard to pick in the first place.
-                    min={selectedSession?.startDate}
-                    max={selectedSession?.endDate}
-                    onChange={(e) => changeAdmissionDate(e.target.value)}
-                    aria-invalid={!!dateProblem}
+                    onChange={changeAdmissionDate}
+                    invalid={!!dateProblem}
                   />
                   {dateProblem ? (
                     <p className="text-xs text-destructive">{dateProblem}</p>

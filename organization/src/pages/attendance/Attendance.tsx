@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -207,11 +208,7 @@ export default function Attendance() {
       <Card>
         <CardContent className="p-0">
           <div className="grid gap-3 border-b p-4 md:grid-cols-[180px_220px_1fr_auto]">
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
+            <DatePicker value={date} onChange={(v) => setDate(v)} />
             <Select value={batch} onValueChange={setBatch}>
               <SelectTrigger>
                 <SelectValue />

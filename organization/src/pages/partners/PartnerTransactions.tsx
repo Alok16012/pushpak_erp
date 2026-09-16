@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -356,21 +357,11 @@ const PartnerTransactions = () => {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="from">From date</Label>
-                        <Input
-                          id="from"
-                          type="date"
-                          value={more.from}
-                          onChange={(e) => setFilter("from", e.target.value)}
-                        />
+                        <DatePicker value={more.from} onChange={(v) => setFilter("from", v)} id="from" />
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="to">To date</Label>
-                        <Input
-                          id="to"
-                          type="date"
-                          value={more.to}
-                          onChange={(e) => setFilter("to", e.target.value)}
-                        />
+                        <DatePicker value={more.to} onChange={(v) => setFilter("to", v)} id="to" />
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="min">Min amount</Label>
