@@ -18,6 +18,11 @@ import { Printer, Download, Eye, Search, Users, CreditCard, Image as ImageIcon, 
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
+import {
+  photoOf,
+  printRecordsFromTemplate,
+  type StudentRecord,
+} from "@/lib/studentTemplateDocument";
 import { idCardsPdf } from "@/lib/id-card-pdf";
 import {
   ID_CARD_TEMPLATES_KEY,
@@ -47,6 +52,8 @@ export default function GenerateIDCards() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [templates, setTemplates] = useState<IdCardTemplate[]>([]);
+  /** The student rows as the database returns them, for the branch's template. */
+  const [records, setRecords] = useState<StudentRecord[]>([]);
   const [students, setStudents] = useState<IdCardStudent[]>([]);
   const [loading, setLoading] = useState(true);
   const [templateId, setTemplateId] = useState("");
@@ -80,13 +87,15 @@ export default function GenerateIDCards() {
         if (cancelled) return;
         // `getStudents` resolves to `{ success, data, meta }` - mapping over the
         // envelope threw, so this list was always empty.
-        const mapped: IdCardStudent[] = (result.data ?? []).map((s: any) => ({
+        setRecords((result.data ?? []) as StudentRecord[]);
+        const mapped: IdCardStudent[] = (result.data ?? []).map((s: StudentRecord & Record<string, string>) => ({
           id: s.id,
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
           class: s.courseId ? String(s.courseId).slice(0, 8) : "—",
           section: s.batchId ? String(s.batchId).slice(0, 8) : "—",
           rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
-          photo: false,
+          // The admission's passport photograph, where there is one.
+          photo: Boolean(photoOf(s as StudentRecord)),
           dob: s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—",
           bloodGroup: s.bloodGroup ?? "—",
           parentContact: s.phone ?? "—",
@@ -151,7 +160,28 @@ export default function GenerateIDCards() {
     return true;
   };
 
-  const printCards = () => {
+  /**
+   * The branch's own template first.
+   *
+   * The organisation designs an ID card in the Document Designer and gives it
+   * to a branch; that is what its cards should look like. The field-list
+   * template on this page is what prints when the library has none -- and each
+   * card carries the student's own passport photograph either way.
+   */
+  const printCards = async () => {
+    if (!chosen.length) {
+      toast({ title: "No students selected", description: "Tick at least one student.", variant: "destructive" });
+      return;
+    }
+    const picked = records.filter((row) => chosen.some((s) => s.id === row.id));
+    const printed = await printRecordsFromTemplate(
+      "student-id",
+      picked,
+      user?.organizationId ?? null,
+      user?.branchId ?? null,
+    ).catch(() => false);
+    if (printed) return;
+
     if (!ready() || !template) return;
     printHtml(
       `ID Cards - ${template.name} - ${academicYear}`,
@@ -279,7 +309,7 @@ export default function GenerateIDCards() {
                 <Eye className="h-4 w-4 mr-2" />
                 Preview Cards
               </Button>
-              <Button variant="outline" className="w-full" disabled={!template || chosen.length === 0} onClick={printCards}>
+              <Button variant="outline" className="w-full" disabled={chosen.length === 0} onClick={printCards}>
                 <Printer className="h-4 w-4 mr-2" />
                 Print Cards
               </Button>

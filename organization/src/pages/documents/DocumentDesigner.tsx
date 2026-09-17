@@ -34,6 +34,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { TemplateLibrary } from "@/components/documents/TemplateLibrary";
+import { photoOf, type StudentRecord } from "@/lib/studentTemplateDocument";
 import { printHtml } from "@/lib/export";
 import { getStudents, getCourses } from "@/lib/supabase/data";
 import {
@@ -109,11 +111,16 @@ interface StudentRow {
   city?: string;
   state?: string;
   pincode?: string;
+  /** The admission's own uploads, passport photo among them. */
+  documents?: Record<string, { name?: string; dataUrl?: string }> | null;
+  /** The older single-photo column, kept for records filed before the
+   *  admission collected its documents as a set. */
+  photo?: { dataUrl?: string } | string | null;
 }
 
 export default function DocumentDesigner() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, view } = useAuth();
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   // The URL is the only source of truth for the type. Holding it in state meant
@@ -273,6 +280,9 @@ export default function DocumentDesigner() {
     for (const [key, value] of Object.entries(filled)) {
       if (value) base[key] = value;
     }
+    // Not in the loop above: an empty photo has to clear the sample one rather
+    // than leave the previous student's face on the card.
+    base.photo = photoOf((student ?? {}) as StudentRecord);
     return base;
   }, [students, studentId, courses, institute]);
 
@@ -493,13 +503,15 @@ export default function DocumentDesigner() {
       add(element("image", { x: 340, y: 240, width: 180, height: 180, src })),
     );
 
-  const save = () => {
-    saveDesigns(designs);
-    toast({
-      title: "Design saved",
-      description: `${meta.label} layout stored on this device.`,
-    });
-  };
+  /**
+   * The canvas is kept on this device as a draft, so a half-drawn template
+   * survives a reload. It is not the save that matters -- a template only
+   * reaches a branch through the library.
+   */
+  useEffect(() => {
+    const timer = setTimeout(() => saveDesigns(designs), 400);
+    return () => clearTimeout(timer);
+  }, [designs]);
 
   const reset = () => {
     const fresh = starterDesign(kind);
@@ -537,10 +549,9 @@ export default function DocumentDesigner() {
               <Printer className="mr-2 h-4 w-4" />
               Print
             </Button>
-            <Button onClick={save}>
-              <Save className="mr-2 h-4 w-4" />
-              Save design
-            </Button>
+            {/* Saving is the library's, on the right: a design saved to this
+                browser is one no branch could ever print. What is on the canvas
+                is kept here as a draft, automatically. */}
           </div>
         }
       />
@@ -628,8 +639,11 @@ export default function DocumentDesigner() {
                 icon={User}
                 label="Photo box"
                 onClick={() =>
+                  // A `photo` element, not a grey rectangle: this box is filled
+                  // with the student's own passport photograph when the card is
+                  // printed, and shows the placeholder until then.
                   add(
-                    element("shape", {
+                    element("photo", {
                       x: 80,
                       y: 180,
                       width: 190,
@@ -912,6 +926,20 @@ export default function DocumentDesigner() {
 
         {/* -------- right: properties + data -------- */}
         <div className="space-y-4 xl:col-span-1">
+          {/* The library first: which template is open decides what everything
+              below it is editing. */}
+          <TemplateLibrary
+            kind={kind}
+            design={design}
+            organizationId={user?.organizationId ?? null}
+            canManage={view === "admin"}
+            onOpen={(opened) => {
+              // Straight onto the canvas as one undoable step, so opening a
+              // template can be taken back like any other edit.
+              commit(opened);
+              setSelectedId(null);
+            }}
+          />
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Live data</CardTitle>
@@ -1324,6 +1352,32 @@ function ElementBody({
         alt=""
         style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: el.radius }}
       />
+    );
+  }
+  if (el.type === "photo") {
+    // Filled from the student being previewed; the placeholder is what the box
+    // looks like on a card whose student has no photograph on file.
+    return data.photo ? (
+      <img
+        src={data.photo}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: el.radius }}
+      />
+    ) : (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "grid",
+          placeItems: "center",
+          background: el.background || "#e2e8f0",
+          borderRadius: el.radius,
+          fontSize: el.fontSize,
+          color: el.color,
+        }}
+      >
+        {el.text || "Photo"}
+      </div>
     );
   }
   if (el.type === "qr") {

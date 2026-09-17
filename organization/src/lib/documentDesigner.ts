@@ -8,7 +8,13 @@
 
 import { DEFAULT_INSTITUTE_NAME } from "./instituteName";
 
-export type ElementType = "text" | "shape" | "image" | "qr";
+/**
+ * `photo` is the student's own passport photograph, the one the admission
+ * collected. It is its own type rather than an `image` because the picture is
+ * not part of the template: the template says where the photo goes, and every
+ * card or certificate printed from it fills that box with a different face.
+ */
+export type ElementType = "text" | "shape" | "image" | "qr" | "photo";
 
 export interface DocElement {
   id: string;
@@ -149,6 +155,7 @@ export const TOKEN_LABELS: Record<string, string> = {
   percentage: "Percentage",
   institute: "Institute",
   designation: "Designation",
+  photo: "Student photo",
   award_title: "Award title",
   award_reason: "Awarded for",
   academic_year: "Academic year",
@@ -190,6 +197,9 @@ export const SAMPLE_DATA: TokenData = {
   academic_year: "2026-27",
   centre_code: "IDS-MH-014",
   centre_head: "Centre Head",
+  // No sample face: the photo box draws its own placeholder when there is
+  // none, which is exactly what an unfilled card looks like.
+  photo: "",
 };
 
 /** `{{ student_name }}` -> the value, leaving unknown tokens visible on purpose. */
@@ -500,6 +510,13 @@ export function designHtml(
       }
       if (el.type === "image" && el.src) {
         return `<img src="${el.src}" style="${box}object-fit:contain;border-radius:${el.radius}px" />`;
+      }
+      if (el.type === "photo") {
+        // `object-fit: cover` for a face: a passport photo cropped to its box
+        // beats one letterboxed inside it.
+        return data.photo
+          ? `<img src="${data.photo}" style="${box}object-fit:cover;border-radius:${el.radius}px;border:${el.border}" />`
+          : `<div style="${box}background:${el.background || "#e2e8f0"};border:${el.border};border-radius:${el.radius}px;display:flex;align-items:center;justify-content:center;font-size:${el.fontSize}px;color:${el.color}">${escape(el.text || "Photo")}</div>`;
       }
       if (el.type === "qr") {
         const src = qrByElement[el.id];

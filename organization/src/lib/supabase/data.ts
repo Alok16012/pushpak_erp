@@ -1504,7 +1504,12 @@ export async function getStudentDocument(studentId: string, branchId: string | n
             year: "numeric",
           })
         : undefined,
-      photo: jsonbImage(student.photo),
+      // The admission collects a passport photograph among its documents, and
+      // that is the current one; `students.photo` is where a record filed
+      // before that kept its picture.
+      photo:
+        jsonbImage((student.documents as Record<string, unknown> | null)?.passportPhoto) ||
+        jsonbImage(student.photo),
       course: course ? { name: course.name, code: course.code || undefined } : undefined,
       batch: batch ? { name: batch.name } : undefined,
       branch: {

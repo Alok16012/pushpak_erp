@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
+import { printFromTemplate } from "@/lib/studentTemplateDocument";
 import {
   admissionPdf,
   certificatePdf,
@@ -216,6 +217,25 @@ export default function AssessmentsWorkspace() {
     if (!studentId) return;
     try {
       const body = await getStudentDocument(studentId, branchId);
+      // The institute's own template first: a certificate or marksheet the
+      // office designed and gave this branch beats the layout written into
+      // documents.ts, which is the same for everyone using this app.
+      const printed =
+        kind === "admission"
+          ? false
+          : await printFromTemplate(
+              kind === "certificate" ? "certificate" : "marksheet",
+              body.data,
+              user?.organizationId ?? null,
+              branchId,
+            ).catch(() => false);
+      if (printed) {
+        toast({
+          title: "Document ready",
+          description: `The ${kind} was printed from your branch's template.`,
+        });
+        return;
+      }
       // `marksheetPdf` is async — it renders a QR before saving. Awaiting the
       // lot keeps the "ready in Downloads" toast honest and routes a failure
       // into the catch below rather than leaving it unhandled.
