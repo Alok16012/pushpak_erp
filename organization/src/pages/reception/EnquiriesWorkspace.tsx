@@ -194,6 +194,13 @@ export default function EnquiriesWorkspace() {
   const [showFilters, setShowFilters] = useState(false);
   const [purpose, setPurpose] = useState("all");
   const [owner, setOwner] = useState("all");
+  const [source, setSource] = useState("all");
+  const [callType, setCallType] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [presence, setPresence] = useState("all");
+  const [followUpFilter, setFollowUpFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [draft, setDraft] = useState<Draft>(() => {
     try {
       return {
@@ -206,22 +213,73 @@ export default function EnquiriesWorkspace() {
   });
   const update = (key: keyof Draft, value: string) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
+  /**
+   * A branch-scoped account only ever sees its own branch, so a column and a
+   * filter repeating one value would be noise. An organisation account reads
+   * every branch's visitors out of one list, which is where it matters.
+   */
+  const showBranch = !branchId;
+  const branchName = (id: string) => {
+    if (!id) return "—";
+    const found = branches.find((b) => b.id === id);
+    if (found) return found.name;
+    // The branch list arrives after the visitors do; calling every row
+    // "Unknown branch" for that moment reads as data loss rather than a wait.
+    return branchesLoading ? "…" : "Unknown branch";
+  };
+
   const filled = Object.values(draft).filter(Boolean).length;
   const progress = Math.round((filled / Object.keys(draft).length) * 100);
   const filtered = useMemo(
     () =>
-      liveRecords.filter(
-        (r) =>
-          (status === "all" || r.status === status) &&
-          (purpose === "all" || r.purpose === purpose) &&
-          (owner === "all" || r.owner === owner) &&
-          Object.values(r)
-            .join(" ")
-            .toLowerCase()
-            .includes(query.toLowerCase()),
-      ),
-    [query, status, purpose, owner, liveRecords],
+      liveRecords.filter((r) => {
+        if (status !== "all" && r.status !== status) return false;
+        if (purpose !== "all" && r.purpose !== purpose) return false;
+        if (owner !== "all" && r.owner !== owner) return false;
+        if (source !== "all" && r.source !== source) return false;
+        if (callType !== "all" && r.callType !== callType) return false;
+        if (branchFilter !== "all" && r.branchIdRef !== branchFilter) return false;
+        if (presence === "inside" && (r.status === "CLOSED" || r.checkOut)) return false;
+        if (presence === "left" && !r.checkOut) return false;
+        if (followUpFilter === "has" && !r.followUpDate) return false;
+        if (followUpFilter === "none" && r.followUpDate) return false;
+        if (followUpFilter === "due" && !r.followUpDate) return false;
+        if (
+          followUpFilter === "due" &&
+          new Date(r.followUpDate as string).getTime() > Date.now()
+        )
+          return false;
+        const day = r.visitDate ? r.visitDate.slice(0, 10) : "";
+        if (dateFrom && (!day || day < dateFrom)) return false;
+        if (dateTo && (!day || day > dateTo)) return false;
+        return Object.values(r)
+          .join(" ")
+          .toLowerCase()
+          .includes(query.toLowerCase());
+      }),
+    [
+      query,
+      status,
+      purpose,
+      owner,
+      source,
+      callType,
+      presence,
+      followUpFilter,
+      dateFrom,
+      dateTo,
+      liveRecords,
+    ],
   );
+  const activeFilterCount = [
+    status,
+    purpose,
+    owner,
+    source,
+    callType,
+    presence,
+    followUpFilter,
+  ].filter((v) => v !== "all").length + [dateFrom, dateTo].filter(Boolean).length;
   /** Live counters — previously hardcoded to "3" / "18" / "5". */
   const stats = useMemo(
     () => [
@@ -421,6 +479,7 @@ export default function EnquiriesWorkspace() {
       filtered.map((r) => ({
         ID: r.id,
         Visitor: r.name,
+        Branch: branchName(r.branchIdRef),
         Phone: r.phone,
         WhatsApp: r.whatsappNumber,
         Purpose: r.purpose,
@@ -439,6 +498,16 @@ export default function EnquiriesWorkspace() {
     setPurpose("all");
     setOwner("all");
     setStatus("all");
+    setBranchFilter("all");
+    // These have no control of their own yet, but they do narrow `filtered`.
+    // "Clear" that leaves a filter applied is the kind of thing that has people
+    // reporting missing records.
+    setSource("all");
+    setCallType("all");
+    setPresence("all");
+    setFollowUpFilter("all");
+    setDateFrom("");
+    setDateTo("");
     setQuery("");
   };
   useEffect(() => {
@@ -693,6 +762,17 @@ export default function EnquiriesWorkspace() {
                       {owners.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  {showBranch && (
+                    <Select value={branchFilter} onValueChange={setBranchFilter}>
+                      <SelectTrigger className="w-full md:w-52"><SelectValue placeholder="Branch" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All branches</SelectItem>
+                        {branches.map((b) => (
+                          <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <span className="text-xs text-muted-foreground md:ml-1">
                     {filtered.length} of {liveRecords.length} visitors
                   </span>
@@ -710,6 +790,7 @@ export default function EnquiriesWorkspace() {
                   <thead>
                     <tr className="border-b bg-muted/35 text-left text-xs text-muted-foreground">
                       <th className="px-4 py-3 font-medium">Visitor</th>
+                      {showBranch && <th className="px-4 py-3 font-medium">Branch</th>}
                       <th className="px-4 py-3 font-medium">Mob. Number</th>
                       <th className="px-4 py-3 font-medium">WhatsApp</th>
                       <th className="px-4 py-3 font-medium">Purpose</th>
@@ -733,6 +814,11 @@ export default function EnquiriesWorkspace() {
                             {r.id}
                           </p>
                         </td>
+                        {showBranch && (
+                          <td className="px-4 py-3 whitespace-nowrap text-xs">
+                            {branchName(r.branchIdRef)}
+                          </td>
+                        )}
                         <td className="px-4 py-3">{r.phone}</td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {r.whatsappNumber || "—"}
@@ -822,7 +908,7 @@ export default function EnquiriesWorkspace() {
                     ))}
                     {!filtered.length && (
                       <tr>
-                        <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                        <td colSpan={showBranch ? 11 : 10} className="px-4 py-10 text-center text-sm text-muted-foreground">
                           {loading ? "Loading visitors…" : "No visitors match these filters."}
                         </td>
                       </tr>
@@ -842,6 +928,9 @@ export default function EnquiriesWorkspace() {
                       <div><p className="text-muted-foreground">Meeting</p><p className="mt-1 font-medium">{r.owner}</p></div>
                       <div><p className="text-muted-foreground">Source</p><p className="mt-1 font-medium">{r.source || "—"}</p></div>
                       <div><p className="text-muted-foreground">Time</p><p className="mt-1 font-medium">{r.date}</p></div>
+                      {showBranch && (
+                        <div><p className="text-muted-foreground">Branch</p><p className="mt-1 font-medium">{branchName(r.branchIdRef)}</p></div>
+                      )}
                     </div>
                   </div>
                 ))}
