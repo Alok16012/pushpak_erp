@@ -2330,6 +2330,83 @@ export async function getPortalRequests(userId: string | null, branchId: string 
    MISC / SETTINGS
    ============================ */
 
+/** One row of the website register: the branch, and the site it runs. */
+export interface BranchWebsiteRow {
+  id: string;
+  name: string;
+  code: string;
+  branchType: string;
+  /** What the site is called, when the branch has named it. */
+  siteName: string;
+  /** Bare host, no scheme — the register prints it and links to it. */
+  domain: string;
+  registrationDate: string;
+  expiryDate: string;
+  renewalDate: string;
+  phone: string;
+  whatsapp: string;
+}
+
+/** `https://` and any trailing slash stripped, so the column reads as a host. */
+const bareHost = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+
+/**
+ * Every branch beside its website and the dates that site runs on.
+ *
+ * Two tables: the branch's own row carries the numbers to reach it by, and
+ * `branch_settings` carries the domain and the registration / expiry / renewal
+ * dates. A branch with no settings row yet is still listed — it has a website
+ * to set up, which is exactly what this register is for noticing.
+ */
+export async function getBranchWebsites(organizationId: string | null) {
+  const { data: branches } = await getBranches(organizationId);
+  const rows = (branches ?? []) as Record<string, unknown>[];
+  if (!rows.length) return { success: true as const, data: [] as BranchWebsiteRow[] };
+
+  const ids = rows.map((b) => String(b.id));
+  // The date and domain columns arrive with add-website-settings-fields.sql;
+  // without them the register still lists every branch and its numbers.
+  const settingsSelect = async () => {
+    const wanted = await supabase
+      .from("branch_settings")
+      .select("branchId, siteName, primaryDomain, subdomain, registrationDate, expiryDate, renewalDate")
+      .in("branchId", ids);
+    if (!wanted.error) return wanted;
+    return supabase.from("branch_settings").select("branchId").in("branchId", ids);
+  };
+  const { data: settings } = await settingsSelect();
+
+  const settingFor = new Map<string, Record<string, unknown>>();
+  for (const row of settings ?? []) settingFor.set(String(row.branchId), row as Record<string, unknown>);
+
+  return {
+    success: true as const,
+    data: rows.map((b): BranchWebsiteRow => {
+      const id = String(b.id);
+      const setting = settingFor.get(id) ?? {};
+      return {
+        id,
+        name: String(b.name ?? "Unnamed branch"),
+        code: String(b.code ?? ""),
+        branchType: String(b.branchType ?? ""),
+        siteName: String(setting.siteName ?? ""),
+        // The branch's own `website` stands in where no domain was configured,
+        // since that is where the address was recorded before this screen.
+        domain: bareHost(setting.primaryDomain) || bareHost(setting.subdomain) || bareHost(b.website),
+        registrationDate: String(setting.registrationDate ?? ""),
+        expiryDate: String(setting.expiryDate ?? ""),
+        renewalDate: String(setting.renewalDate ?? ""),
+        phone: String(b.phone ?? ""),
+        whatsapp: String(b.whatsappNumber ?? b.phone ?? ""),
+      };
+    }),
+  };
+}
+
 export async function getBranchSettings(branchId: string | null) {
   if (!branchId) return { success: true, data: null };
   const { data, error } = await supabase.from("branch_settings").select("*").eq("branchId", branchId).single();

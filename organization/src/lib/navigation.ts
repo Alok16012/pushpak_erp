@@ -76,6 +76,7 @@ export const menuItems: MenuItem[] = [
       { title: "Branch Transactions", url: "/branch/transactions", icon: Receipt },
       { title: "Notice Board", url: "/branch/notice-board", icon: Bell },
       { title: "Website Settings", url: "/branch/website-settings", icon: Globe },
+      { title: "Website View", url: "/branch/website-view", icon: Globe },
     ],
   },
   {

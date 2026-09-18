@@ -37,6 +37,7 @@ const WalletRecharge = lazy(() => import("./pages/branch/WalletRecharge"));
 const BranchTransactions = lazy(() => import("./pages/branch/BranchTransactions"));
 const BranchNoticeBoard = lazy(() => import("./pages/branch/BranchNoticeBoard"));
 const BranchWebsiteSettings = lazy(() => import("./pages/branch/BranchWebsiteSettings"));
+const WebsiteView = lazy(() => import("./pages/branch/WebsiteView"));
 
 // Enquiry Management
 const BranchEnquiry = lazy(() => import("./pages/enquiry/BranchEnquiry"));
@@ -174,6 +175,7 @@ const App = () => (
           <Route path="/branch/transactions" element={<BranchTransactions />} />
           <Route path="/branch/notice-board" element={<BranchNoticeBoard />} />
           <Route path="/branch/website-settings" element={<BranchWebsiteSettings />} />
+          <Route path="/branch/website-view" element={<WebsiteView />} />
 
           {/* Enquiry Management */}
           <Route path="/enquiry/branch" element={<BranchEnquiry />} />
