@@ -26,6 +26,11 @@ export const DROPDOWN_DEFAULTS = {
   board: ["CBSE", "ICSE", "State Board", "NIOS", "Other"],
   stream: ["Science", "Commerce", "Arts", "Vocational"],
   guardianRelation: ["Uncle", "Aunt", "Grandparent", "Sibling", "Family friend", "Other"],
+  /* How the student is named on their own paperwork -- "Krishna Singh, S/o Ram
+     Singh". Not `guardianRelation`, which is the local guardian's relation to
+     the student and answers a different question. */
+  parentage: ["Son of", "Daughter of", "Wife of"],
+  maritalStatus: ["Single", "Married"],
   enquiryPurpose: [
     "Admission Enquiry",
     "Fee Related",
@@ -71,6 +76,8 @@ export type DropdownKey = keyof typeof DROPDOWN_DEFAULTS;
 /** Human titles for the "Manage <name>" dialog. */
 export const DROPDOWN_TITLES: Record<DropdownKey, string> = {
   gender: "Gender",
+  parentage: "Parentage",
+  maritalStatus: "Marital status",
   bloodGroup: "Blood group",
   studentCategory: "Category",
   religion: "Religion",

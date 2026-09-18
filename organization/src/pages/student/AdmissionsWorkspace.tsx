@@ -46,6 +46,8 @@ type Draft = {
   lastName: string;
   dateOfBirth: string;
   gender: string;
+  /** Single / Married — asked because a married woman is named "W/o", not "D/o". */
+  maritalStatus: string;
   bloodGroup: string;
   category: string;
   religion: string;
@@ -89,6 +91,9 @@ type Draft = {
   twelfthStream: string;
   twelfthSubjects: string;
   // Family
+  /** "Son of" / "Daughter of" / "Wife of" — how the student is named on their
+   *  own paperwork, against the person named below. */
+  parentage: string;
   fatherName: string;
   fatherOccupation: string;
   fatherPhone: string;
@@ -113,6 +118,7 @@ const blank: Draft = {
   lastName: "",
   dateOfBirth: "",
   gender: "",
+  maritalStatus: "",
   bloodGroup: "",
   category: "",
   religion: "",
@@ -149,6 +155,7 @@ const blank: Draft = {
   twelfthPercentage: "",
   twelfthStream: "",
   twelfthSubjects: "",
+  parentage: "",
   fatherName: "",
   fatherOccupation: "",
   fatherPhone: "",
@@ -765,6 +772,13 @@ export default function AdmissionsWorkspace() {
                     onChange={(v) => set("gender", v)}
                   />
                 </Field>
+                <Field l="Marital status">
+                  <EditableSelect
+                    optionKey="maritalStatus"
+                    value={draft.maritalStatus}
+                    onChange={(v) => set("maritalStatus", v)}
+                  />
+                </Field>
                 <Field l="Blood group">
                   <EditableSelect
                     optionKey="bloodGroup"
@@ -1104,7 +1118,17 @@ export default function AdmissionsWorkspace() {
             )}
             {step === 2 && (
               <>
-                <Section title="Father" />
+                <Section
+                  title="Father / Guardian"
+                  hint="Parentage is how the student is named on their certificates — S/o, D/o or W/o the person below."
+                />
+                <Field l="Parentage">
+                  <EditableSelect
+                    optionKey="parentage"
+                    value={draft.parentage}
+                    onChange={(v) => set("parentage", v)}
+                  />
+                </Field>
                 <Field l="Full name" required>
                   <Input
                     value={draft.fatherName}
@@ -1320,7 +1344,11 @@ export default function AdmissionsWorkspace() {
                       k="Section · Roll no"
                       v={[draft.section, draft.rollNo].filter(Boolean).join(" · ")}
                     />
-                    <Row k="Father" v={draft.fatherName} />
+                    <Row k="Marital status" v={draft.maritalStatus} />
+                    <Row
+                      k="Father"
+                      v={[draft.parentage, draft.fatherName].filter(Boolean).join(" ")}
+                    />
                     <Row k="Mother" v={draft.motherName} />
                     <Row
                       k="Class 10"

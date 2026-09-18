@@ -97,6 +97,9 @@ export const STUDENT_OPTIONAL_COLUMNS = [
   "alternatePhone",
   "rollNo",
   "feeGroupId",
+  // add-student-parentage.sql
+  "parentage",
+  "maritalStatus",
 ];
 
 /** Columns the fee pages want on fee_invoices / fee_payments. */

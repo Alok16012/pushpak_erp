@@ -419,6 +419,10 @@ const STUDENT_OPTIONAL_COLUMNS = [
   "referralName",
   "referralCode",
   "referralPosition",
+  // How the student is named on their paperwork, and whether they are married.
+  // They arrive with add-student-parentage.sql.
+  "parentage",
+  "maritalStatus",
 ];
 
 const isMissingStudentColumn = (error: { code?: string; message?: string } | null) =>

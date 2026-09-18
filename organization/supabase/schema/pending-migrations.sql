@@ -313,3 +313,14 @@ alter table public.students
 
 -- Make PostgREST pick up the new columns immediately.
 notify pgrst, 'reload schema';
+
+-- ============================================================
+-- add-student-parentage.sql
+-- ============================================================
+-- How a student is named on their own paperwork, and whether they are married.
+-- Certificates read "Krishna Singh, S/o Ram Singh", and a married woman is
+-- named "W/o" rather than "D/o". `guardianRelation` is a different question --
+-- it is the local guardian's relation to the student.
+alter table public.students
+  add column if not exists "parentage" text,
+  add column if not exists "maritalStatus" text;
