@@ -1870,7 +1870,7 @@ export async function getBranchesWithStats(organizationId: string | null) {
   const addressSelect = async () => {
     const wanted = await supabase
       .from("branch_addresses")
-      .select("branchId, city, state, mapLink")
+      .select("branchId, city, state, district, block, mapLink")
       .in("branchId", ids);
     if (!wanted.error) return wanted;
     return supabase.from("branch_addresses").select("branchId, city, state").in("branchId", ids);
@@ -1884,7 +1884,10 @@ export async function getBranchesWithStats(organizationId: string | null) {
     supabase.from("branch_wallets").select("branchId, balance").in("branchId", ids),
   ]);
 
-  const addressFor = new Map<string, { city?: string; state?: string; mapLink?: string }>();
+  const addressFor = new Map<
+    string,
+    { city?: string; state?: string; district?: string; block?: string; mapLink?: string }
+  >();
   for (const row of addresses.data || []) addressFor.set(row.branchId as string, row);
   const expiryFor = new Map<string, string>();
   for (const row of licenses.data || []) expiryFor.set(row.branchId as string, row.expiryDate as string);
@@ -1921,6 +1924,9 @@ export async function getBranchesWithStats(organizationId: string | null) {
         ...b,
         city: addressFor.get(id)?.city || "",
         state: addressFor.get(id)?.state || "",
+        // The register is read district- and block-wise as well as by state.
+        district: addressFor.get(id)?.district || "",
+        block: addressFor.get(id)?.block || "",
         mapLink: addressFor.get(id)?.mapLink || "",
         expiryDate: expiryFor.get(id) || "",
         students: studentsFor.get(id) || 0,

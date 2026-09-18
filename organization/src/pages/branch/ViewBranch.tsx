@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, Column } from "@/components/ui/DataTable";
+import { DataTable, Column, type TableFilter } from "@/components/ui/DataTable";
+import { ContactActions } from "@/components/ui/ContactActions";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -59,8 +60,14 @@ interface Branch {
   name: string;
   code: string;
   branchType: string;
+  /** `branches.phone` — the line the office answers. */
+  phone: string;
+  /** `branches.whatsappNumber`; falls back to the mobile when it was left blank. */
+  whatsappNumber: string;
   city: string;
   state: string;
+  district: string;
+  block: string;
   /** The shared map link, when the branch has one. */
   mapLink: string;
   students: number;
@@ -76,6 +83,19 @@ interface Branch {
 /** Wallet money is counted in rupees; revenue is summarised in lakhs. */
 const rupees = (value: number) => `₹${(value ?? 0).toLocaleString("en-IN")}`;
 const lakhs = (value: number) => `Rs.${((value ?? 0) / 100000).toFixed(1)}L`;
+
+/**
+ * The register is read state-wise, then district-wise, then block-wise, which
+ * is how a branch is actually located when someone asks after one. Status is
+ * here too, so the whole narrowing happens in one bar rather than in a bar and
+ * a separate toggle.
+ */
+const branchFilters: TableFilter<Branch>[] = [
+  { label: "State", key: "state" },
+  { label: "District", key: "district" },
+  { label: "Block", key: "block" },
+  { label: "Status", key: "status", options: ["active", "inactive"] },
+];
 
 const columns: Column<Branch>[] = [
   {
@@ -104,13 +124,28 @@ const columns: Column<Branch>[] = [
      ),
   },
   {
+    key: "contact",
+    header: "Contact",
+    // The office's own line, dialable and on WhatsApp, rather than a number to
+    // be copied out by hand.
+    cell: (branch) => (
+      <ContactActions name={branch.name} phone={branch.phone} whatsapp={branch.whatsappNumber} />
+    ),
+  },
+  {
     key: "city",
     header: "Location",
     // The written location, and the pin itself where one was shared: a lane
-    // with no name is found by the link and by nothing else.
+    // with no name is found by the link and by nothing else. Block and district
+    // are named because the register is read that way.
     cell: (branch) => (
       <div className="space-y-0.5">
         <span>{[branch.city, branch.state].filter(Boolean).join(", ") || "—"}</span>
+        {(branch.block || branch.district) && (
+          <p className="text-xs text-muted-foreground">
+            {[branch.block, branch.district].filter(Boolean).join(" · ")}
+          </p>
+        )}
         {branch.mapLink && (
           <a
             href={branch.mapLink}
@@ -782,6 +817,7 @@ export default function ViewBranch() {
       <DataTable
         data={branchesData}
         columns={columns}
+        filters={branchFilters}
         searchPlaceholder="Search branches..."
         actions={handleActions}
         selectable

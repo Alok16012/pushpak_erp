@@ -27,9 +27,32 @@ export interface Column<T> {
   className?: string;
 }
 
+/**
+ * One named filter over the rows.
+ *
+ * The table has always had a filter, but only one, and it picked the column
+ * itself -- "status" if there was one, otherwise the first sortable column.
+ * A register that needs to be narrowed by state *and* district *and* status
+ * could not say so, so pages that needed more than one either went without or
+ * grew their own bar. Passing `filters` replaces the guess; passing nothing
+ * keeps the old behaviour, so no existing table changes.
+ */
+export interface TableFilter<T> {
+  /** Shown above the choices, and in the count on the Filters button. */
+  label: string;
+  /** Distinct values are read off this field unless `value` says otherwise. */
+  key: keyof T | string;
+  /** For a field that is not a plain string, or that needs relabelling. */
+  value?: (item: T) => string;
+  /** Fixes the choices instead of reading whatever the rows happen to hold. */
+  options?: string[];
+}
+
 interface DataTableProps<T> {
   data: T[];
   columns: Column<T>[];
+  /** Named filters, in the order they should appear. */
+  filters?: TableFilter<T>[];
   searchable?: boolean;
   searchPlaceholder?: string;
   selectable?: boolean;
@@ -43,6 +66,7 @@ interface DataTableProps<T> {
 export function DataTable<T extends { id: string | number }>({
   data,
   columns,
+  filters,
   searchable = true,
   searchPlaceholder = "Search...",
   selectable = false,
@@ -58,13 +82,48 @@ export function DataTable<T extends { id: string | number }>({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [showFilters, setShowFilters] = useState(false);
   const [quickFilter, setQuickFilter] = useState("");
-  const filterColumn = columns.find((column) => String(column.key).toLowerCase() === "status") || columns.find((column) => column.sortable);
+  /** Chosen value per named filter, keyed by its label. */
+  const [picked, setPicked] = useState<Record<string, string>>({});
+
+  const readFilter = (filter: TableFilter<T>, item: T) =>
+    filter.value
+      ? filter.value(item)
+      : String((item as Record<string, unknown>)[String(filter.key)] ?? "");
+
+  const named = filters ?? [];
+  const usingNamed = named.length > 0;
+  // The old single filter stays exactly as it was for every table that has not
+  // been given `filters`, so adding this prop changed no existing page.
+  const filterColumn = usingNamed
+    ? undefined
+    : columns.find((column) => String(column.key).toLowerCase() === "status") || columns.find((column) => column.sortable);
   const filterOptions = filterColumn ? Array.from(new Set(data.map(item => String((item as Record<string, unknown>)[String(filterColumn.key)] ?? "")).filter(Boolean))).slice(0, 8) : [];
 
-  const filteredData = data.filter((item) =>
-    (!quickFilter || String((item as Record<string, unknown>)[String(filterColumn?.key)] ?? "") === quickFilter) && Object.values(item).some((value) =>
-      String(value).toLowerCase().includes(search.toLowerCase())
-    )
+  const choicesFor = (filter: TableFilter<T>) =>
+    filter.options ??
+    Array.from(new Set(data.map((item) => readFilter(filter, item)).filter(Boolean))).sort();
+
+  const activeCount = usingNamed
+    ? Object.values(picked).filter(Boolean).length
+    : quickFilter
+      ? 1
+      : 0;
+
+  const clearFilters = () => {
+    setPicked({});
+    setQuickFilter("");
+    setCurrentPage(1);
+  };
+
+  const filteredData = data.filter(
+    (item) =>
+      (!quickFilter ||
+        String((item as Record<string, unknown>)[String(filterColumn?.key)] ?? "") === quickFilter) &&
+      // Every chosen filter has to hold, not just the last one touched.
+      named.every((filter) => !picked[filter.label] || readFilter(filter, item) === picked[filter.label]) &&
+      Object.values(item).some((value) =>
+        String(value).toLowerCase().includes(search.toLowerCase())
+      )
   );
 
   const sortedData = sortKey
@@ -129,10 +188,55 @@ export function DataTable<T extends { id: string | number }>({
               className="pl-10"
             />
           </div>
-          <Button variant={showFilters || quickFilter ? "secondary" : "outline"} size="sm" className="shrink-0 gap-2" onClick={() => setShowFilters(value => !value)}>
+          <Button variant={showFilters || activeCount ? "secondary" : "outline"} size="sm" className="shrink-0 gap-2" onClick={() => setShowFilters(value => !value)}>
             <Filter className="h-4 w-4" />
-            Filters {quickFilter && "· 1"}
+            Filters {activeCount > 0 && `· ${activeCount}`}
           </Button>
+        </div>
+      )}
+
+      {showFilters && usingNamed && (
+        <div className="flex flex-wrap items-end gap-4 rounded-2xl border bg-card p-3 animate-slide-up">
+          {named.map((filter) => {
+            const choices = choicesFor(filter);
+            return (
+              <div key={filter.label} className="min-w-0">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {filter.label}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {choices.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">Nothing to filter by yet</span>
+                  ) : (
+                    choices.map((choice) => (
+                      <Button
+                        key={choice}
+                        variant={picked[filter.label] === choice ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          // Pressing the chosen one again clears it, which is
+                          // how the single filter has always behaved.
+                          setPicked((current) => ({
+                            ...current,
+                            [filter.label]: current[filter.label] === choice ? "" : choice,
+                          }));
+                          setCurrentPage(1);
+                        }}
+                      >
+                        {choice}
+                      </Button>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {activeCount > 0 && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </Button>
+          )}
         </div>
       )}
 
