@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 import { canManageCourses } from "@/lib/roles";
@@ -89,23 +89,42 @@ describe("Courses & batches actions", () => {
     expect(screen.getByRole("button", { name: /new batch/i })).toBeInTheDocument();
   });
 
+  /* The registers are tables now, so the row's actions live behind its menu
+     rather than as buttons on the row itself. What is being asserted is the
+     same: a branch is offered no way in. */
+  /** jsdom applies no CSS, so the responsive card list renders beside the
+   *  table and every name appears twice. The courses table is the first one. */
+  const coursesTable = async () => (await screen.findAllByRole("table"))[0];
+
+  /**
+   * The row's actions menu, or null when the row offers none.
+   *
+   * Its contents are not asserted: Radix opens on a real pointer event that
+   * jsdom does not produce, and what the menu holds is `DataTable`'s rendering
+   * of the `actions` array rather than this page's rule. The rule is whether
+   * the row offers a way in at all, which is exactly what this returns.
+   */
+  const rowMenu = async (rowText: string) => {
+    const row = within(await coursesTable()).getByText(rowText).closest("tr") as HTMLElement;
+    return within(row).queryByRole("button");
+  };
+
   // A branch could open the course edit form and only find out at save that it
   // was not allowed to write it.
   it("gives a branch no way to edit or delete a course it was assigned", async () => {
     role.current = "FRANCHISE";
     render(<AcademicsWorkspace />);
 
-    expect(await screen.findByText("ADCA")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /edit adca/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /delete adca/i })).toBeNull();
+    expect(within(await coursesTable()).getByText("ADCA")).toBeInTheDocument();
+    // The course is listed, and the row offers no way to act on it.
+    expect(await rowMenu("ADCA")).toBeNull();
   });
 
   it("keeps both for the organisation, whose catalogue it is", async () => {
     role.current = "ORGANIZATION_ADMIN";
     render(<AcademicsWorkspace />);
 
-    expect(await screen.findByRole("button", { name: /edit adca/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /delete adca/i })).toBeInTheDocument();
+    expect(await rowMenu("ADCA")).not.toBeNull();
   });
 
   it("tells a branch where its courses come from instead of pointing at a button it cannot see", async () => {
@@ -113,6 +132,6 @@ describe("Courses & batches actions", () => {
     role.current = "FRANCHISE";
     render(<AcademicsWorkspace />);
 
-    expect(await screen.findByText(/assigned to this branch/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/assigned to this branch/i)).length).toBeGreaterThan(0);
   });
 });

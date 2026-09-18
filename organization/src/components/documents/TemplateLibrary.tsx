@@ -299,52 +299,60 @@ export function TemplateLibrary({
                 </div>
 
                 {ofKind.length > 0 && (
-                  <ul className="divide-y rounded-xl border text-sm">
+                  <ul className="space-y-2 rounded-xl border p-2 text-sm">
                     {ofKind.map((template) => (
-                      <li key={template.id} className="flex items-center gap-2 p-2">
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-medium">{template.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {template.isDefault ? "Default · " : ""}
-                            {branchesOn(template)} branch(es)
+                      <li key={template.id} className="rounded-lg border p-2">
+                        <div className="flex items-start gap-2">
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{template.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {template.isDefault ? "Default for this document · " : ""}
+                              {branchesOn(template) === 0
+                                ? "no branch assigned"
+                                : `${branchesOn(template)} branch(es)`}
+                            </span>
                           </span>
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          title="Assign to branches"
-                          aria-label={`Assign ${template.name} to branches`}
-                          onClick={() => openAssign(template)}
-                        >
-                          <Building2 className="h-4 w-4" />
-                        </Button>
-                        {!template.isDefault && (
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
-                            title="Make default"
-                            aria-label={`Make ${template.name} the default`}
-                            onClick={() => makeDefault(template)}
+                            className="h-8 w-8 shrink-0 text-destructive"
+                            title="Delete template"
+                            aria-label={`Delete ${template.name}`}
+                            onClick={() => remove(template)}
                           >
-                            <Star className="h-4 w-4" />
+                            <Trash2 className="h-4 w-4" />
                           </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive"
-                          title="Delete"
-                          aria-label={`Delete ${template.name}`}
-                          onClick={() => remove(template)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        </div>
+                        {/* Named buttons rather than a row of icons: assigning a
+                            template to a branch is the point of the library, and
+                            it was hiding behind a glyph nobody could read. */}
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 text-xs"
+                            onClick={() => openAssign(template)}
+                          >
+                            <Building2 className="h-3.5 w-3.5" />
+                            Assign to branches
+                          </Button>
+                          {!template.isDefault && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1.5 text-xs"
+                              onClick={() => makeDefault(template)}
+                            >
+                              <Star className="h-3.5 w-3.5" />
+                              Make default
+                            </Button>
+                          )}
+                        </div>
                       </li>
                     ))}
                   </ul>
                 )}
+
               </>
             ) : (
               <p className="text-xs text-muted-foreground">

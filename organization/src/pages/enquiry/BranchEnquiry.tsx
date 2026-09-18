@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, Column } from "@/components/ui/DataTable";
+import { DataTable, Column, type TableFilter } from "@/components/ui/DataTable";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -202,6 +202,24 @@ export default function BranchEnquiry() {
     (e) => e.followUpDate && e.followUpDate <= today && e.status !== "CONVERTED" && e.status !== "CLOSED",
   ).length;
 
+  /**
+   * The four questions asked of this list: who was it for, which department,
+   * what did they want, and where does it stand. Branch joins them at head
+   * office, where every branch's enquiries arrive in the same pile.
+   *
+   * The choices are read off the rows rather than fixed, so a department or a
+   * purpose typed into the form appears here without being registered twice.
+   */
+  const enquiryFilters: TableFilter<Enquiry>[] = [
+    ...(showBranch
+      ? [{ label: "Branch", key: "branchId" as keyof Enquiry, value: (item: Enquiry) => branchOf(item) }]
+      : []),
+    { label: "Person to Meet", key: "personToMeet" },
+    { label: "Department", key: "department" },
+    { label: "Purpose", key: "purpose" },
+    { label: "Status", key: "status" },
+  ];
+
   const columns: Column<Enquiry>[] = [
     {
       key: "visitDate",
@@ -351,6 +369,7 @@ export default function BranchEnquiry() {
       <DataTable
         data={enquiries}
         columns={columns}
+        filters={enquiryFilters}
         searchPlaceholder="Search enquiries..."
         actions={handleActions}
         emptyMessage={loading ? "Loading enquiries..." : "No enquiries logged yet"}

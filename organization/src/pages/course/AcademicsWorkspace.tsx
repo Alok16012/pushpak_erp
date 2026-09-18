@@ -28,6 +28,8 @@ import {
 import { EditableSelect } from "@/components/ui/EditableSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { canManageCourses } from "@/lib/roles";
+import { DataTable, type Column, type TableFilter } from "@/components/ui/DataTable";
+import { courseCategoryLabel } from "@/lib/courseCategories";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv, parseCsv, pickFile } from "@/lib/export";
 import {
@@ -222,6 +224,92 @@ export default function AcademicsWorkspace() {
   const branchName = (id: string) => branches.find((b) => b.id === id)?.name || "—";
 
   const remarkWords = useMemo(() => countWords(d.remark || ""), [d.remark]);
+
+  /* ---------- the two registers ---------- */
+
+  const statusOf = (item: { isActive: boolean }) => (item.isActive ? "Active" : "Inactive");
+
+  const courseColumns: Column<Course>[] = [
+    {
+      key: "name",
+      header: "Course",
+      sortable: true,
+      cell: (c) => (
+        <div className="flex items-center gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted">
+            <BookOpen className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-semibold">{c.name}</p>
+            <p className="text-xs text-muted-foreground">{c.code}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "category",
+      header: "Category",
+      sortable: true,
+      cell: (c) => courseCategoryLabel(c.category || "") || "—",
+    },
+    { key: "durationMonths", header: "Duration", sortable: true, cell: (c) => `${c.durationMonths} months` },
+    {
+      key: "baseFee",
+      header: "Fee",
+      sortable: true,
+      cell: (c) => (c.baseFee ? `₹${c.baseFee.toLocaleString("en-IN")}` : "—"),
+    },
+    { key: "isActive", header: "Status", cell: statusOf },
+  ];
+
+  const courseFilters: TableFilter<Course>[] = [
+    { label: "Category", key: "category", value: (c) => courseCategoryLabel(c.category || "") || "" },
+    { label: "Status", key: "isActive", options: ["Active", "Inactive"], value: statusOf },
+  ];
+
+  const batchColumns: Column<Batch>[] = [
+    {
+      key: "name",
+      header: "Batch",
+      sortable: true,
+      cell: (b) => (
+        <div className="flex items-center gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-muted">
+            <Calendar className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-semibold">{b.name}</p>
+            <p className="text-xs text-muted-foreground">{b.code}</p>
+          </div>
+        </div>
+      ),
+    },
+    { key: "courseId", header: "Course", sortable: true, cell: (b) => courseName(b.courseId) },
+    {
+      key: "startDate",
+      header: "Starts",
+      sortable: true,
+      cell: (b) => (b.startDate ? new Date(b.startDate).toLocaleDateString("en-IN") : "—"),
+    },
+    {
+      key: "currentStudents",
+      header: "Seats",
+      cell: (b) => `${b.currentStudents ?? 0}/${b.maxStudents || "∞"}`,
+    },
+    {
+      key: "feeDiscount",
+      header: "Discount",
+      cell: (b) => (b.feeDiscount ? `₹${b.feeDiscount.toLocaleString("en-IN")} off` : "—"),
+    },
+    { key: "isActive", header: "Status", cell: statusOf },
+  ];
+
+  const batchFilters: TableFilter<Batch>[] = [
+    // Keyed on the course's name rather than its id, so the choices read as
+    // course names instead of as keys.
+    { label: "Course", key: "courseId", value: (b) => courseName(b.courseId) },
+    { label: "Status", key: "isActive", options: ["Active", "Inactive"], value: statusOf },
+  ];
 
   // Whatever the existing courses already use, so a category typed earlier is
   // picked rather than retyped. The editable list supplies the rest.
@@ -608,7 +696,9 @@ export default function AcademicsWorkspace() {
         </Card>
       )}
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      {/* Stacked rather than side by side: each is a table now, and two of
+          them sharing a row left every column too narrow to read. */}
+      <div className="space-y-5">
         <Card>
           <CardContent className="p-0">
             <div className="flex items-center justify-between border-b p-4">
@@ -617,44 +707,32 @@ export default function AcademicsWorkspace() {
                 <Download className="h-4 w-4" />
               </Button>
             </div>
-            <div className="divide-y">
-              {loading && <p className="p-4 text-sm text-muted-foreground">Loading courses...</p>}
-              {!loading && courses.length === 0 && (
-                <p className="p-4 text-sm text-muted-foreground">
-                  {mayManageCourses
-                    ? "No courses yet. Use “New course” to add the first one."
-                    : "No courses assigned to this branch yet. The organisation assigns them from its catalogue."}
-                </p>
-              )}
-              {courses.map((c) => (
-                <div key={c.id} className="flex items-start gap-3 p-4 sm:items-center">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted">
-                    <BookOpen className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{c.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {c.code} · {c.durationMonths} months
-                      {c.baseFee ? ` · ₹${c.baseFee.toLocaleString()}` : ""}
-                    </p>
-                  </div>
-                  <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-                    {c.isActive ? "Active" : "Inactive"}
-                  </p>
-                  {/* A branch runs the courses it is given; the catalogue
-                      itself belongs to the organisation, which is the same line
-                      the RLS policy on `courses` draws. The buttons used to be
-                      here for everyone, so a branch could open the edit form
-                      and only find out at save. */}
-                  {mayManageCourses && (
-                    <RowActions
-                      label={c.name}
-                      onEdit={() => editCourse(c)}
-                      onDelete={() => setPendingDelete({ kind: "course", id: c.id, name: c.name })}
-                    />
-                  )}
-                </div>
-              ))}
+            <div className="p-4">
+              <DataTable
+                data={courses}
+                columns={courseColumns}
+                filters={courseFilters}
+                searchPlaceholder="Search course name or code…"
+                actions={
+                  mayManageCourses
+                    ? (c) => [
+                        { label: "Edit course", onClick: () => editCourse(c) },
+                        {
+                          label: "Delete course",
+                          destructive: true,
+                          onClick: () => setPendingDelete({ kind: "course", id: c.id, name: c.name }),
+                        },
+                      ]
+                    : undefined
+                }
+                emptyMessage={
+                  loading
+                    ? "Loading courses…"
+                    : mayManageCourses
+                      ? "No courses yet. Use “New course” to add the first one."
+                      : "No courses assigned to this branch yet. The organisation assigns them from its catalogue."
+                }
+              />
             </div>
           </CardContent>
         </Card>
@@ -666,36 +744,22 @@ export default function AcademicsWorkspace() {
                 <Download className="h-4 w-4" />
               </Button>
             </div>
-            <div className="divide-y">
-              {loading && <p className="p-4 text-sm text-muted-foreground">Loading batches...</p>}
-              {!loading && batches.length === 0 && (
-                <p className="p-4 text-sm text-muted-foreground">
-                  No batches yet. Use “New batch” to add the first one.
-                </p>
-              )}
-              {batches.map((b) => (
-                <div key={b.id} className="flex items-start gap-3 p-4 sm:items-center">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted">
-                    <Calendar className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{b.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {b.code} · {courseName(b.courseId)} · starts{" "}
-                      {b.startDate ? new Date(b.startDate).toLocaleDateString() : "—"}
-                      {b.feeDiscount ? ` · ₹${b.feeDiscount.toLocaleString()} off` : ""}
-                    </p>
-                  </div>
-                  <p className="hidden shrink-0 text-xs text-muted-foreground sm:block">
-                    {b.currentStudents ?? 0}/{b.maxStudents || "∞"}
-                  </p>
-                  <RowActions
-                    label={b.name}
-                    onEdit={() => editBatch(b)}
-                    onDelete={() => setPendingDelete({ kind: "batch", id: b.id, name: b.name })}
-                  />
-                </div>
-              ))}
+            <div className="p-4">
+              <DataTable
+                data={batches}
+                columns={batchColumns}
+                filters={batchFilters}
+                searchPlaceholder="Search batch name or code…"
+                actions={(b) => [
+                  { label: "Edit batch", onClick: () => editBatch(b) },
+                  {
+                    label: "Delete batch",
+                    destructive: true,
+                    onClick: () => setPendingDelete({ kind: "batch", id: b.id, name: b.name }),
+                  },
+                ]}
+                emptyMessage={loading ? "Loading batches…" : "No batches yet. Use “New batch” to add the first one."}
+              />
             </div>
           </CardContent>
         </Card>

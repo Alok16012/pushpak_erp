@@ -9,13 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { DataTable, Column } from "@/components/ui/DataTable";
+import { DataTable, Column, type TableFilter } from "@/components/ui/DataTable";
 import { Users, IndianRupee, CheckCircle, Link2, AlertCircle, Download } from "lucide-react";
 import { downloadCsv } from "@/lib/export";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { deleteInvoice } from "@/lib/supabase/data";
+import { deleteInvoice, getBranches } from "@/lib/supabase/data";
 import {
   listStudents,
   listInvoices,
@@ -34,6 +34,8 @@ import { FEE_GROUPS_KEY, FeeGroup } from "@/data/fee-catalog";
 interface StudentAllocation {
   /** Always the student's id, so row selection and lookups agree. */
   id: string;
+  /** Which branch admitted them. Head office allocates across all of them. */
+  branch: string;
   /** The invoice backing this row, when one exists. */
   invoiceId?: string;
   studentId: string;
@@ -140,6 +142,11 @@ export default function FeeAllocation() {
   const { user } = useAuth();
   const { toast } = useToast();
   const branchId = user?.branchId || null;
+  /* Head office allocates fees across every branch, and the list arrives as one
+     pile; a branch-scoped account only ever sees its own, where a branch filter
+     would be a control with one choice on it. */
+  const showBranch = !branchId;
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [allocations, setAllocations] = useState<StudentAllocation[]>([]);
   const [feeGroups, setFeeGroups] = useState<FeeGroup[]>([]);
   const [students, setStudents] = useState<StudentRow[]>([]);
@@ -216,6 +223,23 @@ export default function FeeAllocation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId]);
 
+  useEffect(() => {
+    if (!showBranch) return;
+    getBranches(user?.organizationId || null)
+      .then((r) =>
+        setBranches(
+          ((r.data ?? []) as Record<string, unknown>[]).map((b) => ({
+            id: String(b.id ?? ""),
+            name: String(b.name ?? "Unnamed branch"),
+          })),
+        ),
+      )
+      // The filter is a convenience; the allocation list must not fail with it.
+      .catch(() => setBranches([]));
+  }, [showBranch, user?.organizationId]);
+
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name || "";
+
   // Build the allocations view from students + invoices.
   useEffect(() => {
     const invoiceMap = new Map<string, InvoiceRow>();
@@ -226,6 +250,7 @@ export default function FeeAllocation() {
       const inv = invoiceMap.get(stu.id);
       const base = {
         id: stu.id,
+        branch: branchName(String(stu.branchId ?? "")),
         studentId: studentCode(stu),
         name: studentName(stu as never, "Unnamed student"),
         course: stu.course?.name || "",
@@ -256,7 +281,8 @@ export default function FeeAllocation() {
       };
     });
     setAllocations(built);
-  }, [students, invoices, feeGroups]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `branchName` is derived from `branches`, which is listed.
+  }, [students, invoices, feeGroups, branches]);
 
   const courses = Array.from(new Set(allocations.map((s) => s.course).filter(Boolean))).sort();
   const batches = Array.from(new Set(allocations.map((s) => s.batch).filter(Boolean))).sort();
@@ -266,6 +292,24 @@ export default function FeeAllocation() {
       (courseFilter === "all" || student.course === courseFilter) &&
       (batchFilter === "all" || student.batch === batchFilter),
   );
+
+  /**
+   * The Quick Allocation panel already narrows by course and batch, on its own
+   * side of the page. These sit on the list itself, where the question is which
+   * branch's students are being looked at and which of them still need a fee
+   * group -- the thing this screen exists to fix.
+   */
+  const allocationFilters: TableFilter<StudentAllocation>[] = [
+    ...(showBranch ? [{ label: "Branch", key: "branch" as const }] : []),
+    { label: "Course", key: "course" as const },
+    { label: "Batch", key: "batch" as const },
+    {
+      label: "Allocation",
+      key: "allocated" as const,
+      options: ["Allocated", "Pending"],
+      value: (student: StudentAllocation) => (student.allocated ? "Allocated" : "Pending"),
+    },
+  ];
 
   const targetIds = selectedIds.filter((id) => visible.some((student) => student.id === id));
 
@@ -618,6 +662,7 @@ export default function FeeAllocation() {
             <DataTable
               data={visible}
               columns={columns}
+              filters={allocationFilters}
               searchPlaceholder="Search students..."
               actions={handleActions}
               selectable

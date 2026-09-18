@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, Column } from "@/components/ui/DataTable";
+import { DataTable, Column, type TableFilter } from "@/components/ui/DataTable";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +39,9 @@ interface CourseAssignment {
   id: string;
   course: string;
   courseCode: string;
+  /** The branch the course was handed to, so the list can be read one branch
+   *  at a time — which is how an administrator assigning across several works. */
+  branch: string;
   batch: string;
   subjects: string[];
   instructors: string[];
@@ -249,6 +252,25 @@ export default function AssignCourseToBatch() {
     setAssignments((prev) => prev.filter((i) => i.id !== id));
   }, []);
 
+  /**
+   * Branch is offered only where there is more than one to choose between: a
+   * branch-scoped account assigns within its own, and a control with a single
+   * choice on it is a control that does nothing.
+   */
+  const assignmentFilters: TableFilter<CourseAssignment>[] = [
+    ...(canChooseBranch ? [{ label: "Branch", key: "branch" as const }] : []),
+    { label: "Course", key: "course" as const },
+    {
+      label: "Status",
+      key: "status" as const,
+      options: ["Active", "Inactive"],
+      // "assigned" is the course actively running on that batch; "pending" is
+      // one set up but not yet switched on. The catalogue calls these Active
+      // and Inactive everywhere else, so this list says the same words.
+      value: (item: CourseAssignment) => (item.status === "assigned" ? "Active" : "Inactive"),
+    },
+  ];
+
   const handleActions = (assignment: CourseAssignment) => [
     { label: "View Details", onClick: () => setDetails(assignment) },
     { label: "Edit Assignment", onClick: () => setEditing(assignment) },
@@ -384,15 +406,16 @@ export default function AssignCourseToBatch() {
       return;
     }
 
+    const branchName = branchOptions.find((b) => b.id === selectedBranch)?.name || "the branch";
     addAssignment({
       course: course.name,
       courseCode: course.code,
+      branch: branchName,
       batch: batch.name,
       subjects: [...selectedSubjects],
       instructors: teachers,
       status: "assigned",
     });
-    const branchName = branchOptions.find((b) => b.id === selectedBranch)?.name || "the branch";
     toast({
       title: "Course assigned",
       description: `${course.name} → ${batch.name}, taught by ${teachers.join(", ")}. ${branchName} now sees this course.`,
@@ -677,6 +700,7 @@ export default function AssignCourseToBatch() {
           <DataTable
             data={assignments}
             columns={columns}
+            filters={assignmentFilters}
             searchPlaceholder="Search assignments..."
             actions={handleActions}
           />
