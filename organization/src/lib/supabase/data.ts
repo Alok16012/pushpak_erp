@@ -4375,3 +4375,142 @@ export async function getUserModules(userId: string | null) {
   );
   return { success: true as const, data: builtIn?.modules ?? [] };
 }
+
+/* ============================
+   COURSE SYLLABUS
+   ============================
+
+   Two tables behind one screen: modules are the sections of a course, and
+   chapters are what is taught inside a section. See
+   supabase/schema/course-syllabus.sql. */
+
+export interface SyllabusModule {
+  id: string;
+  courseId: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  status: "Active" | "Inactive";
+}
+
+export interface SyllabusChapter {
+  id: string;
+  moduleId: string;
+  courseId: string;
+  name: string;
+  description: string;
+  practical: string;
+  pdfUrl: string;
+  videoUrl: string;
+  sortOrder: number;
+  status: "Active" | "Inactive";
+}
+
+/** PostgREST answers a missing table with PGRST205, or 42P01 from Postgres. */
+const isMissingSyllabusTable = (error: { code?: string; message?: string } | null) => {
+  if (!error) return false;
+  if (error.code === "PGRST205" || error.code === "42P01") return true;
+  const message = error.message ?? "";
+  return (
+    /course_(modules|chapters)/.test(message) && /does not exist|schema cache/.test(message)
+  );
+};
+
+const asStatus = (value: unknown): "Active" | "Inactive" =>
+  String(value ?? "").toLowerCase() === "inactive" ? "Inactive" : "Active";
+
+/**
+ * A course's syllabus, modules and chapters together.
+ *
+ * Returns empty lists rather than throwing when the tables are not there yet,
+ * so the screen can say the migration has not been run instead of showing an
+ * error card that looks like a failure to load.
+ */
+export async function getCourseSyllabus(courseId: string) {
+  if (!courseId) {
+    return { success: true as const, data: { modules: [], chapters: [], ready: true } };
+  }
+
+  const [moduleResult, chapterResult] = await Promise.all([
+    supabase.from("course_modules").select("*").eq("courseId", courseId).is("deletedAt", null),
+    supabase.from("course_chapters").select("*").eq("courseId", courseId).is("deletedAt", null),
+  ]);
+
+  if (isMissingSyllabusTable(moduleResult.error) || isMissingSyllabusTable(chapterResult.error)) {
+    return { success: true as const, data: { modules: [], chapters: [], ready: false } };
+  }
+  if (moduleResult.error) throw new Error(moduleResult.error.message);
+  if (chapterResult.error) throw new Error(chapterResult.error.message);
+
+  const modules: SyllabusModule[] = (moduleResult.data ?? []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    courseId: String(row.courseId),
+    name: String(row.name ?? ""),
+    description: String(row.description ?? ""),
+    sortOrder: Number(row.sortOrder) || 1,
+    status: asStatus(row.status),
+  }));
+
+  const chapters: SyllabusChapter[] = (chapterResult.data ?? []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    moduleId: String(row.moduleId),
+    courseId: String(row.courseId),
+    name: String(row.name ?? ""),
+    description: String(row.description ?? ""),
+    practical: String(row.practical ?? ""),
+    pdfUrl: String(row.pdfUrl ?? ""),
+    videoUrl: String(row.videoUrl ?? ""),
+    sortOrder: Number(row.sortOrder) || 1,
+    status: asStatus(row.status),
+  }));
+
+  return { success: true as const, data: { modules, chapters, ready: true } };
+}
+
+/* The PostgREST builder is thenable but is not a Promise, so the helper takes
+   a PromiseLike rather than widening every call site with `await`. */
+const syllabusWrite = async <T>(
+  run: () => PromiseLike<{ data: T; error: { code?: string; message?: string } | null }>,
+) => {
+  const { data, error } = await run();
+  if (isMissingSyllabusTable(error)) {
+    throw new Error(
+      "The syllabus tables are not in the database yet. Run supabase/schema/course-syllabus.sql.",
+    );
+  }
+  if (error) throw new Error(error.message);
+  return { success: true as const, data };
+};
+
+export const createSyllabusModule = (input: Record<string, unknown>) =>
+  syllabusWrite(() => supabase.from("course_modules").insert(input).select("*").single());
+
+export const updateSyllabusModule = (id: string, input: Record<string, unknown>) =>
+  syllabusWrite(() =>
+    supabase
+      .from("course_modules")
+      .update({ ...input, updatedAt: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single(),
+  );
+
+/** Chapters cascade with the module in the database, so this deletes one row. */
+export const deleteSyllabusModule = (id: string) =>
+  syllabusWrite(() => supabase.from("course_modules").delete().eq("id", id).select("id"));
+
+export const createSyllabusChapter = (input: Record<string, unknown>) =>
+  syllabusWrite(() => supabase.from("course_chapters").insert(input).select("*").single());
+
+export const updateSyllabusChapter = (id: string, input: Record<string, unknown>) =>
+  syllabusWrite(() =>
+    supabase
+      .from("course_chapters")
+      .update({ ...input, updatedAt: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single(),
+  );
+
+export const deleteSyllabusChapter = (id: string) =>
+  syllabusWrite(() => supabase.from("course_chapters").delete().eq("id", id).select("id"));

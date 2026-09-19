@@ -98,6 +98,7 @@ export const menuItems: MenuItem[] = [
       { title: "Batch Timing", url: "/course/batch/timing", icon: Clock },
       { title: "Assign Course to Batch", url: "/course/batch/assign", icon: ListChecks },
       { title: "Assign Students", url: "/course/batch/assign-students", icon: ListChecks },
+      { title: "Course Syllabus", url: "/course/syllabus", icon: BookOpen },
     ],
   },
   {
@@ -254,6 +255,7 @@ const franchiseMenu: MenuItem[] = [
     "/course/batch/timing",
     "/course/batch/assign",
     "/course/batch/assign-students",
+    "/course/syllabus",
   ], "Courses & Batches"),
   ...scope("Fee Management", ["/fee/collection", "/fee/due-collection"]),
   ...scope("Attendance Management", [

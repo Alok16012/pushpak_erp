@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 import { canManageCourses } from "@/lib/roles";
@@ -93,8 +93,17 @@ describe("Courses & batches actions", () => {
      rather than as buttons on the row itself. What is being asserted is the
      same: a branch is offered no way in. */
   /** jsdom applies no CSS, so the responsive card list renders beside the
-   *  table and every name appears twice. The courses table is the first one. */
-  const coursesTable = async () => (await screen.findAllByRole("table"))[0];
+   *  table and every name appears twice. The courses table is the first one.
+   *
+   *  Waited on by its contents, not by the table: the empty table is in the
+   *  DOM before the courses load, so finding the element is not the same as
+   *  the row being there. */
+  const coursesTable = async (rowText = "ADCA") => {
+    await waitFor(() =>
+      expect(within(screen.getAllByRole("table")[0]).getByText(rowText)).toBeInTheDocument(),
+    );
+    return screen.getAllByRole("table")[0];
+  };
 
   /**
    * The row's actions menu, or null when the row offers none.
@@ -105,7 +114,7 @@ describe("Courses & batches actions", () => {
    * the row offers a way in at all, which is exactly what this returns.
    */
   const rowMenu = async (rowText: string) => {
-    const row = within(await coursesTable()).getByText(rowText).closest("tr") as HTMLElement;
+    const row = within(await coursesTable(rowText)).getByText(rowText).closest("tr") as HTMLElement;
     return within(row).queryByRole("button");
   };
 
