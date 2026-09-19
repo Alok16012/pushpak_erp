@@ -761,7 +761,13 @@ export async function getBatchesByOrg(organizationId: string | null) {
 async function withEnrolmentCounts(rows: Record<string, unknown>[]): Promise<Record<string, any>[]> {
   const ids = rows.map((r) => r.id as string).filter(Boolean);
   if (ids.length === 0) return rows.map((r) => ({ ...r, currentStudents: 0 }));
-  const { data, error } = await supabase.from("students").select("batchId").in("batchId", ids);
+  // Soft-deleted students were counted too, so a batch could read as full on
+  // seats held by students who are no longer on the roll.
+  const { data, error } = await supabase
+    .from("students")
+    .select("batchId")
+    .in("batchId", ids)
+    .is("deletedAt", null);
   if (error) return rows.map((r) => ({ ...r, currentStudents: 0 }));
   const counts = new Map<string, number>();
   for (const row of data || []) {

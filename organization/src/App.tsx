@@ -59,6 +59,7 @@ const DueFeeCollection = lazy(() => import("./pages/fee/DueFeeCollection"));
 // Course Management
 const BatchTiming = lazy(() => import("./pages/course/BatchTiming"));
 const AssignCourseToBatch = lazy(() => import("./pages/course/AssignCourseToBatch"));
+const AssignStudentsToBatch = lazy(() => import("./pages/course/AssignStudentsToBatch"));
 const AcademicsWorkspace = lazy(() => import("./pages/course/AcademicsWorkspace"));
 
 // Exam Management
@@ -201,6 +202,7 @@ const App = () => (
           <Route path="/course/batch/create" element={<AcademicsWorkspace />} />
           <Route path="/course/batch/timing" element={<BatchTiming />} />
           <Route path="/course/batch/assign" element={<AssignCourseToBatch />} />
+          <Route path="/course/batch/assign-students" element={<AssignStudentsToBatch />} />
 
           {/* Exam Management */}
           <Route path="/exam/create" element={<AssessmentsWorkspace />} />
