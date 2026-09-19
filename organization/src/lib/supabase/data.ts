@@ -851,13 +851,53 @@ export async function getInstructorNames(branchId: string | null) {
   return { success: true, data: [...names].sort((a, b) => a.localeCompare(b)) };
 }
 
-export async function getBatchTimings(branchId: string, filters?: { batchId?: string; courseId?: string }) {
+/**
+ * Every weekly slot for a branch's batches.
+ *
+ * `branchId` was taken and then never used, so this read every slot in the
+ * database and handed one branch another branch's timetable. Slots carry no
+ * branch of their own -- they hang off a batch -- so the scoping is a lookup
+ * of the branch's batches first.
+ */
+export async function getBatchTimings(
+  branchId: string,
+  filters?: { batchId?: string; courseId?: string; batchIds?: string[] },
+) {
+  // An organisation account has no branch of its own; it passes the batches it
+  // has already resolved, so the slots stay scoped to its own organisation
+  // rather than to every row in the table.
+  if (!branchId && filters?.batchIds) {
+    if (!filters.batchIds.length) return { success: true, data: [] as Record<string, unknown>[] };
+    let scoped = supabase
+      .from("batch_timings")
+      .select("*")
+      .in("batchId", filters.batchIds)
+      .order("batchId")
+      .order("day")
+      .order("startTime");
+    if (filters.batchId) scoped = scoped.eq("batchId", filters.batchId);
+    const { data, error } = await scoped;
+    if (error) throw new Error(error.message);
+    return { success: true, data: data || [] };
+  }
+
+  let batchIds: string[] | null = null;
+  if (branchId) {
+    let batchQuery = supabase.from("batches").select("id").eq("branchId", branchId);
+    if (filters?.courseId) batchQuery = batchQuery.eq("courseId", filters.courseId);
+    const { data: batches, error: batchError } = await batchQuery;
+    if (batchError) throw new Error(batchError.message);
+    batchIds = (batches ?? []).map((b: Record<string, unknown>) => String(b.id));
+    // No batches means no slots; asking for `in.()` would be a syntax error.
+    if (!batchIds.length) return { success: true, data: [] as Record<string, unknown>[] };
+  }
+
   let query = supabase.from("batch_timings").select("*").order("batchId").order("day").order("startTime");
+  if (batchIds) query = query.in("batchId", batchIds);
+  if (filters?.batchId) query = query.eq("batchId", filters.batchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  let result = data || [];
-  if (filters?.batchId) result = result.filter((t: any) => t.batchId === filters.batchId);
-  return { success: true, data: result };
+  return { success: true, data: data || [] };
 }
 
 /**
@@ -953,7 +993,21 @@ export async function getLiveClasses(branchId: string | null) {
 }
 
 export async function createBatchTiming(input: Record<string, unknown>) {
-  const { data, error } = await supabase.from("batch_timings").insert(input).select("*").single();
+  const attempt = (body: Record<string, unknown>) =>
+    supabase.from("batch_timings").insert(body).select("*").single();
+
+  let { data, error } = await attempt(input);
+  // Same degradation as the update path: a column the migrations have not
+  // added yet costs that column, not the slot.
+  if (
+    error?.code === "PGRST204" &&
+    BATCH_TIMING_OPTIONAL_COLUMNS.some((column) => error?.message?.includes(column))
+  ) {
+    const trimmed = Object.fromEntries(
+      Object.entries(input).filter(([key]) => BATCH_TIMING_COLUMNS.includes(key)),
+    );
+    ({ data, error } = await attempt(trimmed));
+  }
   if (error) throw new Error(error.message);
   return { success: true, data };
 }
@@ -965,7 +1019,11 @@ export async function createBatchTiming(input: Record<string, unknown>) {
  * than failing the whole save.
  */
 const BATCH_TIMING_COLUMNS = ["batchId", "day", "startTime", "endTime", "subject", "instructor", "roomNo"];
-const BATCH_TIMING_OPTIONAL_COLUMNS = ["title", "platform", "meetingLink", "meetingId", "description", "status", "recorded"];
+const BATCH_TIMING_OPTIONAL_COLUMNS = [
+  "title", "platform", "meetingLink", "meetingId", "description", "status", "recorded",
+  // add-batch-timing-schedule.sql
+  "classMode", "breakStart", "breakEnd", "colour",
+];
 
 export async function updateBatchTiming(id: string, input: Record<string, unknown>) {
   const known = [...BATCH_TIMING_COLUMNS, ...BATCH_TIMING_OPTIONAL_COLUMNS];
