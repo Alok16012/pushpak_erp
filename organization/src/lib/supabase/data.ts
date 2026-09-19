@@ -936,6 +936,9 @@ export async function getLiveClasses(branchId: string | null) {
   const batchById = new Map<string, Record<string, any>>();
   const courseById = new Map<string, Record<string, any>>();
 
+  const branchById = new Map<string, string>();
+  const enrolledIn = new Map<string, number>();
+
   if (batchIds.length) {
     const { data: batchRows, error: batchError } = await supabase
       .from("batches")
@@ -952,6 +955,27 @@ export async function getLiveClasses(branchId: string | null) {
         .in("id", courseIds);
       if (courseError) throw new Error(courseError.message);
       (courseRows || []).forEach((c: Record<string, any>) => courseById.set(c.id, c));
+    }
+
+    // The branch a class belongs to. Head office reads every branch's classes
+    // out of one list, and without this they are classes from nowhere.
+    const branchIds = [...new Set((batchRows || []).map((b: Record<string, any>) => b.branchId).filter(Boolean))];
+    if (branchIds.length) {
+      const { data: branchRows } = await supabase.from("branches").select("id, name").in("id", branchIds);
+      (branchRows || []).forEach((b: Record<string, any>) => branchById.set(b.id, b.name));
+    }
+
+    // Who is actually on the batch. `totalStudents` read `batch.capacity`,
+    // which is not a column on `batches` -- the seat limit is `maxSeats` --
+    // so every class reported nought students.
+    const { data: studentRows } = await supabase
+      .from("students")
+      .select("batchId")
+      .in("batchId", batchIds)
+      .is("deletedAt", null);
+    for (const row of studentRows || []) {
+      const key = String((row as Record<string, unknown>).batchId ?? "");
+      if (key) enrolledIn.set(key, (enrolledIn.get(key) || 0) + 1);
     }
   }
 
@@ -987,8 +1011,10 @@ export async function getLiveClasses(branchId: string | null) {
       meetingId: slot.meetingId || undefined,
       description: slot.description || undefined,
       recorded: Boolean(slot.recorded),
+      branch: branchById.get(batch.branchId) || "",
       attendees: 0,
-      totalStudents: Number(batch.capacity || 0),
+      totalStudents: enrolledIn.get(slot.batchId) || 0,
+      capacity: Number(batch.maxSeats || 0),
       // `status` only exists once add-batch-timing-class-fields.sql has been run;
       // until then a slot's state is whatever the clock says it is.
       status: (slot.status as "scheduled" | "active" | "completed" | "cancelled") || derived,

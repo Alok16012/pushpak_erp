@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, Column } from "@/components/ui/DataTable";
+import { DataTable, Column, type TableFilter } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StatsCard } from "@/components/ui/StatsCard";
 import { Button } from "@/components/ui/button";
@@ -11,13 +11,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
-import { Plus, Video, Users, Calendar, Clock, Play } from "lucide-react";
+import { Plus, Video, Users, Calendar, Clock, Play, Download, Link2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
 import { getLiveClasses, updateBatchTiming } from "@/lib/supabase/data";
+import { liveClassState, studentsOnSchedule } from "@/lib/liveClasses";
 
 interface LiveClass {
   id: string;
@@ -26,6 +27,8 @@ interface LiveClass {
   instructor: string;
   course: string;
   batch: string;
+  /** Which branch runs it. Head office reads every branch's from one list. */
+  branch: string;
   date: string;
   time: string;
   duration: string;
@@ -34,7 +37,9 @@ interface LiveClass {
   meetingId?: string;
   description?: string;
   attendees: number;
+  /** Students actually on the batch — not its seat limit, which is `capacity`. */
   totalStudents: number;
+  capacity: number;
   status: "scheduled" | "active" | "completed" | "cancelled";
   recorded?: boolean;
 }
@@ -48,6 +53,30 @@ const columns: Column<LiveClass>[] = [
       <div>
         <p className="font-medium">{liveClass.title}</p>
         <p className="text-xs text-muted-foreground">{liveClass.subject}</p>
+      </div>
+    ),
+  },
+  {
+    key: "branch",
+    header: "Branch",
+    sortable: true,
+    cell: (liveClass) => (
+      <div>
+        <p className="text-sm">{liveClass.branch || "—"}</p>
+        <p className="text-xs text-muted-foreground">{liveClass.batch || "No batch"}</p>
+      </div>
+    ),
+  },
+  {
+    key: "totalStudents",
+    header: "Students",
+    sortable: true,
+    cell: (liveClass) => (
+      <div>
+        <p className="text-sm font-semibold">{liveClass.totalStudents}</p>
+        {liveClass.capacity ? (
+          <p className="text-xs text-muted-foreground">of {liveClass.capacity} seats</p>
+        ) : null}
       </div>
     ),
   },
@@ -210,6 +239,9 @@ export default function ViewLiveClasses() {
       { label: "View Details", onClick: () => setDetails(liveClass) },
     ];
 
+    if (liveClass.meetingLink) {
+      actions.push({ label: "Copy Meeting Link", onClick: () => void copyLink(liveClass) });
+    }
     if (liveClass.status === "active") {
       actions.unshift({ label: "Join Class", onClick: () => join(liveClass) });
     }
@@ -225,14 +257,66 @@ export default function ViewLiveClasses() {
     return actions;
   };
 
+  /* Branch, batch and course are the three ways this list is asked for, and
+     status is the fourth — "what is running right now" against "what is still
+     to come". They read their choices off the rows, so a branch with no class
+     scheduled does not appear as an option that finds nothing. */
+  const filters: TableFilter<LiveClass>[] = [
+    { label: "Branch", key: "branch" },
+    { label: "Batch", key: "batch" },
+    { label: "Course", key: "course" },
+    {
+      label: "Status",
+      key: "status",
+      options: ["Live now", "Upcoming", "Completed", "Cancelled"],
+      value: (c) => liveClassState(c.status),
+    },
+  ];
+
+  const copyLink = async (liveClass: LiveClass) => {
+    if (!liveClass.meetingLink) {
+      toast({ title: "No meeting link", description: "This class has no link on it yet.", variant: "destructive" });
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(liveClass.meetingLink);
+      toast({ title: "Link copied", description: liveClass.title });
+    } catch {
+      // Clipboard access is refused outside a secure context, so the link is
+      // shown to be copied by hand rather than silently doing nothing.
+      toast({ title: "Copy it by hand", description: liveClass.meetingLink });
+    }
+  };
+
+  const exportClasses = () => {
+    if (!classesData.length) {
+      toast({ title: "Nothing to export", description: "No classes on the schedule yet." });
+      return;
+    }
+    downloadCsv(
+      "live-classes.csv",
+      classesData.map((c) => ({
+        Class: c.title,
+        Subject: c.subject,
+        Branch: c.branch,
+        Batch: c.batch,
+        Course: c.course,
+        Instructor: c.instructor,
+        Date: c.date,
+        Time: c.time,
+        Duration: c.duration,
+        Students: c.totalStudents,
+        Platform: c.platform,
+        Status: c.status,
+        MeetingLink: c.meetingLink ?? "",
+      })),
+    );
+    toast({ title: "Classes exported", description: `${classesData.length} rows written to CSV.` });
+  };
+
   const liveNow = classesData.filter((c) => c.status === "active").length;
   const upcoming = classesData.filter((c) => c.status === "scheduled").length;
-  const finished = classesData.filter((c) => c.status === "completed");
-  const avgAttendance = finished.length
-    ? Math.round(
-        finished.reduce((sum, c) => sum + (c.attendees / c.totalStudents) * 100, 0) / finished.length,
-      )
-    : 0;
+  const studentCount = studentsOnSchedule(classesData);
 
   if (loading) {
     return (
@@ -254,10 +338,16 @@ export default function ViewLiveClasses() {
           { label: "View Classes" },
         ]}
         actions={
-          <Button className="gap-2" onClick={() => navigate("/live-class/setup")}>
-            <Plus className="h-4 w-4" />
-            Schedule Class
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-2" onClick={exportClasses} disabled={!classesData.length}>
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+            <Button className="gap-2" onClick={() => navigate("/live-class/setup")}>
+              <Plus className="h-4 w-4" />
+              Schedule Class
+            </Button>
+          </div>
         }
       />
 
@@ -265,7 +355,13 @@ export default function ViewLiveClasses() {
         <StatsCard title="Total Classes" value={classesData.length} subtitle="On the schedule" icon={Video} variant="primary" />
         <StatsCard title="Live Now" value={liveNow} subtitle="In progress" icon={Play} variant="success" />
         <StatsCard title="Upcoming" value={upcoming} subtitle="Scheduled" icon={Calendar} variant="info" />
-        <StatsCard title="Avg. Attendance" value={`${avgAttendance}%`} subtitle="Completed classes" icon={Users} variant="warning" />
+        <StatsCard
+          title="Students"
+          value={studentCount}
+          subtitle="Across the classes listed"
+          icon={Users}
+          variant="warning"
+        />
       </div>
 
       <Card>
@@ -276,7 +372,8 @@ export default function ViewLiveClasses() {
           <DataTable
             data={classesData}
             columns={columns}
-            searchPlaceholder="Search classes..."
+            filters={filters}
+            searchPlaceholder="Search class, branch, batch, trainer…"
             actions={handleActions}
           />
         </CardContent>
