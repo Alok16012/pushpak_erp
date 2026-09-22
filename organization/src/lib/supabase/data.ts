@@ -4540,3 +4540,219 @@ export const updateSyllabusChapter = (id: string, input: Record<string, unknown>
 
 export const deleteSyllabusChapter = (id: string) =>
   syllabusWrite(() => supabase.from("course_chapters").delete().eq("id", id).select("id"));
+
+/* ============================
+   ADMISSION LEADS
+   ============================
+
+   The enquiries a centre works on until they become students. Separate from
+   `visit_enquiries`, which records one visit; a lead is worked for weeks.
+   See supabase/schema/admission-leads.sql. */
+
+export const LEAD_STAGES = [
+  "New",
+  "Contacted",
+  "Interested",
+  "Counselling",
+  "Demo Class",
+  "Admission",
+] as const;
+
+/** Off the board: reached an end that is not an admission. */
+export const LEAD_CLOSED_STAGES = ["Not Interested", "Lost"] as const;
+
+export type LeadStage = (typeof LEAD_STAGES)[number] | (typeof LEAD_CLOSED_STAGES)[number];
+
+export interface AdmissionLead {
+  id: string;
+  branchId: string;
+  studentName: string;
+  parentName: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  qualification: string;
+  address: string;
+  city: string;
+  courseInterested: string;
+  preferredBatch: string;
+  source: string;
+  counsellor: string;
+  expectedAdmissionAt: string;
+  status: LeadStage;
+  remarks: string;
+  followUpAt: string;
+  followUpType: string;
+  studentId: string;
+  createdAt: string;
+}
+
+export interface LeadActivity {
+  id: string;
+  leadId: string;
+  kind: string;
+  note: string;
+  status: string;
+  occurredAt: string;
+}
+
+const isMissingLeadTable = (error: { code?: string; message?: string } | null) => {
+  if (!error) return false;
+  if (error.code === "PGRST205" || error.code === "42P01") return true;
+  const message = error.message ?? "";
+  return /admission_lead/.test(message) && /does not exist|schema cache/.test(message);
+};
+
+const text = (value: unknown) => (value == null ? "" : String(value));
+
+const toLead = (row: Record<string, unknown>): AdmissionLead => ({
+  id: text(row.id),
+  branchId: text(row.branchId),
+  studentName: text(row.studentName) || "Unnamed lead",
+  parentName: text(row.parentName),
+  phone: text(row.phone),
+  // A lead who left the WhatsApp box blank still uses WhatsApp on the number
+  // they gave, which is the assumption every other register here makes.
+  whatsapp: text(row.whatsapp) || text(row.phone),
+  email: text(row.email),
+  qualification: text(row.qualification),
+  address: text(row.address),
+  city: text(row.city),
+  courseInterested: text(row.courseInterested),
+  preferredBatch: text(row.preferredBatch),
+  source: text(row.source),
+  counsellor: text(row.counsellor),
+  expectedAdmissionAt: text(row.expectedAdmissionAt),
+  status: (text(row.status) || "New") as LeadStage,
+  remarks: text(row.remarks),
+  followUpAt: text(row.followUpAt),
+  followUpType: text(row.followUpType),
+  studentId: text(row.studentId),
+  createdAt: text(row.createdAt),
+});
+
+/**
+ * Every lead the caller may see.
+ *
+ * Returns `ready: false` rather than throwing when the tables are not there
+ * yet, so the screen can name the migration instead of showing an error card
+ * that reads like a failure to load.
+ */
+export async function getAdmissionLeads(organizationId: string | null, branchId: string | null) {
+  let query = supabase
+    .from("admission_leads")
+    .select("*")
+    .is("deletedAt", null)
+    .order("createdAt", { ascending: false });
+  if (branchId) query = query.eq("branchId", branchId);
+  else if (organizationId) query = query.eq("organizationId", organizationId);
+
+  const { data, error } = await query;
+  if (isMissingLeadTable(error)) {
+    return { success: true as const, data: [] as AdmissionLead[], ready: false };
+  }
+  if (error) throw new Error(error.message);
+  return {
+    success: true as const,
+    data: (data ?? []).map((row) => toLead(row as Record<string, unknown>)),
+    ready: true,
+  };
+}
+
+export async function getLeadActivities(leadId: string) {
+  if (!leadId) return { success: true as const, data: [] as LeadActivity[] };
+  const { data, error } = await supabase
+    .from("admission_lead_activities")
+    .select("*")
+    .eq("leadId", leadId)
+    .order("occurredAt", { ascending: false });
+  if (isMissingLeadTable(error)) return { success: true as const, data: [] as LeadActivity[] };
+  if (error) throw new Error(error.message);
+  return {
+    success: true as const,
+    data: (data ?? []).map((row: Record<string, unknown>): LeadActivity => ({
+      id: text(row.id),
+      leadId: text(row.leadId),
+      kind: text(row.kind),
+      note: text(row.note),
+      status: text(row.status),
+      occurredAt: text(row.occurredAt),
+    })),
+  };
+}
+
+const leadWrite = async <T>(
+  run: () => PromiseLike<{ data: T; error: { code?: string; message?: string } | null }>,
+) => {
+  const { data, error } = await run();
+  if (isMissingLeadTable(error)) {
+    throw new Error(
+      "The lead tables are not in the database yet. Run supabase/schema/admission-leads.sql.",
+    );
+  }
+  if (error) throw new Error(error.message);
+  return { success: true as const, data };
+};
+
+/** The history is what makes a stage believable, so every write logs one. */
+export async function logLeadActivity(input: {
+  leadId: string;
+  kind: string;
+  note?: string;
+  status?: string;
+  actorId?: string | null;
+}) {
+  return leadWrite(() =>
+    supabase
+      .from("admission_lead_activities")
+      .insert({
+        leadId: input.leadId,
+        kind: input.kind,
+        note: input.note ?? null,
+        status: input.status ?? null,
+        actorId: input.actorId ?? null,
+      })
+      .select("*")
+      .single(),
+  );
+}
+
+export async function createAdmissionLead(input: Record<string, unknown>) {
+  const result = await leadWrite(() =>
+    supabase.from("admission_leads").insert(input).select("*").single(),
+  );
+  const lead = toLead(result.data as Record<string, unknown>);
+  // Best effort: the lead exists either way, and a missing first line of
+  // history is not worth failing the save the office just made.
+  await logLeadActivity({
+    leadId: lead.id,
+    kind: "Enquiry created",
+    status: lead.status,
+    note: lead.source ? `Source: ${lead.source}` : undefined,
+  }).catch(() => undefined);
+  return { success: true as const, data: lead };
+}
+
+export async function updateAdmissionLead(id: string, input: Record<string, unknown>) {
+  const result = await leadWrite(() =>
+    supabase
+      .from("admission_leads")
+      .update({ ...input, updatedAt: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single(),
+  );
+  return { success: true as const, data: toLead(result.data as Record<string, unknown>) };
+}
+
+/** Soft delete: a lost lead is still a record of what was tried. */
+export async function deleteAdmissionLead(id: string) {
+  return leadWrite(() =>
+    supabase
+      .from("admission_leads")
+      .update({ deletedAt: new Date().toISOString() })
+      .eq("id", id)
+      .select("id")
+      .single(),
+  );
+}

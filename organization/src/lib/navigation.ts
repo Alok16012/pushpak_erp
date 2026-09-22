@@ -84,6 +84,7 @@ export const menuItems: MenuItem[] = [
     icon: MessageSquare,
     items: [
       { title: "Branch Enquiry", url: "/enquiry/branch", icon: MessageSquare },
+      { title: "Admission Leads", url: "/enquiry/admission-leads", icon: MessageSquare },
       { title: "Online Branch Enquiry", url: "/enquiry/online-branch", icon: Globe },
       { title: "Online Student Enquiry", url: "/enquiry/online-student", icon: GraduationCap },
     ],
@@ -243,7 +244,11 @@ function scope(title: string, urls: string[], rename?: string): MenuItem[] {
  */
 const franchiseMenu: MenuItem[] = [
   ...scope("Reception", ["/reception/enquiry", "/reception/dispatch"]),
-  ...scope("Enquiry Management", ["/enquiry/branch", "/enquiry/online-student"]),
+  ...scope("Enquiry Management", [
+    "/enquiry/branch",
+    "/enquiry/admission-leads",
+    "/enquiry/online-student",
+  ]),
   ...scope("Student Management", [
     "/student/admission-form",
     "/student/view",

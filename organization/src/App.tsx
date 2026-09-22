@@ -41,6 +41,7 @@ const WebsiteView = lazy(() => import("./pages/branch/WebsiteView"));
 
 // Enquiry Management
 const BranchEnquiry = lazy(() => import("./pages/enquiry/BranchEnquiry"));
+const AdmissionLeads = lazy(() => import("./pages/enquiry/AdmissionLeads"));
 const OnlineBranchEnquiry = lazy(() => import("./pages/enquiry/OnlineBranchEnquiry"));
 const OnlineStudentEnquiry = lazy(() => import("./pages/enquiry/OnlineStudentEnquiry"));
 
@@ -181,6 +182,7 @@ const App = () => (
 
           {/* Enquiry Management */}
           <Route path="/enquiry/branch" element={<BranchEnquiry />} />
+          <Route path="/enquiry/admission-leads" element={<AdmissionLeads />} />
           <Route path="/enquiry/online-branch" element={<OnlineBranchEnquiry />} />
           <Route path="/enquiry/online-student" element={<OnlineStudentEnquiry />} />
 
