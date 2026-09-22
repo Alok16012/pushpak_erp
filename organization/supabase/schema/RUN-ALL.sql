@@ -5,31 +5,62 @@
 -- Paste the whole thing and run once. Safe to re-run: every statement is
 -- `if not exists`, `or replace`, or preceded by a `drop ... if exists`.
 --
--- Probed against the live database on 2026-09-19.
--- Everything below had already been applied EXCEPT these two columns:
+-- Probed against the live database on 2026-09-22.
+-- NONE of PART 1 is applied yet. Until it runs, five screens are inert:
 --
---     students.parentage
---     students.maritalStatus
---     batch_timings.classMode / breakStart / breakEnd / colour
---     course_modules  (new table)
---     course_chapters (new table)
---     admission_leads / admission_lead_activities (new tables)
---     franchise_leads / franchise_lead_activities (new tables)
+--     students.parentage / maritalStatus            Admission form
+--     batch_timings.classMode/breakStart/breakEnd/colour   Batch Timing
+--     course_modules, course_chapters               Course Syllabus
+--     admission_leads, admission_lead_activities    Admission Leads
+--     franchise_leads, franchise_lead_activities    Branch Leads
 --
--- So in practice PART 1 is the only part that changes anything today. The
--- rest is here so this one file is the whole story, and so a fresh database
--- can be brought up with it.
---
--- What could not be probed from here: the policies and functions in PART 3
--- are checked by the anon key having no way to read `pg_policies`. They are
--- written to be re-runnable, so running them is the safe move either way.
+-- PART 2 and PART 3 were probed as already applied. They are here so this one
+-- file is the whole story, and so a fresh database can be brought up with it.
 -- =====================================================================
 
 
 -- =====================================================================
--- PART 1 — MISSING RIGHT NOW
+-- PART 0 — THE CLAIM HELPERS
+-- =====================================================================
+--
+-- Every policy below calls one of these, and Postgres resolves a function at
+-- CREATE POLICY time -- so they go first. The migrations they come from
+-- define them again identically further down; `create or replace` makes that
+-- a no-op rather than a conflict.
+--
+-- They read `app_metadata`, never `user_metadata`: a user can rewrite their
+-- own user_metadata with supabase.auth.updateUser(), so trusting it here
+-- would let anyone grant themselves an admin role. Only the service role
+-- writes app_metadata, which is what the create-branch-user edge function
+-- does.
+
+create or replace function public.jwt_role()
+returns text language sql stable as $$
+  select upper(coalesce(auth.jwt() -> 'app_metadata' ->> 'role', ''));
+$$;
+
+create or replace function public.jwt_org_id()
+returns text language sql stable as $$
+  select auth.jwt() -> 'app_metadata' ->> 'organizationId';
+$$;
+
+create or replace function public.jwt_branch_id()
+returns text language sql stable as $$
+  select auth.jwt() -> 'app_metadata' ->> 'branchId';
+$$;
+
+create or replace function public.is_org_admin()
+returns boolean language sql stable as $$
+  select public.jwt_role() in ('SUPER_ADMIN', 'ORGANIZATION_ADMIN');
+$$;
+
+
+-- =====================================================================
+-- PART 1 — NOT APPLIED YET. This is the part that changes something.
 -- =====================================================================
 
+
+-- ---------- add-student-parentage.sql ----------
 -- How a student is named on their own paperwork, and whether they are married.
 --
 -- Certificates and marksheets read "Krishna Singh, S/o Ram Singh", and a
@@ -68,6 +99,7 @@ alter table public.batch_timings
   add column if not exists "breakStart" text,
   add column if not exists "breakEnd" text,
   add column if not exists "colour" text;
+
 
 -- ---------- course-syllabus.sql ----------
 -- Give a course's syllabus somewhere to live.
@@ -211,6 +243,7 @@ select tablename, policyname, cmd from pg_policies
  where schemaname = 'public'
    and tablename in ('course_modules', 'course_chapters')
  order by tablename, policyname;
+
 
 -- ---------- admission-leads.sql ----------
 -- Admission leads: the enquiries a centre works on until they become students.
@@ -364,6 +397,7 @@ select tablename, policyname, cmd from pg_policies
  where schemaname = 'public'
    and tablename in ('admission_leads', 'admission_lead_activities')
  order by tablename, policyname;
+
 
 -- ---------- franchise-leads.sql ----------
 -- Franchise leads: people who want to open a branch.
@@ -523,6 +557,7 @@ select tablename, policyname, cmd from pg_policies
  where schemaname = 'public'
    and tablename in ('franchise_leads', 'franchise_lead_activities')
  order by tablename, policyname;
+
 
 -- =====================================================================
 -- PART 2 — COLUMNS (already applied; re-runnable)
@@ -2437,13 +2472,14 @@ revoke all on function public.create_student_login(text, text, text) from anon, 
 -- PART 4 — OPTIONAL: lock the catalogue down in the database too
 -- =====================================================================
 --
--- The "New course" button is hidden from a branch, but that is the UI, not a
--- boundary: `courses` still carries a blanket "Authenticated full access"
--- policy, so any signed-in user could still insert a course through the API.
+-- Hiding "New course" from a branch is the UI, not a boundary: `courses`
+-- still carries a blanket "Authenticated full access" policy, so any
+-- signed-in user could insert a course through the API.
 --
--- This is left commented out on purpose. It is a real behaviour change, and
--- the same blanket policy is on `branches`, `users` and `students` too — so
--- tightening one table is a decision, not a tidy-up. Uncomment deliberately.
+-- Left commented out on purpose. It is a real behaviour change, and the same
+-- blanket policy sits on `branches`, `users` and `students` too -- so
+-- tightening one table is a decision about four, not a tidy-up. Uncomment
+-- deliberately, and check the app still works for a branch account after.
 --
 -- drop policy if exists "Authenticated full access" on public.courses;
 --
@@ -2452,9 +2488,21 @@ revoke all on function public.create_student_login(text, text, text) from anon, 
 --
 -- create policy "Only the organisation writes the catalogue"
 --   on public.courses for all to authenticated
---   using (exists (select 1 from public.users u
---                  where u.id = auth.uid()::text
---                    and u.role in ('SUPER_ADMIN', 'ORGANIZATION_ADMIN')))
---   with check (exists (select 1 from public.users u
---                       where u.id = auth.uid()::text
---                         and u.role in ('SUPER_ADMIN', 'ORGANIZATION_ADMIN')));
+--   using (public.is_org_admin())
+--   with check (public.is_org_admin());
+
+
+-- =====================================================================
+-- PART 5 — What is in place now.
+-- =====================================================================
+select 'students.parentage'      as thing,
+       to_regclass('public.students') is not null
+       and exists (select 1 from information_schema.columns
+                    where table_name = 'students' and column_name = 'parentage') as present
+union all select 'batch_timings.classMode',
+       exists (select 1 from information_schema.columns
+                where table_name = 'batch_timings' and column_name = 'classMode')
+union all select 'course_modules',   to_regclass('public.course_modules')   is not null
+union all select 'course_chapters',  to_regclass('public.course_chapters')  is not null
+union all select 'admission_leads',  to_regclass('public.admission_leads')  is not null
+union all select 'franchise_leads',  to_regclass('public.franchise_leads')  is not null;
