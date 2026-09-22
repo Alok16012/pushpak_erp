@@ -4756,3 +4756,206 @@ export async function deleteAdmissionLead(id: string) {
       .single(),
   );
 }
+
+/* ============================
+   FRANCHISE LEADS
+   ============================
+
+   People who want to open a branch. Separate from `admission_leads`, which is
+   a student enquiry — the two share almost no fields.
+   See supabase/schema/franchise-leads.sql. */
+
+export const FRANCHISE_STAGES = [
+  "New Lead",
+  "Contacted",
+  "Interested",
+  "Site Visit",
+  "Verification",
+  "Agreement",
+  "Converted",
+] as const;
+
+export type FranchiseStage = (typeof FRANCHISE_STAGES)[number] | "Lost";
+
+export interface FranchiseLead {
+  id: string;
+  leadNo: string;
+  directorName: string;
+  ownerName: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  qualification: string;
+  state: string;
+  district: string;
+  block: string;
+  city: string;
+  pincode: string;
+  landmark: string;
+  wardNo: string;
+  address: string;
+  investmentBudget: string;
+  centreAreaSqFt: number | null;
+  computers: number | null;
+  expectedOpeningAt: string;
+  facilities: string[];
+  businessExperience: string;
+  franchiseType: string;
+  executive: string;
+  remarks: string;
+  status: FranchiseStage;
+  followUpAt: string;
+  followUpType: string;
+  createdAt: string;
+  /** The source column the shared breakdown reads — here it is the channel
+   *  the applicant came through, which this form records as the executive. */
+  source: string;
+}
+
+const isMissingFranchiseTable = (error: { code?: string; message?: string } | null) => {
+  if (!error) return false;
+  if (error.code === "PGRST205" || error.code === "42P01") return true;
+  const message = error.message ?? "";
+  return /franchise_lead/.test(message) && /does not exist|schema cache/.test(message);
+};
+
+const asNumber = (value: unknown) => {
+  const n = Number(value);
+  return Number.isFinite(n) && value !== null && value !== "" ? n : null;
+};
+
+const toFranchiseLead = (row: Record<string, unknown>): FranchiseLead => ({
+  id: text(row.id),
+  leadNo: text(row.leadNo) || `FRL-${text(row.id).slice(-5).toUpperCase()}`,
+  directorName: text(row.directorName) || "Unnamed applicant",
+  ownerName: text(row.ownerName),
+  phone: text(row.phone),
+  whatsapp: text(row.whatsapp) || text(row.phone),
+  email: text(row.email),
+  qualification: text(row.qualification),
+  state: text(row.state),
+  district: text(row.district),
+  block: text(row.block),
+  city: text(row.city),
+  pincode: text(row.pincode),
+  landmark: text(row.landmark),
+  wardNo: text(row.wardNo),
+  address: text(row.address),
+  investmentBudget: text(row.investmentBudget),
+  centreAreaSqFt: asNumber(row.centreAreaSqFt),
+  computers: asNumber(row.computers),
+  expectedOpeningAt: text(row.expectedOpeningAt),
+  facilities: Array.isArray(row.facilities) ? (row.facilities as string[]) : [],
+  businessExperience: text(row.businessExperience),
+  franchiseType: text(row.franchiseType),
+  executive: text(row.executive),
+  remarks: text(row.remarks),
+  status: (text(row.status) || "New Lead") as FranchiseStage,
+  followUpAt: text(row.followUpAt),
+  followUpType: text(row.followUpType),
+  createdAt: text(row.createdAt),
+  source: text(row.franchiseType) || "Not recorded",
+});
+
+export async function getFranchiseLeads(organizationId: string | null) {
+  let query = supabase
+    .from("franchise_leads")
+    .select("*")
+    .is("deletedAt", null)
+    .order("createdAt", { ascending: false });
+  if (organizationId) query = query.eq("organizationId", organizationId);
+
+  const { data, error } = await query;
+  if (isMissingFranchiseTable(error)) {
+    return { success: true as const, data: [] as FranchiseLead[], ready: false };
+  }
+  if (error) throw new Error(error.message);
+  return {
+    success: true as const,
+    data: (data ?? []).map((row) => toFranchiseLead(row as Record<string, unknown>)),
+    ready: true,
+  };
+}
+
+export async function getFranchiseLeadActivities(leadId: string) {
+  if (!leadId) return { success: true as const, data: [] as LeadActivity[] };
+  const { data, error } = await supabase
+    .from("franchise_lead_activities")
+    .select("*")
+    .eq("leadId", leadId)
+    .order("occurredAt", { ascending: false });
+  if (isMissingFranchiseTable(error)) return { success: true as const, data: [] as LeadActivity[] };
+  if (error) throw new Error(error.message);
+  return {
+    success: true as const,
+    data: (data ?? []).map((row: Record<string, unknown>): LeadActivity => ({
+      id: text(row.id),
+      leadId: text(row.leadId),
+      kind: text(row.kind),
+      note: text(row.note),
+      status: text(row.status),
+      occurredAt: text(row.occurredAt),
+    })),
+  };
+}
+
+const franchiseWrite = async <T>(
+  run: () => PromiseLike<{ data: T; error: { code?: string; message?: string } | null }>,
+) => {
+  const { data, error } = await run();
+  if (isMissingFranchiseTable(error)) {
+    throw new Error(
+      "The franchise lead tables are not in the database yet. Run supabase/schema/franchise-leads.sql.",
+    );
+  }
+  if (error) throw new Error(error.message);
+  return { success: true as const, data };
+};
+
+export async function logFranchiseActivity(input: {
+  leadId: string;
+  kind: string;
+  note?: string;
+  status?: string;
+  actorId?: string | null;
+}) {
+  return franchiseWrite(() =>
+    supabase
+      .from("franchise_lead_activities")
+      .insert({
+        leadId: input.leadId,
+        kind: input.kind,
+        note: input.note ?? null,
+        status: input.status ?? null,
+        actorId: input.actorId ?? null,
+      })
+      .select("*")
+      .single(),
+  );
+}
+
+export async function createFranchiseLead(input: Record<string, unknown>) {
+  const result = await franchiseWrite(() =>
+    supabase.from("franchise_leads").insert(input).select("*").single(),
+  );
+  const lead = toFranchiseLead(result.data as Record<string, unknown>);
+  await logFranchiseActivity({
+    leadId: lead.id,
+    kind: "Lead created",
+    status: lead.status,
+    note: lead.city ? `Proposed at ${[lead.city, lead.district, lead.state].filter(Boolean).join(", ")}` : undefined,
+  }).catch(() => undefined);
+  return { success: true as const, data: lead };
+}
+
+export async function updateFranchiseLead(id: string, input: Record<string, unknown>) {
+  const result = await franchiseWrite(() =>
+    supabase
+      .from("franchise_leads")
+      .update({ ...input, updatedAt: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single(),
+  );
+  return { success: true as const, data: toFranchiseLead(result.data as Record<string, unknown>) };
+}

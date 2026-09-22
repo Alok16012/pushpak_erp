@@ -71,6 +71,7 @@ export const menuItems: MenuItem[] = [
     icon: Building2,
     items: [
       { title: "Create Branch", url: "/branch/create", icon: Building2 },
+      { title: "Branch Leads", url: "/branch/leads", icon: Building2 },
       { title: "View Branch", url: "/branch/view", icon: Building2 },
       { title: "Wallet Recharge", url: "/branch/wallet", icon: Wallet },
       { title: "Branch Transactions", url: "/branch/transactions", icon: Receipt },

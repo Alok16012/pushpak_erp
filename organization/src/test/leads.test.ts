@@ -6,7 +6,8 @@ import {
   leadProblem,
   leadSummary,
   monthlyEnquiries,
-  pipeline,
+  admissionPipeline,
+  pipeline as stagePipeline,
   sourceBreakdown,
 } from "@/lib/leads";
 import type { AdmissionLead } from "@/lib/supabase/data";
@@ -59,7 +60,7 @@ describe("followUpBucket", () => {
 
 describe("pipeline", () => {
   it("gives every stage a column, even an empty one", () => {
-    const board = pipeline([lead({ status: "New" }), lead({ status: "Admission" })]);
+    const board = admissionPipeline([lead({ status: "New" }), lead({ status: "Admission" })]);
     expect(board.map((c) => c.stage)).toEqual([
       "New", "Contacted", "Interested", "Counselling", "Demo Class", "Admission",
     ]);
@@ -68,7 +69,32 @@ describe("pipeline", () => {
 
   // Lost leads are not a stage on the board; they would read as work in hand.
   it("keeps closed leads off the board", () => {
-    const board = pipeline([lead({ status: "Lost" }), lead({ status: "Not Interested" })]);
+    const board = admissionPipeline([lead({ status: "Lost" }), lead({ status: "Not Interested" })]);
+    expect(board.flatMap((c) => c.leads)).toEqual([]);
+  });
+});
+
+/* The franchise register runs the same board over different stages, which is
+   why `pipeline` is structural rather than tied to one lead type. */
+describe("pipeline over any set of stages", () => {
+  const stages = ["New Lead", "Site Visit", "Agreement", "Converted"] as const;
+
+  it("groups a different lead shape by a different set of stages", () => {
+    const board = stagePipeline(
+      [
+        { status: "Site Visit", directorName: "Raj" },
+        { status: "Converted", directorName: "Priya" },
+        { status: "Site Visit", directorName: "Amit" },
+      ],
+      stages,
+    );
+    expect(board.map((c) => c.stage)).toEqual([...stages]);
+    expect(board[1].leads.map((l) => l.directorName)).toEqual(["Raj", "Amit"]);
+    expect(board[2].leads).toEqual([]);
+  });
+
+  it("keeps a status outside the given stages off the board", () => {
+    const board = stagePipeline([{ status: "Lost" }], stages);
     expect(board.flatMap((c) => c.leads)).toEqual([]);
   });
 });

@@ -42,7 +42,7 @@ import {
   leadProblem,
   leadSummary,
   monthlyEnquiries,
-  pipeline,
+  admissionPipeline,
   sourceBreakdown,
 } from "@/lib/leads";
 import {
@@ -141,7 +141,7 @@ export default function AdmissionLeads() {
   }, [load]);
 
   const summary = useMemo(() => leadSummary(leads), [leads]);
-  const board = useMemo(() => pipeline(leads), [leads]);
+  const board = useMemo(() => admissionPipeline(leads), [leads]);
   const sources = useMemo(() => sourceBreakdown(leads), [leads]);
   const months = useMemo(() => monthlyEnquiries(leads), [leads]);
   const queue = useMemo(() => followUpQueue(leads), [leads]);
