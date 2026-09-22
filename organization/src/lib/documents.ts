@@ -12,6 +12,9 @@ export type StudentDocument = {
   /** The roll number the institute assigns, printed beside the photograph. */
   rollNo?: string;
   fatherName?: string;
+  /** "Son of" / "Daughter of" / "Wife of" — how the student is named against
+   *  the person below. Blank falls back to the neutral "Father/Guardian". */
+  parentage?: string;
   dateOfBirth?: string;
   /** A data URL. Drawn into the marksheet's photograph box when present. */
   photo?: string | null;
@@ -329,7 +332,16 @@ export async function marksheetPdf(s: StudentDocument) {
   particular(doc, "Name:", name, margin, y, colWidth);
   particular(doc, "Registration/Roll No.:", roll, colTwo, y, colWidth);
   y += 8;
-  particular(doc, "Father/Guardian Name:", s.fatherName || "-", margin, y, colWidth);
+  // The label carries the parentage the admission recorded, so a married
+  // woman reads "Wife of" rather than as somebody's daughter.
+  particular(
+    doc,
+    s.parentage ? `${s.parentage}:` : "Father/Guardian Name:",
+    s.fatherName || "-",
+    margin,
+    y,
+    colWidth,
+  );
   particular(doc, "Date of Birth:", s.dateOfBirth || "-", colTwo, y, colWidth);
   y += 8;
   const trade = [s.course?.name, s.course?.code && `(${s.course.code})`].filter(Boolean).join(" ");
@@ -445,6 +457,13 @@ export function certificatePdf(s: StudentDocument) {
   doc.line(78, 108, 219, 108);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
+  // "S/o Ram Singh" under the name, which is how a certificate identifies its
+  // holder. Printed only when the admission recorded both halves of it.
+  if (s.parentage && s.fatherName) {
+    doc.setFontSize(11);
+    doc.text(`${s.parentage} ${s.fatherName}`, 148.5, 116, { align: "center" });
+    doc.setFontSize(12);
+  }
   doc.text(
     `has successfully completed ${s.course?.name || "the assigned course"}`,
     148.5,

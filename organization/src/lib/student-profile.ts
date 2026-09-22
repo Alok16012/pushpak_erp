@@ -45,6 +45,7 @@ export interface StudentRow {
   admissionDate?: string | null;
   photo?: unknown;
   fatherName?: string | null;
+  parentage?: string | null;
   fatherPhone?: string | null;
   course?: { name?: string | null; code?: string | null; baseFee?: number | string | null } | null;
   batch?: { name?: string | null } | null;
@@ -117,6 +118,7 @@ export function toStudentProfile(row: StudentRow): StudentProfile {
     // mobile they gave at admission.
     whatsapp: text(row.whatsappNumber) || phone,
     guardian: text(row.fatherName),
+    parentage: text(row.parentage),
     guardianPhone: text(row.fatherPhone),
     address: [row.streetAddress, row.city, row.district, row.state, row.pincode]
       .filter(Boolean)

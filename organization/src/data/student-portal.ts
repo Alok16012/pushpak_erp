@@ -38,6 +38,8 @@ export interface StudentProfile {
   /** The student's own WhatsApp number — `students.whatsappNumber`. */
   whatsapp: string;
   guardian: string;
+  /** "Son of" / "Daughter of" / "Wife of", against `guardian`. */
+  parentage: string;
   /** The father's / guardian's number — `students.fatherPhone`, never the student's. */
   guardianPhone: string;
   address: string;
@@ -124,6 +126,7 @@ export const PROFILE_SEED: StudentProfile = {
   phone: "+91 98220 41100",
   whatsapp: "+91 98220 41100",
   guardian: "Meera Sharma",
+  parentage: "Son of",
   guardianPhone: "+91 98220 41199",
   address: "24 Shivaji Nagar, Pune - 411005",
   dob: "12 Mar 2007",
@@ -270,6 +273,7 @@ export const asStudentDocument = (
     // downloading their own statement of marks gets a row of dashes.
     rollNo: profile.rollNo,
     fatherName: profile.guardian,
+    parentage: profile.parentage,
     dateOfBirth: profile.dob,
     photo: profile.photo,
     course: { name: profile.course, code: profile.courseCode || undefined },

@@ -70,6 +70,32 @@ const base: StudentDocument = {
   examResults: [paper(33, 100, 33), paper(26, 50, 17)],
 };
 
+describe("parentage on the documents", () => {
+  // The admission records S/o, D/o or W/o; before this every document assumed
+  // one of them by printing a fixed "Father/Guardian" label.
+  it("renders a marksheet that carries the parentage", async () => {
+    await expect(
+      marksheetPdf({ ...base, parentage: "Wife of", fatherName: "Ram Singh" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("renders one that has none, falling back to the neutral label", async () => {
+    await expect(
+      marksheetPdf({ ...base, parentage: undefined, fatherName: "Ram Singh" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("renders a certificate with and without it", async () => {
+    const { certificatePdf } = await import("@/lib/documents");
+    expect(() =>
+      certificatePdf({ ...base, parentage: "Daughter of", fatherName: "Ram Singh" }),
+    ).not.toThrow();
+    // Half of it is not enough to print a line: "Son of" with no name reads
+    // as a mistake on a certificate somebody keeps.
+    expect(() => certificatePdf({ ...base, parentage: "Son of", fatherName: "" })).not.toThrow();
+  });
+});
+
 describe("marksheetPdf", () => {
   it("renders for a student with nothing configured beyond their name", async () => {
     // The bare sheet is the one that broke: with no heading lines the title

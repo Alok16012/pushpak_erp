@@ -1591,6 +1591,7 @@ export async function getStudentDocument(studentId: string, branchId: string | n
       // names them, not just as the roster lists them.
       rollNo: student.rollNo || undefined,
       fatherName: student.fatherName || undefined,
+      parentage: student.parentage || undefined,
       dateOfBirth: student.dateOfBirth
         ? new Date(student.dateOfBirth).toLocaleDateString("en-GB", {
             day: "2-digit",
