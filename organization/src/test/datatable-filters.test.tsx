@@ -42,11 +42,11 @@ const names = () =>
     .map((r) => r.textContent?.match(/\w+ Branch/)?.[0]);
 
 const openFilters = () => fireEvent.click(screen.getByRole("button", { name: /filters/i }));
-/** The filter buttons live in the bar, not in the rows. */
+/** Each filter is a searchable dropdown named after its label. */
+const openIn = (label: string) => fireEvent.click(screen.getByRole("combobox", { name: label }));
 const chooseIn = (label: string, choice: string) => {
-  // The label also appears as a column header; the filter's own is the <p>.
-  const group = screen.getByText(label, { selector: "p" }).closest("div") as HTMLElement;
-  fireEvent.click(within(group).getByRole("button", { name: choice }));
+  openIn(label);
+  fireEvent.click(within(screen.getByRole("listbox", { name: label })).getByRole("option", { name: choice }));
 };
 
 describe("DataTable named filters", () => {
@@ -63,9 +63,42 @@ describe("DataTable named filters", () => {
     render(<DataTable data={ROWS} columns={columns} filters={filters} />);
     openFilters();
 
-    const stateGroup = screen.getByText("State", { selector: "p" }).closest("div") as HTMLElement;
-    expect(within(stateGroup).getByRole("button", { name: "Bihar" })).toBeInTheDocument();
-    expect(within(stateGroup).getByRole("button", { name: "Maharashtra" })).toBeInTheDocument();
+    openIn("State");
+    const list = screen.getByRole("listbox", { name: "State" });
+    expect(within(list).getByRole("option", { name: "Bihar" })).toBeInTheDocument();
+    expect(within(list).getByRole("option", { name: "Maharashtra" })).toBeInTheDocument();
+  });
+
+  it("finds a choice by typing into the dropdown's search", () => {
+    render(<DataTable data={ROWS} columns={columns} filters={filters} />);
+    openFilters();
+    openIn("District");
+    fireEvent.change(screen.getByRole("textbox", { name: "Search District" }), { target: { value: "pu" } });
+
+    const list = screen.getByRole("listbox", { name: "District" });
+    expect(within(list).getByRole("option", { name: "Pune" })).toBeInTheDocument();
+    expect(within(list).queryByRole("option", { name: "Patna" })).toBeNull();
+  });
+
+  it("offers only the chosen state's districts", () => {
+    render(<DataTable data={ROWS} columns={columns} filters={filters} />);
+    openFilters();
+    chooseIn("State", "Maharashtra");
+    openIn("District");
+
+    const list = screen.getByRole("listbox", { name: "District" });
+    expect(within(list).getByRole("option", { name: "Pune" })).toBeInTheDocument();
+    expect(within(list).queryByRole("option", { name: "Patna" })).toBeNull();
+  });
+
+  it("drops a district that no longer fits when the state changes", () => {
+    render(<DataTable data={ROWS} columns={columns} filters={filters} />);
+    openFilters();
+    chooseIn("State", "Bihar");
+    chooseIn("District", "Patna");
+    chooseIn("State", "Maharashtra");
+
+    expect(names()).toEqual(["Pune Branch"]);
   });
 
   it("narrows the rows to the chosen value", () => {

@@ -16,7 +16,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, MoreHorizontal, ChevronLeft, ChevronRight, Filter, X } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Search, MoreHorizontal, ChevronLeft, ChevronRight, Filter, X, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface Column<T> {
@@ -99,9 +100,34 @@ export function DataTable<T extends { id: string | number }>({
     : columns.find((column) => String(column.key).toLowerCase() === "status") || columns.find((column) => column.sortable);
   const filterOptions = filterColumn ? Array.from(new Set(data.map(item => String((item as Record<string, unknown>)[String(filterColumn.key)] ?? "")).filter(Boolean))).slice(0, 8) : [];
 
-  const choicesFor = (filter: TableFilter<T>) =>
-    filter.options ??
-    Array.from(new Set(data.map((item) => readFilter(filter, item)).filter(Boolean))).sort();
+  /**
+   * Filters narrow in order: District lists only the districts of the chosen
+   * State, Block only the blocks of the chosen District. Fixed options are
+   * offered whole, since they do not come from the rows.
+   */
+  const choicesFor = (filter: TableFilter<T>, picks: Record<string, string> = picked) => {
+    if (filter.options) return filter.options;
+    const before = named.slice(0, named.indexOf(filter));
+    const rows = data.filter((item) =>
+      before.every((f) => !picks[f.label] || readFilter(f, item) === picks[f.label]),
+    );
+    return Array.from(new Set(rows.map((item) => readFilter(filter, item)).filter(Boolean))).sort();
+  };
+
+  /** Choosing the chosen value again clears it, as the old chips did. */
+  const pick = (filter: TableFilter<T>, choice: string) => {
+    setPicked((current) => {
+      const next = { ...current, [filter.label]: current[filter.label] === choice ? "" : choice };
+      // A district from another state no longer fits once the state changes.
+      for (const later of named.slice(named.indexOf(filter) + 1)) {
+        if (next[later.label] && !choicesFor(later, next).includes(next[later.label])) {
+          next[later.label] = "";
+        }
+      }
+      return next;
+    });
+    setCurrentPage(1);
+  };
 
   const activeCount = usingNamed
     ? Object.values(picked).filter(Boolean).length
@@ -196,43 +222,22 @@ export function DataTable<T extends { id: string | number }>({
       )}
 
       {showFilters && usingNamed && (
-        <div className="flex flex-wrap items-end gap-4 rounded-2xl border bg-card p-3 animate-slide-up">
-          {named.map((filter) => {
-            const choices = choicesFor(filter);
-            return (
-              <div key={filter.label} className="min-w-0">
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {filter.label}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {choices.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">Nothing to filter by yet</span>
-                  ) : (
-                    choices.map((choice) => (
-                      <Button
-                        key={choice}
-                        variant={picked[filter.label] === choice ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => {
-                          // Pressing the chosen one again clears it, which is
-                          // how the single filter has always behaved.
-                          setPicked((current) => ({
-                            ...current,
-                            [filter.label]: current[filter.label] === choice ? "" : choice,
-                          }));
-                          setCurrentPage(1);
-                        }}
-                      >
-                        {choice}
-                      </Button>
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-2 items-end gap-3 rounded-2xl border bg-card p-3 animate-slide-up sm:grid-cols-3 lg:grid-cols-5">
+          {named.map((filter) => (
+            <div key={filter.label} className="min-w-0">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {filter.label}
+              </p>
+              <FilterSelect
+                label={filter.label}
+                value={picked[filter.label] ?? ""}
+                choices={choicesFor(filter)}
+                onPick={(choice) => pick(filter, choice)}
+              />
+            </div>
+          ))}
           {activeCount > 0 && (
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <Button variant="ghost" size="sm" className="justify-self-start" onClick={clearFilters}>
               <X className="h-3.5 w-3.5" />
               Clear
             </Button>
@@ -399,5 +404,105 @@ export function DataTable<T extends { id: string | number }>({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * One filter as a dropdown with a search box, so a register with forty
+ * districts is narrowed by typing rather than by scanning a row of buttons.
+ */
+function FilterSelect({
+  label,
+  value,
+  choices,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  choices: string[];
+  onPick: (choice: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const visible = needle ? choices.filter((c) => c.toLowerCase().includes(needle)) : choices;
+
+  const choose = (choice: string) => {
+    onPick(choice);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(next) => { setOpen(next); if (!next) setQuery(""); }}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={label}
+          disabled={choices.length === 0 && !value}
+          className="w-full justify-between font-normal"
+        >
+          <span className={cn("truncate", !value && "text-muted-foreground")}>
+            {value || (choices.length ? `All` : "Nothing yet")}
+          </span>
+          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[max(var(--radix-popover-trigger-width),12rem)] p-0" align="start">
+        <div className="border-b p-2">
+          <Input
+            autoFocus
+            value={query}
+            placeholder={`Search ${label.toLowerCase()}…`}
+            aria-label={`Search ${label}`}
+            onChange={(event) => setQuery(event.target.value)}
+            className="h-8"
+          />
+        </div>
+        <div role="listbox" aria-label={label} className="max-h-60 overflow-y-auto p-1">
+          {!needle && (
+            <FilterOption selected={!value} onSelect={() => value && choose(value)}>
+              All
+            </FilterOption>
+          )}
+          {visible.length === 0 ? (
+            <p className="p-3 text-sm text-muted-foreground">Nothing matches “{query}”.</p>
+          ) : (
+            visible.map((choice) => (
+              <FilterOption key={choice} selected={value === choice} onSelect={() => choose(choice)}>
+                {choice}
+              </FilterOption>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function FilterOption({
+  selected,
+  onSelect,
+  children,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
+      onClick={onSelect}
+      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+    >
+      <Check className={cn("h-3.5 w-3.5 shrink-0", selected ? "opacity-100" : "opacity-0")} />
+      <span className="truncate">{children}</span>
+    </button>
   );
 }
