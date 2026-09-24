@@ -77,6 +77,35 @@ alter table public.students
   add column if not exists "maritalStatus" text;
 
 
+-- ---------- next-application-no.sql ----------
+-- The next application number, counted across every branch. A branch account
+-- reads only its own students, so counting from the client handed out numbers
+-- another branch had already issued. SECURITY DEFINER reads past RLS and
+-- returns one number, nothing else. Read numerically, so 10000 follows 9999.
+create or replace function public.next_application_no()
+returns text
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  prefix text := 'APP-' || extract(year from now())::int || '-';
+  last_no integer;
+begin
+  select max(substring("applicationNo" from length(prefix) + 1)::integer)
+    into last_no
+    from public.students
+   where "applicationNo" like prefix || '%'
+     and substring("applicationNo" from length(prefix) + 1) ~ '^\d+$';
+  return prefix || lpad((coalesce(last_no, 0) + 1)::text, 4, '0');
+end;
+$$;
+
+revoke all on function public.next_application_no() from public;
+grant execute on function public.next_application_no() to authenticated;
+
+
 -- ---------- add-batch-timing-schedule.sql ----------
 -- What a batch timing is, beyond a start and an end.
 --

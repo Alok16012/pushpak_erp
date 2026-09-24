@@ -386,13 +386,24 @@ export async function getStudent(id: string, branchId: string | null) {
 
 /**
  * Application numbers read `APP-<year>-<0001>`. `students.applicationNo` carries
- * a global unique index, so the counter is global rather than per branch, and is
- * derived from the highest number already issued this year - PostgREST gives us
- * no sequence to draw from. Two admissions saved in the same instant would
- * collide; the unique index rejects the second one and `createStudent` retries.
+ * a global unique index, so the counter is global rather than per branch - but a
+ * branch account reads only its own students, so counting here would miss every
+ * number another branch has issued. `next_application_no()`
+ * (next-application-no.sql) counts across every branch; until that is run, we
+ * fall back to what this account can see and `createStudent` steps past any
+ * number that turns out to be taken.
  */
-export async function nextApplicationNo() {
+export async function nextApplicationNo(after?: string) {
   const prefix = `APP-${new Date().getFullYear()}-`;
+  const counterOf = (value?: string | null) =>
+    value?.startsWith(prefix) ? Number(value.slice(prefix.length)) || 0 : 0;
+  const issue = (counter: number) => `${prefix}${String(counter + 1).padStart(4, "0")}`;
+
+  const { data: fromDb, error: rpcError } = await supabase.rpc("next_application_no");
+  if (!rpcError && typeof fromDb === "string") {
+    return counterOf(fromDb) > counterOf(after) ? fromDb : issue(counterOf(after));
+  }
+
   const { data, error } = await supabase
     .from("students")
     .select("applicationNo")
@@ -401,8 +412,7 @@ export async function nextApplicationNo() {
     .limit(1);
   if (error) throw new Error(error.message);
   const last = (data?.[0]?.applicationNo as string | undefined) ?? "";
-  const counter = Number(last.slice(prefix.length)) || 0;
-  return `${prefix}${String(counter + 1).padStart(4, "0")}`;
+  return issue(Math.max(counterOf(last), counterOf(after)));
 }
 
 /**
@@ -452,17 +462,25 @@ export async function createStudent(branchId: string, input: Record<string, unkn
   // A caller that already carries its own number keeps it; everyone else gets
   // one issued here, so no admission route can save a student without one.
   let body = { ...input };
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const applicationNo = (body.applicationNo as string) || (await nextApplicationNo());
+  // The last number that came back taken, so the next try goes past it rather
+  // than recounting to the same one.
+  let taken: string | undefined;
+  const ATTEMPTS = 25;
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const applicationNo = (body.applicationNo as string) || (await nextApplicationNo(taken));
     const { data, error } = await supabase
       .from("students")
       .insert({ ...body, applicationNo, branchId })
       .select("*")
       .single();
     if (!error) return { success: true, data };
-    // 23505 is a unique violation - another admission took the number first.
+    // 23505 is a unique violation - the number is already issued, by another
+    // admission saved in the same instant or by a branch this account cannot see.
     const raced = error.code === "23505" && !body.applicationNo;
-    if (raced && attempt < 2) continue;
+    if (raced && attempt < ATTEMPTS - 1) {
+      taken = applicationNo;
+      continue;
+    }
     // Retry once without the columns the database may not have yet. Guarded on
     // something actually having been dropped, so this cannot loop.
     const trimmed = withoutOptionalStudentColumns(body, error);
