@@ -37,7 +37,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, Shield, Mail, Phone, UserCheck, Building2, UserPlus } from "lucide-react";
+import { Search, Shield, Mail, Phone, UserCheck, Building2, UserPlus, KeyRound, Eye, EyeOff } from "lucide-react";
+import { generatePassword, passwordIssue } from "@/lib/passwords";
 import { Link } from "react-router-dom";
 import {
   getUsers,
@@ -47,6 +48,7 @@ import {
   getBranches,
   getRoles,
   setUserRole,
+  setUserPassword,
   grantableRoles,
   canManageUsers,
   SYSTEM_ROLES,
@@ -89,6 +91,12 @@ const AllUsers = () => {
   const [viewing, setViewing] = useState<SystemUserRow | null>(null);
   const [editing, setEditing] = useState<SystemUserRow | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", role: "", roleId: "", isActive: true });
+  /* Off until asked for, so a routine edit to a name cannot also reset a
+     password, and so it reads as "set a new one" — the current one cannot be
+     shown, because Supabase Auth keeps only its hash. */
+  const [changePassword, setChangePassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<SystemUserRow | null>(null);
 
@@ -229,6 +237,9 @@ const AllUsers = () => {
 
   const openEdit = (row: SystemUserRow) => {
     setEditing(row);
+    setChangePassword(false);
+    setNewPassword("");
+    setShowPassword(false);
     // Controlled, not `defaultValue`: the old form read nothing back, so every
     // keystroke was thrown away when the dialog closed.
     setForm({
@@ -248,6 +259,13 @@ const AllUsers = () => {
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
+    // Checked before anything is written, so a password that would be refused
+    // does not leave the details saved and the password not.
+    const passwordProblem = changePassword ? passwordIssue(newPassword) : null;
+    if (passwordProblem) {
+      toast({ title: "Check the new password", description: passwordProblem, variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const chosen = offeredRoles.find((role) => role.id === form.roleId) ?? null;
@@ -262,9 +280,27 @@ const AllUsers = () => {
       if (form.roleId !== (editing.roleId || "none")) {
         await setUserRole(editing.id, chosen ? chosen.id : null);
       }
+      // Last, and reported on its own: the details are already saved by here,
+      // and a refusal (another branch, a higher rank) must say that only the
+      // password did not change, not that nothing did.
+      if (changePassword) {
+        try {
+          await setUserPassword(editing.id, newPassword);
+        } catch (error) {
+          toast({
+            title: "Details saved, password not changed",
+            description: error instanceof Error ? error.message : "Please try again.",
+            variant: "destructive",
+          });
+          await load();
+          return;
+        }
+      }
       toast({
         title: "User updated",
-        description: `${form.name.trim()} has been saved${chosen ? ` as ${chosen.name}` : ""}.`,
+        description: changePassword
+          ? `${form.name.trim()} has been saved with a new password. Tell them what it is — it is not shown again.`
+          : `${form.name.trim()} has been saved${chosen ? ` as ${chosen.name}` : ""}.`,
       });
       setEditing(null);
       await load();
@@ -852,6 +888,74 @@ const AllUsers = () => {
                     </Link>
                     , not here.
                   </p>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold uppercase text-muted-foreground">Password</Label>
+                  {!changePassword ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        The current password cannot be shown — only a new one can be set.
+                      </p>
+                      <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => setChangePassword(true)}>
+                        <KeyRound className="h-4 w-4" />
+                        Set a new password
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            aria-label="New password"
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="new-password"
+                            placeholder="At least 6 characters"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="pr-10"
+                          />
+                          <button
+                            type="button"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                            onClick={() => setShowPassword((v) => !v)}
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setNewPassword(generatePassword());
+                            // Shown, so it can be read out to the user.
+                            setShowPassword(true);
+                          }}
+                        >
+                          Generate
+                        </Button>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          They sign in with this from now on. Tell them what it is — it is not shown again.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setChangePassword(false);
+                            setNewPassword("");
+                          }}
+                        >
+                          Keep current
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

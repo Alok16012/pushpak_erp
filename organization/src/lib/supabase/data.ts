@@ -4292,6 +4292,28 @@ export async function createStaffUser(input: {
   };
 }
 
+/**
+ * Set a new password on another user's login.
+ *
+ * Through set-user-password rather than create-staff-user: that one creates or
+ * replaces the whole account, and calling it to change a password would also
+ * re-write the role and branch from whatever the edit form sent. This changes
+ * the password and nothing else. Who may reset whom is decided in the
+ * function, from the target's own claims; nobody reaches above their rank.
+ *
+ * There is no "current password" to show: Supabase Auth keeps only a hash.
+ */
+export async function setUserPassword(userId: string, password: string) {
+  if (password.length < 6) throw new Error("The password must be at least 6 characters.");
+  await requireLiveSession();
+  const { data, error } = await supabase.functions.invoke("set-user-password", {
+    body: { userId, password },
+  });
+  if (error) await throwFunctionError("set-user-password", error);
+  if (data?.error) throw new Error(data.error);
+  return { success: true as const };
+}
+
 /* ============================
    ROLES (an institute's own)
    ============================ */
