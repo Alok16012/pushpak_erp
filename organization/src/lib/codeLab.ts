@@ -6,7 +6,7 @@
  * ninety-odd languages LiveCodes can run. Each starter is a working program,
  * so a student's first Run shows output rather than a blank pane.
  */
-import type { Code, Config } from "livecodes";
+import { createPlayground, type Code, type Config, type EmbedOptions } from "livecodes";
 
 export type LabLanguage = "web" | "javascript" | "python" | "c" | "sql";
 
@@ -145,3 +145,39 @@ export function readSavedConfig(
  */
 export const codeFingerprint = (code: Pick<Code, "markup" | "style" | "script">): string =>
   [code.markup?.content ?? "", code.style?.content ?? "", code.script?.content ?? ""].join("\u0000");
+
+/** A sandbox token list, less the one that lets the frame open new windows. */
+export const withoutPopups = (sandbox: string) =>
+  sandbox
+    .split(/\s+/)
+    .filter((token) => token && token !== "allow-popups")
+    .join(" ");
+
+/**
+ * `createPlayground`, with the playground unable to open windows of its own.
+ *
+ * LiveCodes always runs as an embed inside an iframe, and an embed's logo is an
+ * "Edit on LiveCodes" button that opens the student's code on livecodes.io in
+ * a new tab -- out of the portal, onto someone else's site. There is no option
+ * to hide it, so the frame is denied popups instead and the button goes
+ * nowhere. Everything else the playground does happens inside its own frame.
+ *
+ * The SDK sets the sandbox and the src in one synchronous stretch before its
+ * first await, so the patched `setAttribute` is in place for exactly that call
+ * and no other.
+ */
+export function createPortalPlayground(
+  container: HTMLElement,
+  options: EmbedOptions,
+) {
+  const proto = HTMLIFrameElement.prototype;
+  const original = proto.setAttribute;
+  proto.setAttribute = function (this: HTMLIFrameElement, name: string, value: string) {
+    return original.call(this, name, name === "sandbox" ? withoutPopups(value) : value);
+  };
+  try {
+    return createPlayground(container, options);
+  } finally {
+    proto.setAttribute = original;
+  }
+}

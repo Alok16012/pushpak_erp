@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import LiveCodes from "livecodes/react";
 import type { Playground } from "livecodes";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -24,6 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   LAB_LANGUAGES,
   codeFingerprint,
+  createPortalPlayground,
   isLabLanguage,
   readSavedConfig,
   starterConfig,
@@ -35,6 +35,48 @@ import {
   savePracticeFile,
   type PracticeFile,
 } from "@/lib/practiceFiles";
+
+/**
+ * The LiveCodes editor, mounted once per `key`. Written out rather than taken
+ * from `livecodes/react` so the frame can be created without popups -- see
+ * `createPortalPlayground`.
+ */
+function LabPlayground({
+  config,
+  onReady,
+}: {
+  config: ReturnType<typeof starterConfig>;
+  onReady: (sdk: Playground) => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  // Read once: the parent remounts this with a new key to change the config.
+  const initial = useRef({ config, onReady });
+
+  useEffect(() => {
+    const container = box.current;
+    if (!container) return;
+    let sdk: Playground | null = null;
+    let gone = false;
+    createPortalPlayground(container, { config: initial.current.config, loading: "eager" })
+      .then((created) => {
+        if (gone) {
+          created.destroy();
+          return;
+        }
+        sdk = created;
+        initial.current.onReady(created);
+      })
+      .catch(() => {
+        // The frame shows its own error; there is nothing to hand back.
+      });
+    return () => {
+      gone = true;
+      sdk?.destroy();
+    };
+  }, []);
+
+  return <div ref={box} style={{ height: 620 }} />;
+}
 
 /**
  * An online compiler, from LiveCodes, with the student's own files beside it.
@@ -274,12 +316,10 @@ export default function CodeLab() {
               {saving ? "Saving…" : "Save"}
             </Button>
           </div>
-          <LiveCodes
+          <LabPlayground
             key={bootKey}
             config={bootConfig}
-            loading="eager"
-            height="620px"
-            sdkReady={(sdk) => {
+            onReady={(sdk) => {
               playground.current = sdk;
               sdk.watch("code", ({ code }) => {
                 const now = codeFingerprint(code);

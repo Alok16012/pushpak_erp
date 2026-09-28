@@ -15,9 +15,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Download, FilePlus2, PenTool, Save, Trash2 } from "lucide-react";
+import { Download, FilePlus2, Maximize2, Minimize2, PenTool, Save, Trash2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { useFullscreen } from "@/hooks/use-fullscreen";
 import {
   EMPTY_DIAGRAM,
   drawioUrl,
@@ -53,6 +54,9 @@ export default function Whiteboard() {
   const owner = { ownerId: user?.id ?? "", organizationId: user?.organizationId, branchId: user?.branchId };
 
   const frame = useRef<HTMLIFrameElement | null>(null);
+  /** The board and its toolbar, which is what goes full screen. */
+  const stage = useRef<HTMLDivElement>(null);
+  const fullscreen = useFullscreen(stage);
   /** The diagram as draw.io last reported it — what Save writes. */
   const latest = useRef<string>(EMPTY_DIAGRAM);
   /** What to hand draw.io when it announces it is ready. */
@@ -313,7 +317,10 @@ export default function Whiteboard() {
           </CardContent>
         </Card>
 
-        <Card className="min-w-0 overflow-hidden">
+        <Card
+          ref={stage}
+          className={`min-w-0 overflow-hidden ${fullscreen.active ? "flex flex-col rounded-none border-0" : ""}`}
+        >
           <div className="flex flex-wrap items-center gap-2 border-b p-3">
             <PenTool className="h-4 w-4 shrink-0 text-brand-ink" />
             <Input
@@ -332,6 +339,17 @@ export default function Whiteboard() {
                 <Save className="h-4 w-4" />
                 {saving ? "Saving…" : "Save"}
               </Button>
+              {fullscreen.supported && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={fullscreen.toggle}
+                  aria-label={fullscreen.active ? "Exit full screen" : "Full screen"}
+                  title={fullscreen.active ? "Exit full screen (Esc)" : "Full screen"}
+                >
+                  {fullscreen.active ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+              )}
             </div>
           </div>
           <iframe
@@ -339,7 +357,7 @@ export default function Whiteboard() {
             ref={frame}
             title="Whiteboard"
             src={drawioUrl(theme)}
-            className="block h-[640px] w-full border-0"
+            className={`block w-full border-0 ${fullscreen.active ? "min-h-0 flex-1" : "h-[640px]"}`}
             // draw.io needs scripts and its own storage; it does not need to
             // navigate this page, open popups onto it, or submit forms here.
             sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
