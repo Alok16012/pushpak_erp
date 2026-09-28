@@ -1,4 +1,5 @@
 import {
+  Code2,
   Users,
   Building2,
   MessageSquare,
@@ -146,6 +147,8 @@ export const menuItems: MenuItem[] = [
     items: [
       { title: "View Live Classes", url: "/live-class/view", icon: Play },
       { title: "Live Class Setup", url: "/live-class/setup", icon: Settings },
+      { title: "Code Lab", url: "/tools/code-lab", icon: Code2 },
+      { title: "Whiteboard", url: "/tools/whiteboard", icon: PenTool },
     ],
   },
   {
@@ -270,7 +273,7 @@ const franchiseMenu: MenuItem[] = [
     "/attendance/logs",
   ]),
   ...scope("Exam & Marks", ["/exam/marks-list"]),
-  ...scope("Live Class", ["/live-class/view"]),
+  ...scope("Live Class", ["/live-class/view", "/tools/code-lab", "/tools/whiteboard"]),
   ...scope("ID & Admit Card", ["/cards/generate-id", "/cards/generate-admit"]),
   ...scope("Certificate & Marksheet", ["/certificate/generate"]),
   ...scope("Branch Management", [
@@ -292,6 +295,8 @@ const studentMenu: MenuItem[] = [
     icon: GraduationCap,
     items: [
       { title: "Live Classes", url: "/me/classes", icon: Video },
+      { title: "Code Lab", url: "/tools/code-lab", icon: Code2 },
+      { title: "Whiteboard", url: "/tools/whiteboard", icon: PenTool },
       { title: "My Attendance", url: "/me/attendance", icon: CalendarCheck },
     ],
   },

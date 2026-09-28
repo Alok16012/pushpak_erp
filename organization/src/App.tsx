@@ -77,6 +77,9 @@ const OnlineExamMarks = lazy(() => import("./pages/online-exam/OnlineExamMarks")
 // Live Class
 const ViewLiveClasses = lazy(() => import("./pages/live-class/ViewLiveClasses"));
 const LiveClassSetup = lazy(() => import("./pages/live-class/LiveClassSetup"));
+// Both embed a large third-party editor, so they load only when opened.
+const CodeLab = lazy(() => import("./pages/tools/CodeLab"));
+const Whiteboard = lazy(() => import("./pages/tools/Whiteboard"));
 
 // Cards
 const IDCardTemplate = lazy(() => import("./pages/cards/IDCardTemplate"));
@@ -226,6 +229,8 @@ const App = () => (
           {/* Live Class */}
           <Route path="/live-class/view" element={<ViewLiveClasses />} />
           <Route path="/live-class/setup" element={<LiveClassSetup />} />
+          <Route path="/tools/code-lab" element={<CodeLab />} />
+          <Route path="/tools/whiteboard" element={<Whiteboard />} />
 
           {/* Cards */}
           <Route path="/cards/id-template" element={<IDCardTemplate />} />
