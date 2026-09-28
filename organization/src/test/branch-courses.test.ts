@@ -81,11 +81,22 @@ describe("getCourses", () => {
     expect(result.data.map((c: Record<string, unknown>) => c.id)).toEqual(["c2"]);
   });
 
-  // Turning the scoping on must not empty every branch's admission form before
-  // an administrator has had a chance to assign anything.
-  it("leaves a branch with nothing assigned yet on the full catalogue", async () => {
+  it("gives a branch with nothing assigned no courses at all", async () => {
     rows.branch_courses = [];
     const result = await getCourses("org1", "brch09");
+    expect(result.data).toEqual([]);
+  });
+
+  it("drops an assigned course the organisation has switched off", async () => {
+    rows.courses = [...COURSES.slice(0, 2), { ...COURSES[2], isActive: false }];
+    rows.branch_courses = [{ courseId: "c2" }, { courseId: "c3" }];
+    const result = await getCourses("org1", "brch09");
+    expect(result.data.map((c: Record<string, unknown>) => c.id)).toEqual(["c2"]);
+  });
+
+  it("still shows an administrator the inactive courses", async () => {
+    rows.courses = [...COURSES.slice(0, 2), { ...COURSES[2], isActive: false }];
+    const result = await getCourses("org1");
     expect(result.data).toHaveLength(3);
   });
 });

@@ -20,6 +20,7 @@ import { MultiSelect } from "@/components/ui/MultiSelect";
 import { pickImage } from "@/lib/export";
 import {
   getCourses,
+  getBranchCourseIds,
   getBatches,
   createStudent,
   getStudent,
@@ -300,19 +301,34 @@ export default function AdmissionsWorkspace() {
   >([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   /**
-   * The courses this admission may be filed under: the active ones, plus any
-   * the student is already on.
+   * The ids of the courses the admitting branch has been assigned; null until
+   * a branch is known (an administrator who has not picked one yet).
+   */
+  const [offeredIds, setOfferedIds] = useState<Set<string> | null>(null);
+  /**
+   * The courses this admission may be filed under: the active ones the
+   * admitting branch has been assigned, plus any the student is already on.
    *
-   * A course the organisation has switched off should take no new admissions --
-   * "inactive" was a label that stopped nothing before -- but dropping it from
-   * the list while editing a student who is on it would quietly take their
-   * course away the next time the form was saved.
+   * The whole catalogue is loaded and narrowed here rather than asking
+   * `getCourses` for the branch's list, because that list drops courses that
+   * were switched off or taken back from the branch -- and dropping one while
+   * editing a student who is on it would quietly take their course away the
+   * next time the form was saved.
    */
   const courseOptions = courses
-    .filter((c) => c.isActive !== false || draft.courseIds.includes(c.id))
+    .filter(
+      (c) =>
+        draft.courseIds.includes(c.id) ||
+        (c.isActive !== false && (!offeredIds || offeredIds.has(c.id))),
+    )
     .map((c) => ({
       value: c.id,
-      label: c.isActive === false ? `${c.name} (inactive)` : c.name,
+      label:
+        c.isActive === false
+          ? `${c.name} (inactive)`
+          : offeredIds && !offeredIds.has(c.id)
+            ? `${c.name} (not assigned to this branch)`
+            : c.name,
     }));
   /**
    * The academic sessions the institute has defined. Empty on a database where
@@ -399,7 +415,7 @@ export default function AdmissionsWorkspace() {
   // whole page as soon as the academic step rendered - unwrap `data`, and never
   // let a rejected query escape as an unhandled promise.
   useEffect(() => {
-    getCourses(organizationId, branchId ?? null)
+    getCourses(organizationId)
       .then((r) => setCourses(r.data as Array<{ id: string; name: string; isActive?: boolean }>))
       .catch(() => setCourses([]));
     if (!branchId) {
@@ -411,6 +427,22 @@ export default function AdmissionsWorkspace() {
       .then((r) => setSessions(r.data))
       .catch(() => setSessions([]));
   }, [organizationId, branchId]);
+
+  useEffect(() => {
+    if (!targetBranchId) {
+      setOfferedIds(null);
+      return;
+    }
+    let cancelled = false;
+    getBranchCourseIds(targetBranchId)
+      .then((ids) => !cancelled && setOfferedIds(ids))
+      // Unreadable is treated as nothing assigned: better an empty picker than
+      // one offering courses the branch does not run.
+      .catch(() => !cancelled && setOfferedIds(new Set()));
+    return () => {
+      cancelled = true;
+    };
+  }, [targetBranchId]);
 
   /**
    * A new admission starts in the session the office is working in.

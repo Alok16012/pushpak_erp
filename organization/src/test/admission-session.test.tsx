@@ -70,6 +70,7 @@ vi.mock("@/lib/supabase/data", async (importOriginal) => {
   return {
     ...actual,
     getCourses: () => Promise.resolve({ success: true, data: [] }),
+  getBranchCourseIds: () => Promise.resolve(new Set<string>()),
     getBatches: () => Promise.resolve({ success: true, data: [] }),
     getBranches: () => Promise.resolve({ success: true, data: [] }),
     getStudent: () => Promise.resolve({ success: true, data: {} }),

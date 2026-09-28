@@ -48,8 +48,11 @@ vi.mock("@/lib/supabase/data", () => ({
         { id: "c1", name: "Tally" },
         { id: "c2", name: "Advanced Excel" },
         { id: "c3", name: "Spoken English" },
+        { id: "c4", name: "Photoshop" },
       ],
     }),
+  // c4 exists in the catalogue but branch b1 was never given it.
+  getBranchCourseIds: () => Promise.resolve(new Set(["c1", "c2", "c3"])),
   getBatches: () =>
     Promise.resolve({ success: true, data: [{ id: "bt1", name: "Morning", courseId: "c1" }] }),
   getBatchesByOrg: () =>
@@ -166,5 +169,15 @@ describe("admissions workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: /save changes/i }));
     await waitFor(() => expect(updates).toHaveLength(1));
     expect(updates[0].body.courseIds).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("offers only the courses the branch has been assigned", async () => {
+    renderAt("/student/add?id=s1");
+    await screen.findByDisplayValue("Asha");
+
+    step("Academic");
+    fireEvent.click(await screen.findByRole("combobox", { name: "Courses" }));
+    await screen.findByText("Spoken English");
+    expect(screen.queryByText("Photoshop")).toBeNull();
   });
 });

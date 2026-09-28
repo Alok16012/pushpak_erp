@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase/data", () => ({
   getDropdownOptions: () => Promise.resolve({ success: true, data: {}, stored: true }),
   saveDropdownOptions: () => Promise.resolve({ success: true, stored: true }),
   getCourses: () => Promise.resolve({ success: true, data: [] }),
+  getBranchCourseIds: () => Promise.resolve(new Set<string>()),
   getBatches: () => Promise.resolve({ success: true, data: [] }),
   getBranches: () => Promise.resolve({ success: true, data: [] }),
   createStudent: (...args: unknown[]) => createStudent(...(args as [])),

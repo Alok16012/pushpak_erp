@@ -18,6 +18,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 vi.mock("@/lib/supabase/data", () => ({
   getCourses: () => Promise.resolve({ success: true, data: [] }),
+  getBranchCourseIds: () => Promise.resolve(new Set<string>()),
   getBatches: () => Promise.resolve({ success: true, data: [] }),
   getBranches: () => Promise.resolve({ success: true, data: [] }),
   createStudent: () => Promise.resolve({ success: true, data: {} }),

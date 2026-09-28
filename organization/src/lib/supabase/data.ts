@@ -660,11 +660,14 @@ export async function setBranchCourseOffered(
  * The organisation's courses, narrowed to the ones a branch runs when a branch
  * is given.
  *
- * The fallback matters: a branch that has never been assigned anything keeps
- * the full list rather than dropping to an empty one. Without it, turning this
- * scoping on would empty every branch's admission form until an administrator
- * had gone through and assigned courses branch by branch. The first assignment
- * a branch receives is what narrows it.
+ * A branch sees exactly what it has been assigned in `branch_courses`, and of
+ * that only what is still active: a course the organisation has switched off
+ * takes no new work, so it has no place on a branch's lists. A branch with
+ * nothing assigned sees nothing -- the organisation hands courses out from
+ * "Assign Course to Batch".
+ *
+ * Without a branch (an administrator) the whole catalogue comes back, inactive
+ * courses included, since that is where they are managed.
  */
 export async function getCourses(organizationId: string | null, branchId: string | null = null) {
   let query = supabase
@@ -680,8 +683,10 @@ export async function getCourses(organizationId: string | null, branchId: string
   if (!branchId) return { success: true, data: all };
 
   const offered = await getBranchCourseIds(branchId);
-  if (offered.size === 0) return { success: true, data: all };
-  return { success: true, data: all.filter((course) => offered.has(String(course.id))) };
+  return {
+    success: true,
+    data: all.filter((course) => offered.has(String(course.id)) && course.isActive !== false),
+  };
 }
 
 /**
