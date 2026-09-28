@@ -1,11 +1,12 @@
 import {
+  DOCUMENT_KINDS,
   SAMPLE_DATA,
   designHtml,
   type DocumentDesign,
   type DocumentKind,
   type TokenData,
 } from "@/lib/documentDesigner";
-import { printHtml } from "@/lib/export";
+import { printDesignPages, printHtml } from "@/lib/export";
 import { qrImages } from "@/lib/studentTemplateDocument";
 import {
   getTemplateAssignments,
@@ -134,15 +135,31 @@ export async function printBranchDocuments<B extends BranchDetails>(
     getTemplates(organizationId).catch(() => ({ data: [] as DocumentTemplate[] })),
     getTemplateAssignments(organizationId).catch(() => ({ data: {} })),
   ]);
-  const pages = await Promise.all(
+  const designed = await Promise.all(
     branches.map(async (branch) => {
       const found = assignedBranchDesign(kind, templates.data, assignments.data, String(branch.id ?? ""));
-      if (!found) return fallback(branch);
-      const html = await branchDocumentHtml(kind, found.design, branchTokens(branch, institute));
-      return `<div style="page-break-after:always">${html}</div>`;
+      return found ? branchDocumentHtml(kind, found.design, branchTokens(branch, institute)) : null;
     }),
   );
   const title =
     branches.length === 1 ? `Centre Certificate — ${branches[0].name ?? ""}` : `Centre Certificates — ${branches.length} branches`;
-  printHtml(title, pages.join(""));
+
+  // Nobody has a template: the built-in layout, printed the way it always was.
+  if (designed.every((html) => html === null)) {
+    printHtml(title, branches.map(fallback).join(""));
+    return;
+  }
+  const { width, height } = DOCUMENT_KINDS[kind];
+  printDesignPages(
+    title,
+    designed.map((html, i) => html ?? fallback(branches[i])),
+    width,
+    height,
+  );
+}
+
+/** Prints one already-drawn branch document, a sheet to itself. */
+export function printBranchDocument(kind: BranchDocumentKind, title: string, html: string) {
+  const { width, height } = DOCUMENT_KINDS[kind];
+  printDesignPages(title, [html], width, height);
 }

@@ -93,6 +93,58 @@ export function printHtml(title: string, bodyHtml: string) {
   setTimeout(() => frame.remove(), 1000);
 }
 
+/**
+ * Print designed pages -- certificates drawn in the Document Designer -- one
+ * per sheet, each scaled to fill an A4 page in its own orientation.
+ *
+ * `printHtml` suits reports but not these: its margin and heading push a
+ * 1000px-wide certificate off the right edge of a portrait sheet, and Chrome
+ * leaves out background colours and watermarks unless a page asks for them.
+ */
+export function printDesignPages(title: string, pages: string[], width: number, height: number) {
+  const landscape = width > height;
+  // A4 at 96dpi, less a 5mm margin all round.
+  const [pageW, pageH] = landscape ? [1085, 756] : [756, 1085];
+  const scale = Math.min(pageW / width, pageH / height);
+  const sheets = pages
+    .map(
+      (page) =>
+        `<div class="sheet" style="width:${width * scale}px;height:${height * scale}px">` +
+        `<div style="width:${width}px;height:${height}px;transform:scale(${scale});transform-origin:0 0">${page}</div></div>`,
+    )
+    .join("");
+
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  if (!doc) return;
+  doc.write(
+    `<!doctype html><title>${title}</title><style>
+      @page{size:A4 ${landscape ? "landscape" : "portrait"};margin:5mm}
+      html,body{margin:0;padding:0;font-family:ui-sans-serif,system-ui,sans-serif}
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .sheet{overflow:hidden;margin:0 auto;page-break-after:always;break-after:page}
+      .sheet:last-child{page-break-after:auto;break-after:auto}
+    </style>${sheets}`,
+  );
+  doc.close();
+  // Images inside the design (logos, the watermark) have to be in before the
+  // dialog snapshots the page.
+  const loaded = (img: HTMLImageElement) =>
+    img.complete
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          img.addEventListener("load", () => resolve(), { once: true });
+          img.addEventListener("error", () => resolve(), { once: true });
+        });
+  Promise.all(Array.from(doc.images).map(loaded)).then(() => {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    setTimeout(() => frame.remove(), 1000);
+  });
+}
+
 /** Save a titled HTML fragment as a standalone file — the "Download report" twin of `printHtml`. */
 export function downloadHtml(filename: string, title: string, bodyHtml: string) {
   save(

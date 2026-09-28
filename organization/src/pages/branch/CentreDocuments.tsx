@@ -16,12 +16,12 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { DOCUMENT_KINDS } from "@/lib/documentDesigner";
-import { printHtml } from "@/lib/export";
 import { loadInstituteName } from "@/lib/instituteName";
 import {
   branchDocumentHtml,
   branchTokens,
   loadAssignedBranchDocuments,
+  printBranchDocument,
   type BranchDetails,
   type BranchDocumentKind,
 } from "@/lib/branchTemplateDocument";
@@ -133,7 +133,7 @@ export default function CentreDocuments() {
     };
   }, [branchId, organizationId, toast]);
 
-  const download = (doc: Ready) => printHtml(`${doc.name} — ${branchName}`, doc.html);
+  const download = (doc: Ready) => printBranchDocument(doc.kind, `${doc.name} — ${branchName}`, doc.html);
 
   return (
     <AppLayout>
