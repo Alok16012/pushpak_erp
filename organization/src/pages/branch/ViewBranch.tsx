@@ -42,7 +42,14 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { getBranchesWithStats, updateBranchWithDetails, getBranchDetails, deleteBranch, setBranchLogin } from "@/lib/supabase/data";
-import { printHtml, downloadCsv } from "@/lib/export";
+import { downloadCsv } from "@/lib/export";
+import { instituteName } from "@/lib/instituteName";
+import {
+  assignedBranchDesign,
+  printBranchDocuments,
+  type BranchDetails,
+} from "@/lib/branchTemplateDocument";
+import { getTemplateAssignments, getTemplates } from "@/lib/supabase/documentTemplates";
 import { isoOrNull, dateInputValue } from "@/lib/dates";
 import { INDIAN_STATES, canonicalState, districtsFor } from "@/data/indianStates";
 import { lookupPincode, geocode } from "@/lib/postal";
@@ -393,11 +400,37 @@ export default function ViewBranch() {
     </div>
   `;
 
+  /**
+   * The certificates as the branches' own templates draw them: the full record
+   * behind each branch (address, director, licence) fills the template, and a
+   * branch the designer assigned nothing to keeps the built-in layout.
+   */
+  const printFromTemplates = async (branches: Branch[]) => {
+    const orgId = user?.organizationId ?? null;
+    const details = await Promise.all(
+      branches.map((branch) =>
+        orgId
+          ? getBranchDetails(orgId, branch.id)
+              .then((r) => r.data as BranchDetails)
+              .catch(() => ({ ...branch }) as BranchDetails)
+          : Promise.resolve({ ...branch } as BranchDetails),
+      ),
+    );
+    const byId = new Map(branches.map((branch) => [branch.id, branch]));
+    await printBranchDocuments("centre-certificate", details, orgId, instituteName(), (detail) => {
+      const branch = byId.get(String(detail.id));
+      return branch ? getCertificateHtml(branch) : "";
+    });
+  };
+
   // Print certificate for a single branch
   const certificate = (branch: Branch) =>
-    printHtml(
-      `Center Certificate - ${branch.code}`,
-      getCertificateHtml(branch),
+    printFromTemplates([branch]).catch((error) =>
+      toast({
+        title: "Could not print the certificate",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      }),
     );
 
   // Bulk download certificates for selected branches
@@ -407,6 +440,22 @@ export default function ViewBranch() {
       return;
     }
     try {
+      // A branch with a designed centre certificate prints from it, so the
+      // whole selection goes through the template printer; the built-in PDF
+      // below is only for when none of them has one.
+      const [templates, assignments] = await Promise.all([
+        getTemplates(user?.organizationId ?? null).catch(() => ({ data: [] })),
+        getTemplateAssignments(user?.organizationId ?? null).catch(() => ({ data: {} })),
+      ]);
+      if (
+        branches.some((branch) =>
+          assignedBranchDesign("centre-certificate", templates.data, assignments.data, branch.id),
+        )
+      ) {
+        await printFromTemplates(branches);
+        return;
+      }
+
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();

@@ -61,7 +61,7 @@ export function tokensFor(student: StudentDocument, extra: TokenData = {}): Toke
 }
 
 /** QR elements carry a verification string, as they do in the designer. */
-async function qrImages(
+export async function qrImages(
   design: { elements: Array<{ id: string; type: string; width: number }> },
   data: TokenData,
 ) {

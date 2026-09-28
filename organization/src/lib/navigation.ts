@@ -169,6 +169,7 @@ export const menuItems: MenuItem[] = [
       { title: "Certificate Format", url: "/certificate/template", icon: LayoutTemplate },
       { title: "Marksheet Format", url: "/marksheet/template", icon: LayoutTemplate },
       { title: "Student Documents", url: "/certificate/generate", icon: Printer },
+      { title: "Centre Certificate", url: "/certificate/centre", icon: Award },
     ],
   },
   {
@@ -275,7 +276,7 @@ const franchiseMenu: MenuItem[] = [
   ...scope("Exam & Marks", ["/exam/marks-list"]),
   ...scope("Live Class", ["/live-class/view", "/tools/code-lab", "/tools/whiteboard"]),
   ...scope("ID & Admit Card", ["/cards/generate-id", "/cards/generate-admit"]),
-  ...scope("Certificate & Marksheet", ["/certificate/generate"]),
+  ...scope("Certificate & Marksheet", ["/certificate/generate", "/certificate/centre"]),
   ...scope("Branch Management", [
     "/branch/wallet",
     "/branch/transactions",

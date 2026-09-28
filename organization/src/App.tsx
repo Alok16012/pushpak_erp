@@ -37,6 +37,7 @@ const WalletRecharge = lazy(() => import("./pages/branch/WalletRecharge"));
 const BranchTransactions = lazy(() => import("./pages/branch/BranchTransactions"));
 const BranchNoticeBoard = lazy(() => import("./pages/branch/BranchNoticeBoard"));
 const BranchWebsiteSettings = lazy(() => import("./pages/branch/BranchWebsiteSettings"));
+const CentreDocuments = lazy(() => import("./pages/branch/CentreDocuments"));
 const WebsiteView = lazy(() => import("./pages/branch/WebsiteView"));
 const FranchiseLeads = lazy(() => import("./pages/branch/FranchiseLeads"));
 
@@ -242,6 +243,7 @@ const App = () => (
           {/* Certificates */}
           <Route path="/certificate/template" element={<DocumentDesigner />} />
           <Route path="/certificate/generate" element={<AssessmentsWorkspace />} />
+          <Route path="/certificate/centre" element={<CentreDocuments />} />
 
           {/* Marksheets */}
           <Route path="/marksheet/template" element={<DocumentDesigner />} />
