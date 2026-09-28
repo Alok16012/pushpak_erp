@@ -2,6 +2,7 @@ import { supabase, supabaseUrl } from "./client";
 import { KNOWN_COURSE_CATEGORIES } from "../courseCategories";
 import { describeEnumRejection } from "../choices";
 import { newId, nowIso } from "../id";
+import { listNames, renameInList, splitNames } from "../instructors";
 import { toStudentProfile, type StudentRow } from "../student-profile";
 import {
   createInvoiceRow,
@@ -858,21 +859,105 @@ export async function deleteBatch(id: string) {
  * the instructor on any older timing slot from when that was set per slot.
  * Typing a new name is what adds to it.
  */
-export async function getInstructorNames(branchId: string | null) {
-  const [batchRes, timingRes] = await Promise.all([
-    branchId
-      ? supabase.from("batches").select("instructor").eq("branchId", branchId)
-      : supabase.from("batches").select("instructor"),
-    supabase.from("batch_timings").select("instructor"),
-  ]);
-  const names = new Set<string>();
-  for (const row of [...(batchRes.data || []), ...(timingRes.data || [])]) {
-    for (const part of String((row as any).instructor || "").split(",")) {
-      const name = part.trim();
-      if (name) names.add(name);
+/**
+ * Which batches each teacher is on.
+ *
+ * `batch_timings` carries no branch of its own, and was read unscoped here --
+ * so a branch's picker listed teachers typed into every other branch's
+ * timetable, and could not have deleted them, since they came back from a
+ * batch it cannot see. Slots are scoped through the branch's batches now.
+ */
+export async function getInstructorUsage(branchId: string | null) {
+  const batchQuery = supabase.from("batches").select("id, name, instructor");
+  const { data: batchRows, error: batchError } = branchId
+    ? await batchQuery.eq("branchId", branchId)
+    : await batchQuery;
+  if (batchError) throw new Error(batchError.message);
+
+  const batches = (batchRows || []) as Array<{ id: string; name: string; instructor: string | null }>;
+  const nameOf = new Map(batches.map((b) => [String(b.id), String(b.name || "a batch")]));
+
+  const ids = batches.map((b) => String(b.id));
+  const { data: timingRows } = ids.length
+    ? await supabase.from("batch_timings").select("batchId, instructor").in("batchId", ids)
+    : { data: [] as Array<{ batchId: string; instructor: string | null }> };
+
+  // name (lower-cased) -> the spelling first met, and the batches it is on
+  const usage = new Map<string, { name: string; batches: Set<string> }>();
+  const note = (raw: unknown, batchId: string) => {
+    for (const name of splitNames(raw)) {
+      const key = name.toLowerCase();
+      const entry = usage.get(key) ?? { name, batches: new Set<string>() };
+      entry.batches.add(nameOf.get(batchId) ?? "a batch");
+      usage.set(key, entry);
     }
+  };
+  for (const batch of batches) note(batch.instructor, String(batch.id));
+  for (const slot of (timingRows || []) as Array<{ batchId: string; instructor: string | null }>) {
+    note(slot.instructor, String(slot.batchId));
   }
-  return { success: true, data: [...names].sort((a, b) => a.localeCompare(b)) };
+
+  return {
+    success: true as const,
+    data: [...usage.values()]
+      .map((entry) => ({ name: entry.name, batches: [...entry.batches].sort() }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+export async function getInstructorNames(branchId: string | null) {
+  const { data } = await getInstructorUsage(branchId);
+  return { success: true, data: data.map((entry) => entry.name) };
+}
+
+/**
+ * Rename a teacher everywhere a batch has them typed.
+ *
+ * Renaming only the picker would leave the old spelling on the batches it was
+ * already written to, where the picker reads it back from -- and the teacher
+ * would show twice, once under each name. Scoped to what this account's
+ * branch owns; RLS draws the same line.
+ */
+export async function renameInstructor(branchId: string | null, from: string, to: string) {
+  const { data: usage } = await getInstructorUsage(branchId);
+  if (!usage.some((entry) => entry.name.toLowerCase() === from.trim().toLowerCase())) {
+    return { success: true as const, data: { batches: 0, slots: 0 } };
+  }
+
+  const batchQuery = supabase.from("batches").select("id, instructor");
+  const { data: batchRows, error } = branchId
+    ? await batchQuery.eq("branchId", branchId)
+    : await batchQuery;
+  if (error) throw new Error(error.message);
+
+  let batchesChanged = 0;
+  for (const row of (batchRows || []) as Array<{ id: string; instructor: string | null }>) {
+    if (!listNames(row.instructor, from)) continue;
+    const { error: updateError } = await supabase
+      .from("batches")
+      .update({ instructor: renameInList(row.instructor, from, to) })
+      .eq("id", row.id);
+    if (updateError) throw new Error(updateError.message);
+    batchesChanged += 1;
+  }
+
+  const ids = ((batchRows || []) as Array<{ id: string }>).map((b) => String(b.id));
+  const { data: slotRows } = ids.length
+    ? await supabase.from("batch_timings").select("id, instructor").in("batchId", ids)
+    : { data: [] as Array<{ id: string; instructor: string | null }> };
+
+  let slotsChanged = 0;
+  for (const row of (slotRows || []) as Array<{ id: string; instructor: string | null }>) {
+    if (!listNames(row.instructor, from)) continue;
+    const { error: updateError } = await supabase
+      .from("batch_timings")
+      .update({ instructor: renameInList(row.instructor, from, to) })
+      .eq("id", row.id);
+    if (updateError) throw new Error(updateError.message);
+    slotsChanged += 1;
+  }
+
+  return { success: true as const, data: { batches: batchesChanged, slots: slotsChanged } };
 }
 
 /**

@@ -60,6 +60,22 @@ export const DROPDOWN_DEFAULTS = {
     "Yearly",
     "Per Exam",
   ],
+  /* What a batch is taught. These used to be a hard-coded array plus whatever
+     was typed in the session, so a subject created on Assign Course was gone on
+     the next reload -- and could not be renamed or removed at all. */
+  subject: [
+    "Data Structures",
+    "Algorithms",
+    "Database Systems",
+    "Web Development",
+    "Operating Systems",
+    "Computer Networks",
+    "Software Engineering",
+    "Machine Learning",
+  ],
+  /* The teachers the office offers. Empty by default: most of the list is
+     read off the batches, which is where a teacher's name is actually kept. */
+  teacher: [] as string[],
   courseCategory: [
     "COMPUTER",
     "VOCATIONAL",
@@ -91,6 +107,8 @@ export const DROPDOWN_TITLES: Record<DropdownKey, string> = {
   enquirySource: "Enquiry source",
   feeCategory: "Fee category",
   feeFrequency: "Fee frequency",
+  subject: "Subject",
+  teacher: "Teacher",
 };
 
 /** COMPUTER -> "Computer", SKILL_DEVELOPMENT -> "Skill development", A+ -> "A+". */

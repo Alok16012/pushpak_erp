@@ -19,8 +19,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { BookOpen, Users, Link2, CheckCircle } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { BookOpen, Users, Link2, CheckCircle, Pencil } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -29,11 +29,15 @@ import {
   getBatchesByOrg,
   getBranches,
   getBranchCourseIds,
-  getInstructorNames,
+  getInstructorUsage,
+  renameInstructor,
   setBranchCourseOffered,
   updateBatch,
 } from "@/lib/supabase/data";
 import { newId } from "@/hooks/use-local-collection";
+import { useDropdownOptions } from "@/lib/dropdownOptions";
+import { mergeNames } from "@/lib/instructors";
+import { ManageListDialog, type ManageListResult } from "@/components/ui/ManageListDialog";
 
 interface CourseAssignment {
   id: string;
@@ -72,11 +76,6 @@ interface BranchOption {
   name: string;
   code?: string;
 }
-
-const availableSubjects = [
-  "Data Structures", "Algorithms", "Database Systems", "Web Development",
-  "Operating Systems", "Computer Networks", "Software Engineering", "Machine Learning"
-];
 
 const columns: Column<CourseAssignment>[] = [
   {
@@ -157,14 +156,28 @@ export default function AssignCourseToBatch() {
   const [branchOptions, setBranchOptions] = useState<BranchOption[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [offeredCourseIds, setOfferedCourseIds] = useState<Set<string>>(new Set());
-  const [subjectsList, setSubjectsList] = useState<string[]>(availableSubjects);
+  /* Both lists live in the organisation's option registry now, the same one
+     Gender and Blood group use, so a subject created here survives a reload
+     and can be renamed or removed. They used to be React state seeded from a
+     hard-coded array, and were gone the moment the page was left. */
+  const { options: optionList, save: saveOptions } = useDropdownOptions(orgId);
+  const subjectsList = optionList("subject");
+  const [manageSubjects, setManageSubjects] = useState(false);
+  const [manageTeachers, setManageTeachers] = useState(false);
+  /** Teacher name -> the batches they are on, so a taught name cannot be removed. */
+  const [teacherUsage, setTeacherUsage] = useState<Array<{ name: string; batches: string[] }>>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBranch, setSelectedBranch] = useState(canChooseBranch ? "" : branchId || "");
   const [selectedCourse, setSelectedCourse] = useState("");
   const [selectedBatch, setSelectedBatch] = useState("");
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
   const [newSubject, setNewSubject] = useState("");
-  const [teacherList, setTeacherList] = useState<string[]>([]);
+  // The picker is the organisation's own list and every name already on a
+  // batch, as one list: a teacher typed onto a batch is a teacher.
+  const teacherList = useMemo(
+    () => mergeNames(optionList("teacher"), teacherUsage.map((entry) => entry.name)),
+    [optionList, teacherUsage],
+  );
   const [selectedTeachers, setSelectedTeachers] = useState<string[]>([]);
   const [newTeacher, setNewTeacher] = useState("");
   const [details, setDetails] = useState<CourseAssignment | null>(null);
@@ -184,7 +197,7 @@ export default function AssignCourseToBatch() {
           // getBatches(null) is every batch in the database, other
           // organisations included; an administrator wants its own.
           branchId ? getBatches(branchId) : getBatchesByOrg(orgId),
-          getInstructorNames(branchId),
+          getInstructorUsage(branchId),
         ]);
         if (!cancelled) {
           setCourses(coursesRes.data as Course[]);
@@ -198,7 +211,7 @@ export default function AssignCourseToBatch() {
               })),
           );
           setBatches(batchesRes.data as Batch[]);
-          setTeacherList(teacherRes.data);
+          setTeacherUsage(teacherRes.data);
         }
       } catch (err) {
         if (!cancelled) {
@@ -300,7 +313,7 @@ export default function AssignCourseToBatch() {
       toast({ title: "That subject already exists", description: name, variant: "destructive" });
       return;
     }
-    setSubjectsList((prev) => [...prev, name]);
+    void saveOptions("subject", [...subjectsList, name]);
     setSelectedSubjects((prev) => [...prev, name]);
     setNewSubject("");
     toast({ title: "Subject created", description: `${name} was added and selected.` });
@@ -323,10 +336,74 @@ export default function AssignCourseToBatch() {
       toast({ title: "That teacher is already listed", description: name, variant: "destructive" });
       return;
     }
-    setTeacherList((prev) => [...prev, name]);
+    void saveOptions("teacher", [...optionList("teacher"), name]);
     setSelectedTeachers((prev) => [...prev, name]);
     setNewTeacher("");
   };
+
+  /** A selection has to follow a rename, and lose anything removed. */
+  const followEdits = (selected: string[], { renames, removed }: ManageListResult) => {
+    const renamed = new Map(renames.map((r) => [r.from.toLowerCase(), r.to]));
+    const gone = new Set(removed.map((name) => name.toLowerCase()));
+    return [
+      ...new Set(
+        selected
+          .filter((name) => !gone.has(name.toLowerCase()))
+          .map((name) => renamed.get(name.toLowerCase()) ?? name),
+      ),
+    ];
+  };
+
+  const saveSubjects = async (result: ManageListResult) => {
+    const { stored } = await saveOptions("subject", result.values);
+    setSelectedSubjects((prev) => followEdits(prev, result));
+    toast({
+      title: "Subjects updated",
+      description: stored
+        ? "Everyone in the organisation sees this list."
+        : "Saved in this browser only until the options table is set up.",
+    });
+  };
+
+  /**
+   * Renaming a teacher renames them on the batches they are already on.
+   *
+   * Otherwise the old spelling is read straight back off those batches and the
+   * teacher shows twice, once under each name — which looks exactly like the
+   * rename did not work.
+   */
+  const saveTeachers = async (result: ManageListResult) => {
+    const scope = canChooseBranch ? selectedBranch || null : branchId;
+    let batches = 0;
+    for (const { from, to } of result.renames) {
+      const { data } = await renameInstructor(scope, from, to);
+      batches += data.batches;
+    }
+    await saveOptions("teacher", result.values);
+    setSelectedTeachers((prev) => followEdits(prev, result));
+    const { data: usage } = await getInstructorUsage(branchId);
+    setTeacherUsage(usage);
+    toast({
+      title: "Teachers updated",
+      description: batches
+        ? `Renamed on ${batches} ${batches === 1 ? "batch" : "batches"} as well.`
+        : "The list is saved.",
+    });
+  };
+
+  /** A teacher still on a batch can be renamed here, but not removed. */
+  const teacherLocks = useMemo(
+    () =>
+      Object.fromEntries(
+        teacherUsage
+          .filter((entry) => entry.batches.length)
+          .map((entry) => [
+            entry.name,
+            `Teaches ${entry.batches.slice(0, 2).join(", ")}${entry.batches.length > 2 ? ` and ${entry.batches.length - 2} more` : ""}`,
+          ]),
+      ),
+    [teacherUsage],
+  );
 
   const resetForm = () => {
     // A branch login has only one branch to file against, so clearing it would
@@ -570,16 +647,37 @@ export default function AssignCourseToBatch() {
             </div>
 
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Select Subjects</Label>
-                <div className="flex gap-2 max-w-xs">
+              {/* The label and its Manage button share a row; the create box
+                  wraps under them on a phone instead of squeezing the label
+                  onto two lines and cutting the input off mid-word. */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
+                  <Label>Select Subjects</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1 px-2 text-xs"
+                    onClick={() => setManageSubjects(true)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                </div>
+                <div className="flex w-full gap-2 sm:w-auto sm:max-w-xs">
                   <Input
                     placeholder="New subject name"
                     value={newSubject}
                     onChange={(e) => setNewSubject(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addSubject();
+                      }
+                    }}
                     className="h-8"
                   />
-                  <Button size="sm" variant="outline" onClick={addSubject} className="h-8">
+                  <Button size="sm" variant="outline" onClick={addSubject} className="h-8 shrink-0">
                     Create Subject
                   </Button>
                 </div>
@@ -610,9 +708,22 @@ export default function AssignCourseToBatch() {
             )}
 
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Select Teachers</Label>
-                <div className="flex gap-2 max-w-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1">
+                  <Label>Select Teachers</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1 px-2 text-xs"
+                    onClick={() => setManageTeachers(true)}
+                    disabled={!teacherList.length}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                </div>
+                <div className="flex w-full gap-2 sm:w-auto sm:max-w-xs">
                   <Input
                     placeholder="New teacher name"
                     value={newTeacher}
@@ -625,7 +736,7 @@ export default function AssignCourseToBatch() {
                     }}
                     className="h-8"
                   />
-                  <Button size="sm" variant="outline" onClick={addTeacher} className="h-8">
+                  <Button size="sm" variant="outline" onClick={addTeacher} className="h-8 shrink-0">
                     Add Teacher
                   </Button>
                 </div>
@@ -706,6 +817,26 @@ export default function AssignCourseToBatch() {
           />
         </CardContent>
       </Card>
+
+      <ManageListDialog
+        open={manageSubjects}
+        onOpenChange={setManageSubjects}
+        title="Subjects"
+        items={subjectsList}
+        minItems={1}
+        note="Rename or remove a subject. The list is the organisation's, so every branch sees the change."
+        onSave={saveSubjects}
+      />
+
+      <ManageListDialog
+        open={manageTeachers}
+        onOpenChange={setManageTeachers}
+        title="Teachers"
+        items={teacherList}
+        locked={teacherLocks}
+        note="Renaming a teacher renames them on the batches they already teach, too."
+        onSave={saveTeachers}
+      />
 
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
         <DialogContent>
