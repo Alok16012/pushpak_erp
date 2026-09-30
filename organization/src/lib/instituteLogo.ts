@@ -13,7 +13,7 @@
 import { getBranchSettings } from "@/lib/supabase/data";
 
 const STORAGE_KEY = "institute-logo";
-const BUNDLED_LOGO = "/idealdigiskills-logo.png";
+const BUNDLED_LOGO = `${import.meta.env.BASE_URL}idealdigiskills-logo.png`;
 
 /** The mark to print right now, or null when there is none to print. */
 export function instituteLogo(): string | null {

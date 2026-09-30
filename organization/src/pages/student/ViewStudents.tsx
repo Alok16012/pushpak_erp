@@ -210,7 +210,7 @@ export default function ViewStudents() {
         actions={
           <>
             <Button variant="outline" className="gap-2" asChild>
-              <a href="/import-templates/students.csv" download>
+              <a href={`${import.meta.env.BASE_URL}import-templates/students.csv`} download>
                 <Upload className="h-4 w-4" />
                 Import template
               </a>

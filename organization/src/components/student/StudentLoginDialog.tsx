@@ -86,7 +86,7 @@ export function StudentLoginDialog({ student, onOpenChange, onSaved }: StudentLo
   const copyCredentials = () => {
     if (!issued) return;
     navigator.clipboard.writeText(
-      `Login ID: ${issued.username}\nPassword: ${issued.password}\nSign in at: ${window.location.origin}/login`,
+      `Login ID: ${issued.username}\nPassword: ${issued.password}\nSign in at: ${window.location.origin}${import.meta.env.BASE_URL}login`,
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

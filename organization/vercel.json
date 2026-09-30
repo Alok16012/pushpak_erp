@@ -1,8 +1,15 @@
 {
     "rewrites": [
         {
-            "source": "/(.*)",
-            "destination": "/"
+            "source": "/computercentre/:path*",
+            "destination": "/computercentre/index.html"
+        }
+    ],
+    "redirects": [
+        {
+            "source": "/:page.php",
+            "destination": "/:page.html",
+            "permanent": true
         }
     ]
 }

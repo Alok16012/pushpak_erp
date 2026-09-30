@@ -1,0 +1,6419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>PNS Academy  | Education • Software • Skill Development</title>
+<!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+<!-- Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        poppins: ["Poppins", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+
+</head>
+
+
+<style>
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f8fafc;
+        }
+
+        /* =====================================
+           NAVBAR
+        ===================================== */
+
+        .navbar {
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            box-shadow: 0 12px 35px rgba(15, 23, 42, 0.08);
+        }
+
+
+        /* =====================================
+           LOGO
+        ===================================== */
+
+        .logo-icon {
+            width: 44px;
+            height: 44px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 13px;
+
+            color: white;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    #2563eb,
+                    #4f46e5
+                );
+
+            box-shadow:
+                0 8px 20px rgba(37, 99, 235, 0.25);
+
+            transition: .3s ease;
+        }
+
+        .logo-icon:hover {
+            transform: rotate(-5deg) scale(1.05);
+        }
+
+
+        /* =====================================
+           DESKTOP NAV LINKS
+        ===================================== */
+
+        .nav-link {
+            position: relative;
+
+            display: inline-flex;
+
+            align-items: center;
+
+            gap: 6px;
+
+            padding: 11px 13px;
+
+            border-radius: 10px;
+
+            color: #475569;
+
+            font-size: 13px;
+
+            font-weight: 700;
+
+            transition:
+                color .2s ease,
+                background .2s ease;
+        }
+
+        .nav-link:hover {
+            color: #2563eb;
+
+            background: #eff6ff;
+        }
+
+
+        /* =====================================
+           DESKTOP DROPDOWN
+        ===================================== */
+
+        .desktop-dropdown {
+            position: relative;
+        }
+
+        .desktop-dropdown-menu {
+
+            position: absolute;
+
+            top: calc(100% + 10px);
+
+            left: 50%;
+
+            width: 290px;
+
+            padding: 8px;
+
+            border-radius: 16px;
+
+            background: rgba(255,255,255,.98);
+
+            border: 1px solid #e2e8f0;
+
+            box-shadow:
+                0 20px 50px rgba(15,23,42,.15);
+
+            opacity: 0;
+
+            visibility: hidden;
+
+            pointer-events: none;
+
+            transform:
+                translate(-50%, 8px)
+                scale(.97);
+
+            transform-origin: top center;
+
+            transition:
+                opacity .2s ease,
+                transform .2s ease,
+                visibility .2s ease;
+
+            z-index: 100;
+        }
+
+
+        .desktop-dropdown.open
+        .desktop-dropdown-menu {
+
+            opacity: 1;
+
+            visibility: visible;
+
+            pointer-events: auto;
+
+            transform:
+                translate(-50%, 0)
+                scale(1);
+        }
+
+
+        .desktop-dropdown.open
+        .dropdown-chevron {
+
+            transform: rotate(180deg);
+        }
+
+
+        .dropdown-chevron {
+            transition: transform .25s ease;
+        }
+
+
+        /* =====================================
+           DROPDOWN ITEM
+        ===================================== */
+
+        .desktop-dropdown-menu a {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 12px;
+
+            padding: 11px;
+
+            border-radius: 11px;
+
+            text-decoration: none;
+
+            transition: .2s ease;
+        }
+
+        .desktop-dropdown-menu a:hover {
+
+            background: #eff6ff;
+
+            transform: translateX(3px);
+        }
+
+
+        .dropdown-icon {
+
+            width: 34px;
+            height: 34px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            flex-shrink: 0;
+
+            border-radius: 9px;
+
+            color: #2563eb;
+
+            background: #eff6ff;
+        }
+
+
+        .dropdown-title {
+
+            display: block;
+
+            color: #0f172a;
+
+            font-size: 12px;
+
+            font-weight: 800;
+        }
+
+
+        .dropdown-description {
+
+            display: block;
+
+            margin-top: 2px;
+
+            color: #64748b;
+
+            font-size: 10px;
+        }
+
+
+        /* =====================================
+           MOBILE MENU
+        ===================================== */
+
+        .mobile-menu {
+
+            position: absolute;
+
+            top: calc(100% + 8px);
+
+            left: 10px;
+
+            right: 10px;
+
+            background: rgba(255,255,255,.98);
+
+            backdrop-filter: blur(20px);
+
+            border: 1px solid #e2e8f0;
+
+            border-radius: 18px;
+
+            box-shadow:
+                0 20px 45px rgba(15,23,42,.14);
+
+            max-height:
+                calc(100vh - 90px);
+
+            overflow-y: auto;
+
+            opacity: 0;
+
+            visibility: hidden;
+
+            pointer-events: none;
+
+            transform:
+                translateY(-10px)
+                scale(.98);
+
+            transition:
+                opacity .25s ease,
+                transform .25s ease,
+                visibility .25s ease;
+
+            z-index: 999;
+        }
+
+
+        .mobile-menu.show {
+
+            opacity: 1;
+
+            visibility: visible;
+
+            pointer-events: auto;
+
+            transform:
+                translateY(0)
+                scale(1);
+        }
+
+
+        /* =====================================
+           MOBILE LINK
+        ===================================== */
+
+        .mobile-link {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            width: 100%;
+
+            min-height: 48px;
+
+            padding: 0 13px;
+
+            border-radius: 11px;
+
+            color: #334155;
+
+            font-size: 14px;
+
+            font-weight: 700;
+
+            text-decoration: none;
+
+            transition: .2s ease;
+        }
+
+
+        .mobile-link:hover {
+
+            color: #2563eb;
+
+            background: #eff6ff;
+
+            transform: translateX(3px);
+        }
+
+
+        .mobile-link-left {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 10px;
+        }
+
+
+        .mobile-link svg {
+
+            width: 18px;
+            height: 18px;
+
+            color: #2563eb;
+        }
+
+
+        /* =====================================
+           MOBILE DROPDOWN
+        ===================================== */
+
+        .mobile-dropdown-btn {
+
+            width: 100%;
+
+            min-height: 48px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            padding: 0 13px;
+
+            border: none;
+
+            border-radius: 11px;
+
+            background: transparent;
+
+            color: #334155;
+
+            font-family: inherit;
+
+            font-size: 14px;
+
+            font-weight: 700;
+
+            cursor: pointer;
+
+            transition: .2s ease;
+        }
+
+
+        .mobile-dropdown-btn:hover,
+        .mobile-dropdown-btn.active {
+
+            color: #2563eb;
+
+            background: #eff6ff;
+        }
+
+
+        .mobile-dropdown-btn .arrow {
+
+            width: 16px;
+
+            height: 16px;
+
+            transition:
+                transform .25s ease;
+        }
+
+
+        .mobile-dropdown-btn.active .arrow {
+
+            transform: rotate(180deg);
+        }
+
+
+        /* =====================================
+           MOBILE SUBMENU
+        ===================================== */
+
+        .mobile-submenu {
+
+            display: grid;
+
+            grid-template-rows: 0fr;
+
+            overflow: hidden;
+
+            opacity: 0;
+
+            transition:
+                grid-template-rows .3s ease,
+                opacity .25s ease;
+        }
+
+
+        .mobile-submenu-inner {
+
+            min-height: 0;
+
+            overflow: hidden;
+        }
+
+
+        .mobile-dropdown.open
+        .mobile-submenu {
+
+            grid-template-rows: 1fr;
+
+            opacity: 1;
+        }
+
+
+        /* =====================================
+           SUBMENU LINKS
+        ===================================== */
+
+        .mobile-submenu a {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 10px;
+
+            min-height: 42px;
+
+            padding: 8px 12px 8px 44px;
+
+            color: #64748b;
+
+            font-size: 12px;
+
+            font-weight: 600;
+
+            text-decoration: none;
+
+            border-radius: 9px;
+
+            transition: .2s ease;
+        }
+
+
+        .mobile-submenu a:hover {
+
+            color: #2563eb;
+
+            background: #f8fafc;
+
+            padding-left: 48px;
+        }
+
+
+        .mobile-submenu a svg {
+
+            width: 15px;
+
+            height: 15px;
+
+            color: #3b82f6;
+        }
+
+
+        /* =====================================
+           MOBILE BUTTONS
+        ===================================== */
+
+        .mobile-actions {
+
+            display: grid;
+
+            grid-template-columns: 1fr 1fr;
+
+            gap: 9px;
+
+            padding: 12px 2px 3px;
+        }
+
+
+        .login-button,
+        .join-button {
+
+            min-height: 44px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            gap: 6px;
+
+            border-radius: 11px;
+
+            font-size: 13px;
+
+            font-weight: 800;
+
+            text-decoration: none;
+
+            transition: .25s ease;
+        }
+
+
+        .login-button {
+
+            color: #2563eb;
+
+            background: white;
+
+            border: 1px solid #dbeafe;
+        }
+
+
+        .login-button:hover {
+
+            background: #eff6ff;
+        }
+
+
+        .join-button {
+
+            color: white;
+
+            background:
+                linear-gradient(
+                    135deg,
+                    #2563eb,
+                    #4f46e5
+                );
+
+            box-shadow:
+                0 8px 20px rgba(37,99,235,.22);
+        }
+
+
+        .join-button:hover {
+
+            transform: translateY(-2px);
+
+            box-shadow:
+                0 12px 25px rgba(37,99,235,.3);
+        }
+
+
+        /* =====================================
+           SCROLLBAR
+        ===================================== */
+
+        .mobile-menu::-webkit-scrollbar {
+
+            width: 4px;
+        }
+
+
+        .mobile-menu::-webkit-scrollbar-thumb {
+
+            background: #cbd5e1;
+
+            border-radius: 20px;
+        }
+
+
+        /* =====================================
+           MOBILE SCREEN
+        ===================================== */
+
+        @media (max-width: 480px) {
+
+            .logo-icon {
+
+                width: 39px;
+
+                height: 39px;
+
+                border-radius: 11px;
+            }
+
+            .brand-name {
+
+                font-size: 15px !important;
+            }
+
+            .brand-subtitle {
+
+                font-size: 7px !important;
+
+                letter-spacing: 2px !important;
+            }
+
+            .mobile-menu {
+
+                left: 5px;
+
+                right: 5px;
+
+                border-radius: 15px;
+            }
+
+        }
+
+
+        /* =====================================
+           VERY SMALL MOBILE
+        ===================================== */
+
+        @media (max-width: 360px) {
+
+            .brand-subtitle {
+
+                display: none;
+            }
+
+            .brand-name {
+
+                font-size: 14px !important;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<header id="siteHeader"
+    class="fixed top-0 left-0 right-0 z-50">
+
+
+        <!-- NAVBAR -->
+        <div
+            class="navbar min-h-1 rounded-0xl px-3 flex items-center justify-between">
+
+            <!-- ================= LOGO ================= -->
+
+            <a
+                href="index.html"
+                class="flex items-center gap-0 shrink-0">
+                
+
+
+
+
+                <img
+                    src="assets/logo.png"
+                    onerror="this.src='logo.png'"
+                    alt="PNS "
+                    class="logo-img w-[80px] transition hover:scale-105"
+                >
+
+            </a>
+
+
+            <!-- ================= DESKTOP NAV ================= -->
+
+            <nav
+                class="hidden lg:flex items-center gap-1">
+
+
+                <!-- HOME -->
+
+                <a
+                    href="index.html"
+                    class="nav-link">
+
+                    Home
+
+                </a>
+
+
+                <!-- ABOUT -->
+
+                <a
+                    href="about.html"
+                    class="nav-link">
+
+                    About Us
+
+                </a>
+
+
+<div class="desktop-dropdown">
+
+                    <button
+                        type="button"
+                        class="nav-link desktop-dropdown-btn">
+
+                      Academic Course 
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="dropdown-chevron w-4 h-4">
+                        </i>
+
+                    </button>
+
+
+                    <div
+                        class="desktop-dropdown-menu">
+
+                        <a href="bihar_board.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="book"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    BSEB  IX - X  
+                                </b>
+
+                                <small class="dropdown-description">
+                                     
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="bihar_arts.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="school"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                     BSEB  XII Arts 
+                                </b>
+
+                               
+                            </span>
+
+                        </a>
+
+                         <a href="commerce.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="school"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                     BSEB Commerce  
+                                </b>
+
+                               
+                            </span>
+
+                        </a>
+
+                         
+
+
+
+
+
+                        <a href="pcs.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="book-open"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Competative Exam 
+                                </b>
+
+                                
+                            </span>
+
+                        </a>
+
+                        <a href="spoken-english.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="mic"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Spoken Englsih
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Pesronality Development 
+                                </small>
+                            </span>
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================= COURSES ================= -->
+
+                <div class="desktop-dropdown">
+
+                    <button
+                        type="button"
+                        class="nav-link desktop-dropdown-btn">
+
+                       Our  Course  
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="dropdown-chevron w-4 h-4">
+                        </i>
+
+                    </button>
+
+
+                    <div
+                        class="desktop-dropdown-menu">
+
+
+                        <a href="computer-course.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="computer"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Certified Computer Courses
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Computer fundamentals & office
+                                </small>
+                            </span>
+
+                        </a>
+
+
+
+                        <a href="accounting.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="calculator"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Accounting & Taxation
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Tally, GST & accounting
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        
+                         <a href="graphics.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="pen-tool"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                   Graphic & Architecture
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Tally, GST & accounting
+                                </small>
+                            </span>
+
+                        </a>
+
+                        <a href="coding.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="code-2"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Programming
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Learn modern programming
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="website-designer.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="laptop"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Web  Development 
+                                </b>
+
+                                <small class="dropdown-description">
+                                    HTML, CSS, JS & responsive design
+                                </small>
+                            </span>
+
+                        </a>
+<!--
+                        <a href="digital_creator.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="camera"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Video Mixing & Album Designing 
+                                </b>
+
+                                <small class="dropdown-description">
+                                    HTML, CSS, JS & responsive design
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                    --->
+
+                        
+                        <a href="">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="megaphone"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Digital Marketing 
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Soial media Marketing 
+                                </small>
+                            </span>
+
+                        </a>
+
+                       
+
+                        
+
+                    </div>
+
+                </div>
+
+
+<div class="desktop-dropdown">
+
+                    <button
+                        type="button"
+                        class="nav-link desktop-dropdown-btn">
+
+                       AI Program 
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="dropdown-chevron w-4 h-4">
+                        </i>
+
+                    </button>
+
+
+                    <div
+                        class="desktop-dropdown-menu">
+
+                        <a href="ai_foundation.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="bot"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    AI Foundation  
+                                </b>
+
+                                <small class="dropdown-description">
+                                    AI & Prompt Engineering
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="ai_automation.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="award"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                     AI Tools & Automation
+                                </b>
+
+                                <small class="dropdown-description">
+                                     Automation & Productivity
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="ai_carrer.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="file-check"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    AI Career Program
+                                </b>
+
+                                <small class="dropdown-description">
+                                     Learn → Freelance → Earn
+                                </small>
+                            </span>
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================= FRANCHISE ================= -->
+
+                <div class="desktop-dropdown">
+
+                    <button
+                        type="button"
+                        class="nav-link desktop-dropdown-btn">
+
+                        Franchise Zone
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="dropdown-chevron w-4 h-4">
+                        </i>
+
+                    </button>
+
+
+                    <div
+                        class="desktop-dropdown-menu">
+
+                        <a href="franchise.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="building-2"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Franchise Opportunity
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Start your training center
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="#franchise">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="send"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Apply Franchise
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Submit franchise application
+                                </small>
+                            </span>
+
+                        </a>
+
+                        <a href="/computercentre/login?as=franchise">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="log-in"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Franchise Login
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Login to Franchise portal
+                                </small>
+                            </span>
+
+                        </a>
+
+
+
+                        <a href="#franchise">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="badge-check"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Center Verification
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Verify your center
+                                </small>
+                            </span>
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================= STUDENT ================= -->
+
+                <div class="desktop-dropdown">
+
+                    <button
+                        type="button"
+                        class="nav-link desktop-dropdown-btn">
+
+                        Student Zone
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="dropdown-chevron w-4 h-4">
+                        </i>
+
+                    </button>
+
+
+                    <div
+                        class="desktop-dropdown-menu">
+
+                        <a href="/computercentre/login?as=student">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="log-in"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Student Login
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Login to student portal
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="#certificate">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="award"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Certificate
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Certificate verification
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="/computercentre/login?as=student">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="file-check"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Result
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Check examination result
+                                </small>
+                            </span>
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================= JOB ================= -->
+
+                <div class="desktop-dropdown">
+
+                    <button
+                        type="button"
+                        class="nav-link desktop-dropdown-btn">
+
+                        Job Internship
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="dropdown-chevron w-4 h-4">
+                        </i>
+
+                    </button>
+
+
+                    <div
+                        class="desktop-dropdown-menu">
+
+                        <a href="internship_telecaller.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="headset"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                   Telecaller/Counseller 
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Build practical experience
+                                </small>
+                            </span>
+
+                        </a>
+
+
+<a href="internship_backoffice.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="database"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Data Entry Operator
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Entry level opportunities
+                                </small>
+                            </span>
+
+                        </a>
+
+                        <a href="internship_accounting.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="file-spreadsheet"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Accounting Expert
+  
+                                </b>
+
+                                <small class="dropdown-description">
+                                   Accounting & Finance 
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        
+
+
+                        <a href="internship_graphic-designer.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="palette"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Graphic Designer
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Creative career opportunity
+                                </small>
+                            </span>
+
+                        </a>
+
+
+                        <a href="internship_website-designer.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="code"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Frontend Developer
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Web designer opportunity
+                                </small>
+                            </span>
+
+                        </a>
+                         <a href="intrenship_website-developer.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="server"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Backend Developer
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Web development opportunity
+                                </small>
+                            </span>
+
+                        </a>
+                         
+                         <a href="internship_digital-marketing.html">
+
+                            <span class="dropdown-icon">
+                                <i data-lucide="megaphone"></i>
+                            </span>
+
+                            <span>
+                                <b class="dropdown-title">
+                                    Digital Maketing 
+                                </b>
+
+                                <small class="dropdown-description">
+                                    Online Earning Opportunity 
+                                </small>
+                            </span>
+
+                        </a>
+
+                    </div>
+
+                </div>
+
+
+                <!-- HIRE -->
+
+                <a
+                    href="carrer.html"
+                    class="nav-link">
+
+                    Career
+
+                </a>
+
+
+                <!-- CONTACT -->
+
+                <a
+                    href="#contact"
+                    class="nav-link">
+
+                    Contact
+
+                </a>
+
+            </nav>
+
+
+           
+
+
+            <!-- ================= MOBILE BUTTON ================= -->
+
+            <button
+                id="menuBtn"
+                type="button"
+                aria-label="Open menu"
+                aria-expanded="false"
+                class="lg:hidden flex items-center justify-center w-11 h-11 rounded-xl bg-red-30 text-blue-600 hover:bg-blue-100 transition">
+
+                <i
+                    data-lucide="menu"
+                    class="w-5 h-5">
+                </i>
+
+            </button>
+
+        </div>
+
+
+        <!-- =================================================
+             MOBILE MENU
+        ================================================== -->
+
+        <div
+            id="mobileMenu"
+            class="mobile-menu lg:hidden">
+
+            <div class="p-3">
+
+
+                <!-- HOME -->
+
+                <a
+                    href="index.html"
+                    class="mobile-link">
+
+                    <span class="mobile-link-left">
+
+                        <i data-lucide="home"></i>
+
+                        Home
+
+                    </span>
+
+                </a>
+
+
+                <!-- ABOUT -->
+
+                <a
+                    href="#about"
+                    class="mobile-link">
+
+                    <span class="mobile-link-left">
+
+                        <i data-lucide="info"></i>
+
+                        About Us
+
+                    </span>
+
+                </a>
+
+
+                <!-- ================= MOBILE COURSES ================= -->
+
+                <div class="mobile-dropdown">
+
+                    <button
+                        type="button"
+                        class="mobile-dropdown-btn">
+
+                        <span class="mobile-link-left">
+
+                            <i data-lucide="graduation-cap"></i>
+
+                            Our Course
+
+                        </span>
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="arrow">
+                        </i>
+
+                    </button>
+
+
+                    <div class="mobile-submenu">
+
+                        <div class="mobile-submenu-inner">
+
+                            <a href="#courses">
+
+                                <i data-lucide="computer"></i>
+
+                                Computer Courses
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="calculator"></i>
+
+                                Accounting & Taxation
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="code-2"></i>
+
+                                Programming Language
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="laptop"></i>
+
+                                Web Designing With A.I
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="megaphone"></i>
+
+                                Digital Marketing With A.I
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="palette"></i>
+
+                                Graphic Designing
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="ruler"></i>
+
+                                Architecture & Sketch
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="video"></i>
+
+                                Video Mixing
+
+                            </a>
+
+
+                            <a href="#courses">
+
+                                <i data-lucide="languages"></i>
+
+                                Spoken English
+
+                            </a>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================= FRANCHISE ================= -->
+
+                <div class="mobile-dropdown">
+
+                    <button
+                        type="button"
+                        class="mobile-dropdown-btn">
+
+                        <span class="mobile-link-left">
+
+                            <i data-lucide="building-2"></i>
+
+                            Franchise Zone
+
+                        </span>
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="arrow">
+                        </i>
+
+                    </button>
+
+
+                    <div class="mobile-submenu">
+
+                        <div class="mobile-submenu-inner">
+
+                            <a href="#franchise">
+
+                                <i data-lucide="briefcase"></i>
+
+                                Franchise Opportunity
+
+                            </a>
+
+
+                            <a href="#franchise">
+
+                                <i data-lucide="send"></i>
+
+                                Apply Franchise
+
+                            </a>
+
+
+                            <a href="/computercentre/login?as=franchise">
+
+                                <i data-lucide="log-in"></i>
+
+                                Franchise Login
+
+                            </a>
+
+
+                            <a href="#franchise">
+
+                                <i data-lucide="badge-check"></i>
+
+                                Center Verification
+
+                            </a>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================= STUDENT ================= -->
+
+                <div class="mobile-dropdown">
+
+                    <button
+                        type="button"
+                        class="mobile-dropdown-btn">
+
+                        <span class="mobile-link-left">
+
+                            <i data-lucide="graduation-cap"></i>
+
+                            Student Zone
+
+                        </span>
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="arrow">
+                        </i>
+
+                    </button>
+
+
+                    <div class="mobile-submenu">
+
+                        <div class="mobile-submenu-inner">
+
+                            <a href="/computercentre/login?as=student">
+
+                                <i data-lucide="log-in"></i>
+
+                                Student Login
+
+                            </a>
+
+
+                            <a href="#certificate">
+
+                                <i data-lucide="award"></i>
+
+                                Certificate
+
+                            </a>
+
+
+                            <a href="/computercentre/login?as=student">
+
+                                <i data-lucide="file-check"></i>
+
+                                Result
+
+                            </a>
+
+
+                            <a href="/computercentre/login?as=student">
+
+                                <i data-lucide="id-card"></i>
+
+                                ID Card
+
+                            </a>
+
+
+                            <a href="/computercentre/login?as=student">
+
+                                <i data-lucide="credit-card"></i>
+
+                                Online Payment
+
+                            </a>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- ================= JOB ================= -->
+
+                <div class="mobile-dropdown">
+
+                    <button
+                        type="button"
+                        class="mobile-dropdown-btn">
+
+                        <span class="mobile-link-left">
+
+                            <i data-lucide="briefcase"></i>
+
+                            Job Internship
+
+                        </span>
+
+                        <i
+                            data-lucide="chevron-down"
+                            class="arrow">
+                        </i>
+
+                    </button>
+
+
+                    <div class="mobile-submenu">
+
+                        <div class="mobile-submenu-inner">
+
+                            <a href="#internship">
+
+                                <i data-lucide="clipboard-check"></i>
+
+                                Internship Program
+
+                            </a>
+
+
+                            <a href="#internship">
+
+                                <i data-lucide="send"></i>
+
+                                Apply Internship
+
+                            </a>
+
+
+                            <a href="#internship">
+
+                                <i data-lucide="database"></i>
+
+                                Data Entry Operator
+
+                            </a>
+
+
+                            <a href="#internship">
+
+                                <i data-lucide="palette"></i>
+
+                                Graphic Designer
+
+                            </a>
+
+
+                            <a href="#internship">
+
+                                <i data-lucide="code"></i>
+
+                                Frontend Developer
+
+                            </a>
+
+
+                            <a href="#internship">
+
+                                <i data-lucide="server"></i>
+
+                                Backend Developer
+
+                            </a>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- HIRE -->
+
+                <a
+                    href="#hire"
+                    class="mobile-link">
+
+                    <span class="mobile-link-left">
+
+                        <i data-lucide="handshake"></i>
+
+                        Hire Us
+
+                    </span>
+
+                </a>
+
+
+                <!-- CONTACT -->
+
+                <a
+                    href="#contact"
+                    class="mobile-link">
+
+                    <span class="mobile-link-left">
+
+                        <i data-lucide="phone"></i>
+
+                        Contact
+
+                    </span>
+
+                </a>
+
+
+                <!-- BUTTONS -->
+
+                <div class="mobile-actions">
+
+                    <a
+                        href="/computercentre/login"
+                        class="login-button">
+
+                        Login
+
+                    </a>
+
+
+                    <a
+                        href="#admission"
+                        class="join-button">
+
+                        Join Now
+
+                        <i
+                            data-lucide="arrow-right"
+                            class="w-4 h-4">
+                        </i>
+
+                    </a>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</header>
+
+
+<!-- =====================================================
+     JAVASCRIPT
+===================================================== -->
+
+<script>
+
+document.addEventListener(
+    "DOMContentLoaded",
+    function () {
+
+
+        /* =====================================
+           LUCIDE
+        ===================================== */
+
+        lucide.createIcons();
+
+
+        /* =====================================
+           MOBILE MENU
+        ===================================== */
+
+        const menuBtn =
+            document.getElementById("menuBtn");
+
+        const mobileMenu =
+            document.getElementById("mobileMenu");
+
+
+        function openMobileMenu() {
+
+            mobileMenu.classList.add("show");
+
+            menuBtn.setAttribute(
+                "aria-expanded",
+                "true"
+            );
+
+            menuBtn.setAttribute(
+                "aria-label",
+                "Close menu"
+            );
+
+
+            menuBtn.innerHTML = `
+                <i
+                    data-lucide="x"
+                    class="w-5 h-5">
+                </i>
+            `;
+
+            lucide.createIcons();
+        }
+
+
+        function closeMobileMenu() {
+
+            mobileMenu.classList.remove("show");
+
+            menuBtn.setAttribute(
+                "aria-expanded",
+                "false"
+            );
+
+            menuBtn.setAttribute(
+                "aria-label",
+                "Open menu"
+            );
+
+
+            menuBtn.innerHTML = `
+                <i
+                    data-lucide="menu"
+                    class="w-5 h-5">
+                </i>
+            `;
+
+            lucide.createIcons();
+
+
+            closeMobileDropdowns();
+        }
+
+
+        menuBtn.addEventListener(
+            "click",
+            function (e) {
+
+                e.stopPropagation();
+
+
+                if (
+                    mobileMenu.classList.contains(
+                        "show"
+                    )
+                ) {
+
+                    closeMobileMenu();
+
+                } else {
+
+                    openMobileMenu();
+
+                }
+
+            }
+        );
+
+
+        /* =====================================
+           MOBILE DROPDOWNS
+        ===================================== */
+
+        const mobileDropdowns =
+            document.querySelectorAll(
+                ".mobile-dropdown"
+            );
+
+
+        mobileDropdowns.forEach(
+            function (dropdown) {
+
+                const button =
+                    dropdown.querySelector(
+                        ".mobile-dropdown-btn"
+                    );
+
+
+                button.addEventListener(
+                    "click",
+                    function (e) {
+
+                        e.stopPropagation();
+
+
+                        const isOpen =
+                            dropdown.classList.contains(
+                                "open"
+                            );
+
+
+                        /* Close all */
+
+                        mobileDropdowns.forEach(
+                            function (item) {
+
+                                item.classList.remove(
+                                    "open"
+                                );
+
+
+                                const btn =
+                                    item.querySelector(
+                                        ".mobile-dropdown-btn"
+                                    );
+
+                                btn.classList.remove(
+                                    "active"
+                                );
+
+                            }
+                        );
+
+
+                        /* Open selected */
+
+                        if (!isOpen) {
+
+                            dropdown.classList.add(
+                                "open"
+                            );
+
+                            button.classList.add(
+                                "active"
+                            );
+
+                        }
+
+                    }
+                );
+
+            }
+        );
+
+
+        /* =====================================
+           DESKTOP DROPDOWNS
+        ===================================== */
+
+        const desktopDropdowns =
+            document.querySelectorAll(
+                ".desktop-dropdown"
+            );
+
+
+        desktopDropdowns.forEach(
+            function (dropdown) {
+
+                const button =
+                    dropdown.querySelector(
+                        ".desktop-dropdown-btn"
+                    );
+
+
+                button.addEventListener(
+                    "click",
+                    function (e) {
+
+                        e.stopPropagation();
+
+
+                        const isOpen =
+                            dropdown.classList.contains(
+                                "open"
+                            );
+
+
+                        /* Close all */
+
+                        desktopDropdowns.forEach(
+                            function (item) {
+
+                                item.classList.remove(
+                                    "open"
+                                );
+
+                            }
+                        );
+
+
+                        /* Open selected */
+
+                        if (!isOpen) {
+
+                            dropdown.classList.add(
+                                "open"
+                            );
+
+                        }
+
+                    }
+                );
+
+            }
+        );
+
+
+        /* =====================================
+           CLOSE MOBILE DROPDOWNS
+        ===================================== */
+
+        function closeMobileDropdowns() {
+
+            mobileDropdowns.forEach(
+                function (dropdown) {
+
+                    dropdown.classList.remove(
+                        "open"
+                    );
+
+
+                    const button =
+                        dropdown.querySelector(
+                            ".mobile-dropdown-btn"
+                        );
+
+
+                    button.classList.remove(
+                        "active"
+                    );
+
+                }
+            );
+
+        }
+
+
+        /* =====================================
+           CLOSE OUTSIDE CLICK
+        ===================================== */
+
+        document.addEventListener(
+            "click",
+            function (e) {
+
+
+                /* Desktop */
+
+                if (
+                    !e.target.closest(
+                        ".desktop-dropdown"
+                    )
+                ) {
+
+                    desktopDropdowns.forEach(
+                        function (dropdown) {
+
+                            dropdown.classList.remove(
+                                "open"
+                            );
+
+                        }
+                    );
+
+                }
+
+
+                /* Mobile */
+
+                if (
+                    mobileMenu.classList.contains(
+                        "show"
+                    ) &&
+                    !mobileMenu.contains(
+                        e.target
+                    ) &&
+                    !menuBtn.contains(
+                        e.target
+                    )
+                ) {
+
+                    closeMobileMenu();
+
+                }
+
+            }
+        );
+
+
+        /* =====================================
+           MOBILE LINKS CLOSE MENU
+        ===================================== */
+
+        const mobileLinks =
+            mobileMenu.querySelectorAll(
+                "a"
+            );
+
+
+        mobileLinks.forEach(
+            function (link) {
+
+                link.addEventListener(
+                    "click",
+                    function () {
+
+                        closeMobileMenu();
+
+                    }
+                );
+
+            }
+        );
+
+
+        /* =====================================
+           ESC KEY
+        ===================================== */
+
+        document.addEventListener(
+            "keydown",
+            function (e) {
+
+                if (e.key === "Escape") {
+
+                    closeMobileMenu();
+
+
+                    desktopDropdowns.forEach(
+                        function (dropdown) {
+
+                            dropdown.classList.remove(
+                                "open"
+                            );
+
+                        }
+                    );
+
+                }
+
+            }
+        );
+
+
+        /* =====================================
+           RESIZE
+        ===================================== */
+
+        window.addEventListener(
+            "resize",
+            function () {
+
+                if (window.innerWidth >= 1024) {
+
+                    closeMobileMenu();
+
+                }
+
+            }
+        );
+
+    }
+);
+
+</script>
+<style>   /* =========================================================
+   COMPACT TEXT SIZE
+========================================================= */
+
+/* Body */
+body {
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+/* Navbar */
+nav a,
+.desktop-nav a {
+    font-size: 13px !important;
+}
+
+/* Main Headings */
+h1 {
+    font-size: 38px !important;
+    line-height: 1.15 !important;
+}
+
+h2 {
+    font-size: 28px !important;
+    line-height: 1.2 !important;
+}
+
+h3 {
+    font-size: 18px !important;
+    line-height: 1.3 !important;
+}
+
+h4 {
+    font-size: 16px !important;
+}
+
+/* Paragraph */
+p {
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+/* Small text */
+.text-sm {
+    font-size: 12px !important;
+}
+
+.text-xs {
+    font-size: 11px !important;
+}
+
+/* Buttons */
+button,
+.btn {
+    font-size: 12px !important;
+}
+
+/* Cards */
+.course-card h3,
+.service-card h3,
+.feature-card h3 {
+    font-size: 16px !important;
+}
+
+.course-card p,
+.service-card p,
+.feature-card p {
+    font-size: 12px !important;
+}
+
+/* Hero */
+.hero-title {
+    font-size: 38px !important;
+}
+
+.hero-subtitle {
+    font-size: 13px !important;
+}
+
+/* Section titles */
+.section-title {
+    font-size: 28px !important;
+}
+
+.section-description {
+    font-size: 13px !important;
+}
+
+
+/* =========================================================
+   MOBILE TEXT SIZE
+========================================================= */
+
+@media (max-width: 768px) {
+
+    body {
+        font-size: 13px;
+    }
+
+    h1,
+    .hero-title {
+        font-size: 28px !important;
+    }
+
+    h2,
+    .section-title {
+        font-size: 23px !important;
+    }
+
+    h3 {
+        font-size: 16px !important;
+    }
+
+    h4 {
+        font-size: 14px !important;
+    }
+
+    p {
+        font-size: 12px !important;
+        line-height: 1.6;
+    }
+
+    nav a,
+    .desktop-nav a {
+        font-size: 12px !important;
+    }
+
+    button,
+    .btn {
+        font-size: 11px !important;
+    }
+
+    .course-card h3,
+    .service-card h3,
+    .feature-card h3 {
+        font-size: 15px !important;
+    }
+
+    .course-card p,
+    .service-card p,
+    .feature-card p {
+        font-size: 11px !important;
+    }
+
+}
+
+
+/* =========================================================
+   EXTRA SMALL MOBILE
+========================================================= */
+
+@media (max-width: 480px) {
+
+    h1,
+    .hero-title {
+        font-size: 24px !important;
+    }
+
+    h2,
+    .section-title {
+        font-size: 20px !important;
+    }
+
+    h3 {
+        font-size: 15px !important;
+    }
+
+    p {
+        font-size: 11px !important;
+    }
+
+}
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Poppins", sans-serif;
+            overflow-x: hidden;
+            background: #ffffff;
+            color: #111827;
+        }
+
+        /* =========================================
+           ANIMATIONS
+        ========================================= */
+
+        @keyframes fadeDown {
+            from {
+                opacity: 0;
+                transform: translateY(-25px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-50px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes fadeRight {
+            from {
+                opacity: 0;
+                transform: translateX(50px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes floatPerson {
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-12px);
+            }
+        }
+
+        @keyframes floatLabel {
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-7px);
+            }
+        }
+
+        @keyframes rotateSlow {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes rotateReverse {
+            from {
+                transform: rotate(360deg);
+            }
+
+            to {
+                transform: rotate(0deg);
+            }
+        }
+
+        @keyframes pulseDot {
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: .7;
+            }
+
+            50% {
+                transform: scale(1.7);
+                opacity: 1;
+            }
+        }
+
+        @keyframes pulseRing {
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.025);
+            }
+        }
+
+        @keyframes gradientMove {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        @keyframes shine {
+            0% {
+                left: -100%;
+            }
+
+            100% {
+                left: 130%;
+            }
+        }
+
+        .animate-fade-down {
+            animation: fadeDown .8s ease both;
+        }
+
+        .animate-fade-left {
+            animation: fadeLeft .9s ease both;
+        }
+
+        .animate-fade-right {
+            animation: fadeRight 1s ease both;
+        }
+
+        .person-float {
+            animation: floatPerson 4s ease-in-out infinite;
+        }
+
+        .label-float {
+            animation: floatLabel 3.5s ease-in-out infinite;
+        }
+
+        /* =========================================
+           NAVBAR
+        ========================================= */
+
+        .nav-shadow {
+            box-shadow: 0 1px 0 rgba(0, 0, 0, .08);
+        }
+
+        .nav-item {
+            position: relative;
+            transition: all .25s ease;
+        }
+
+        .nav-item:hover {
+            color: #0b0b9d;
+        }
+
+        .nav-plus {
+            transition: transform .3s ease;
+        }
+
+        .nav-item:hover .nav-plus {
+            transform: rotate(90deg);
+        }
+
+        .dropdown {
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(10px);
+            transition:
+                opacity .25s ease,
+                transform .25s ease,
+                visibility .25s ease;
+        }
+
+        .dropdown-parent:hover .dropdown {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        /* =========================================
+           HERO
+        ========================================= */
+
+        .hero {
+            min-height: 530px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .hero-container {
+            max-width: 1280px;
+            margin: auto;
+            padding: 0 25px;
+        }
+
+        .hero-title {
+            font-size: clamp(40px, 4.4vw, 60px);
+            line-height: 1.02;
+            letter-spacing: -2px;
+        }
+
+        /* =========================================
+           VISUAL AREA
+        ========================================= */
+
+        .visual-area {
+            width: 650px;
+            height: 530px;
+            position: relative;
+            margin-left: auto;
+        }
+
+        .ring {
+            position: absolute;
+            border-radius: 50%;
+            border-style: dashed;
+        }
+
+        .ring-1 {
+            width: 590px;
+            height: 590px;
+            left: 30px;
+            top: -25px;
+            border-width: 1.5px;
+            border-color: #ff7bd5;
+            animation: rotateSlow 25s linear infinite;
+        }
+
+        .ring-2 {
+            width: 500px;
+            height: 500px;
+            left: 75px;
+            top: 20px;
+            border-width: 1.5px;
+            border-color: #8d88ff;
+            animation: rotateReverse 20s linear infinite;
+        }
+
+        .ring-3 {
+            width: 390px;
+            height: 390px;
+            left: 130px;
+            top: 75px;
+            border-width: 1.5px;
+            border-color: #ffc575;
+            animation: pulseRing 3s ease-in-out infinite;
+        }
+
+        /* =========================================
+           PERSON
+        ========================================= */
+
+        .person {
+            position: absolute;
+            z-index: 10;
+            width: 485px;
+            height: 495px;
+            object-fit: cover;
+            object-position: center top;
+            left: 105px;
+            bottom: -15px;
+            animation:
+                fadeRight 1s ease both,
+                floatPerson 4s ease-in-out 1.1s infinite;
+        }
+
+        /* =========================================
+           DOTS
+        ========================================= */
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            position: absolute;
+            z-index: 15;
+            animation: pulseDot 2.2s ease-in-out infinite;
+        }
+
+        .dot-1 {
+            background: #fa4bc1;
+            top: 55px;
+            right: 185px;
+        }
+
+        .dot-2 {
+            background: #7659ff;
+            top: 300px;
+            right: 90px;
+            animation-delay: .5s;
+        }
+
+        .dot-3 {
+            background: #ff9d5c;
+            top: 145px;
+            right: 130px;
+            animation-delay: .9s;
+        }
+
+        .dot-4 {
+            background: #1cc76b;
+            top: 155px;
+            left: 245px;
+            animation-delay: 1.2s;
+        }
+
+        .dot-5 {
+            background: #f748b7;
+            top: 230px;
+            right: 140px;
+            animation-delay: 1.6s;
+        }
+
+        /* =========================================
+           FLOATING LABELS
+        ========================================= */
+
+        .skill {
+            position: absolute;
+            z-index: 20;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 4px;
+            box-shadow: 0 7px 18px rgba(0, 0, 0, .10);
+            white-space: nowrap;
+            transition: transform .3s ease;
+        }
+
+        .skill:hover {
+            transform: scale(1.04) translateY(-3px);
+        }
+
+        .skill-1 {
+            width: 270px;
+            right: 0;
+            top: 45px;
+            background: linear-gradient(
+                90deg,
+                #f84ac3,
+                #ff7020
+            );
+        }
+
+        .skill-2 {
+            width: 215px;
+            right: 0;
+            top: 120px;
+            background: linear-gradient(
+                90deg,
+                #39ed72,
+                #ff8a50
+            );
+            animation-delay: .5s;
+        }
+
+        .skill-3 {
+            width: 280px;
+            right: -25px;
+            top: 195px;
+            background: linear-gradient(
+                90deg,
+                #ff8b55,
+                #f744c1
+            );
+            animation-delay: 1s;
+        }
+
+        .skill-4 {
+            width: 205px;
+            right: 0;
+            top: 290px;
+            background: linear-gradient(
+                90deg,
+                #6755ff,
+                #22e879
+            );
+            animation-delay: 1.5s;
+        }
+
+        .skill-5 {
+            width: 225px;
+            left: 0;
+            top: 130px;
+            background: linear-gradient(
+                90deg,
+                #2559ff,
+                #00c5ad
+            );
+            animation-delay: 2s;
+        }
+
+        /* =========================================
+           BUTTON
+        ========================================= */
+
+        .main-btn {
+            position: relative;
+            overflow: hidden;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(
+                90deg,
+                #ff4d22,
+                #ff7825
+            );
+            background-size: 200% 200%;
+            animation: gradientMove 4s ease infinite;
+            color: #fff;
+            padding: 11px 25px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all .3s ease;
+        }
+
+        .main-btn::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 45%;
+            height: 100%;
+            background: rgba(255,255,255,.2);
+            transform: skewX(-25deg);
+        }
+
+        .main-btn:hover::after {
+            animation: shine .7s ease;
+        }
+
+        .main-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px rgba(255, 87, 34, .25);
+        }
+
+        /* =========================================
+           CARDS
+        ========================================= */
+
+        .course-card {
+            transition:
+                transform .35s ease,
+                box-shadow .35s ease;
+        }
+
+        .course-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 18px 35px rgba(0,0,0,.10);
+        }
+
+        /* =========================================
+           FLOAT CONTACT
+        ========================================= */
+
+        .floating-contact {
+            position: fixed;
+            bottom: 22px;
+            z-index: 100;
+        }
+
+        .whatsapp {
+            left: 0;
+        }
+
+        .call {
+            right: 0;
+        }
+
+        .float-btn {
+            width: 51px;
+            height: 51px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            box-shadow: 0 5px 18px rgba(0,0,0,.18);
+            transition: all .3s ease;
+        }
+
+        .float-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .whatsapp .float-btn {
+            background: #35c653;
+        }
+
+        .call .float-btn {
+            background: #f4511e;
+        }
+
+        .float-label {
+            position: absolute;
+            top: 9px;
+            background: white;
+            color: #333;
+            padding: 6px 11px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0,0,0,.15);
+        }
+
+        .whatsapp .float-label {
+            left: 68px;
+        }
+
+        .call .float-label {
+            right: 68px;
+        }
+
+        /* =========================================
+           MOBILE
+        ========================================= */
+
+        @media(max-width: 500px) {
+
+            .desktop-nav {
+                gap: 17px !important;
+            }
+
+            .desktop-nav a,
+            .desktop-nav button {
+                font-size: 13px !important;
+            }
+
+            .visual-area {
+                transform: scale(.9);
+                transform-origin: center;
+                margin-right: -30px;
+            }
+
+            .hero-title {
+                font-size: 47px;
+            }
+        }
+
+        @media(max-width: 900px) {
+
+            .desktop-nav {
+                display: none !important;
+            }
+
+            .mobile-button {
+                display: flex !important;
+            }
+
+            .hero-grid {
+                grid-template-columns: 1fr !important;
+            }
+
+            .hero-left {
+                text-align: center;
+                padding-top: 85px;
+            }
+
+            .visual-wrapper {
+                justify-content: center;
+            }
+
+            .visual-area {
+                margin: 0;
+                transform: scale(.78);
+                transform-origin: top center;
+            }
+        }
+
+        @media(max-width: 600px) {
+
+            .navbar-height {
+                height: 75px;
+            }
+
+            .logo-img {
+                width: 100px !important;
+            }
+
+            .hero-title {
+                font-size: 36px;
+                letter-spacing: -1px;
+            }
+
+            .hero {
+                min-height: auto;
+            }
+
+            .hero-left {
+                padding-top: 85px;
+            }
+
+            .visual-area {
+                width: 500px;
+                height: 430px;
+                margin-left: -20px;
+                transform: scale(.62);
+                transform-origin: top center;
+            }
+
+            .float-label {
+                display: none;
+            }
+
+            .floating-contact {
+                bottom: 12px;
+            }
+        }
+
+        @media(max-width: 400px) {
+
+            .hero-title {
+                font-size: 31px;
+            }
+
+            .visual-area {
+                transform: scale(.55);
+                margin-left: -45px;
+            }
+        }
+</style>
+
+
+
+
+<!-- =========================================================
+     HERO SECTION
+========================================================= -->
+
+<section class="relative overflow-hidden bg-slate-950 py-16 sm:py-20 lg:py-24">
+
+    <!-- Background Glow -->
+
+    <div class="absolute -left-24 top-10 h-80 w-80 rounded-full
+                bg-blue-600/20 blur-3xl"></div>
+
+    <div class="absolute -right-24 bottom-0 h-96 w-96 rounded-full
+                bg-indigo-600/20 blur-3xl"></div>
+
+    <div class="absolute left-1/2 top-1/2 h-60 w-60
+                -translate-x-1/2 -translate-y-1/2
+                rounded-full bg-purple-600/10 blur-3xl"></div>
+
+
+    <div class="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+        <div class="grid items-center gap-12 lg:grid-cols-2">
+
+
+            <!-- =================================================
+                 LEFT HERO CONTENT
+            ================================================== -->
+
+            <div>
+
+                <!-- Badge -->
+
+                <div class="inline-flex items-center gap-2 rounded-full
+                            border border-blue-400/20
+                            bg-blue-500/10 px-4 py-2
+                            text-xs font-bold uppercase tracking-wider
+                            text-blue-400">
+
+                    <i data-lucide="trophy"
+                       class="h-4 w-4"></i>
+
+                    Competitive Exam Preparation
+
+                </div>
+
+
+                <!-- Heading -->
+
+                <h1 class="mt-6 text-4xl font-black leading-tight
+                           tracking-tight text-white
+                           sm:text-5xl lg:text-6xl">
+
+                    Prepare Today.
+
+                    <span class="block text-blue-400">
+                        Crack Your Dream
+                    </span>
+
+                    <span class="block text-white">
+                        Competitive Exam.
+                    </span>
+
+                </h1>
+
+
+                <!-- Description -->
+
+                <p class="mt-6 max-w-2xl text-sm leading-7
+                          text-slate-400 sm:text-base">
+
+                    BPSC, Bihar Police, SSC, Railway, Banking, Defence
+                    और अन्य competitive examinations के लिए
+                    structured preparation, regular tests, current
+                    affairs, practice और expert guidance।
+
+                </p>
+
+
+                <!-- Exam Tags -->
+
+                <div class="mt-6 flex flex-wrap gap-2">
+
+                    <span class="rounded-full bg-white/10 px-3 py-1.5
+                                 text-xs font-semibold text-slate-200">
+                        BPSC
+                    </span>
+
+                    <span class="rounded-full bg-white/10 px-3 py-1.5
+                                 text-xs font-semibold text-slate-200">
+                        Bihar Police
+                    </span>
+
+                    <span class="rounded-full bg-white/10 px-3 py-1.5
+                                 text-xs font-semibold text-slate-200">
+                        SSC
+                    </span>
+
+                    <span class="rounded-full bg-white/10 px-3 py-1.5
+                                 text-xs font-semibold text-slate-200">
+                        Railway
+                    </span>
+
+                    <span class="rounded-full bg-white/10 px-3 py-1.5
+                                 text-xs font-semibold text-slate-200">
+                        Banking
+                    </span>
+
+                    <span class="rounded-full bg-white/10 px-3 py-1.5
+                                 text-xs font-semibold text-slate-200">
+                        Defence
+                    </span>
+
+                </div>
+
+
+                <!-- Buttons -->
+
+                <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+
+                    <a href="#exams"
+                       class="inline-flex items-center justify-center
+                              gap-2 rounded-xl bg-blue-600 px-6 py-3.5
+                              text-sm font-bold text-white
+                              shadow-lg shadow-blue-600/20
+                              transition hover:bg-blue-700">
+
+                        Explore Exams
+
+                        <i data-lucide="arrow-right"
+                           class="h-4 w-4"></i>
+
+                    </a>
+
+
+                    <a href="#admission"
+                       class="inline-flex items-center justify-center
+                              gap-2 rounded-xl border border-white/10
+                              bg-white/5 px-6 py-3.5 text-sm font-bold
+                              text-white transition hover:bg-white/10">
+
+                        Join Now
+
+                        <i data-lucide="phone"
+                           class="h-4 w-4"></i>
+
+                    </a>
+
+                </div>
+
+
+                <!-- Stats -->
+
+                <div class="mt-10 grid max-w-xl grid-cols-3
+                            gap-5 border-t border-white/10 pt-6">
+
+                    <div>
+
+                        <p class="text-2xl font-black text-white">
+                            10+
+                        </p>
+
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Exam Categories
+                        </p>
+
+                    </div>
+
+
+                    <div>
+
+                        <p class="text-2xl font-black text-white">
+                            500+
+                        </p>
+
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Practice Tests
+                        </p>
+
+                    </div>
+
+
+                    <div>
+
+                        <p class="text-2xl font-black text-white">
+                            360°
+                        </p>
+
+                        <p class="mt-1 text-[11px] text-slate-500">
+                            Preparation
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+
+            <!-- =================================================
+                 RIGHT HERO CARD
+            ================================================== -->
+
+            <div class="relative">
+
+                <!-- Floating Badge -->
+
+                <div class="absolute -right-2 -top-5 z-20 hidden
+                            rounded-2xl border border-white/10
+                            bg-slate-900/90 px-4 py-3 shadow-xl
+                            backdrop-blur-md sm:block">
+
+                    <div class="flex items-center gap-3">
+
+                        <div class="flex h-10 w-10 items-center
+                                    justify-center rounded-xl
+                                    bg-blue-500/10 text-blue-400">
+
+                            <i data-lucide="target"
+                               class="h-5 w-5"></i>
+
+                        </div>
+
+                        <div>
+
+                            <p class="text-xs font-bold text-white">
+                                Exam Focused
+                            </p>
+
+                            <p class="text-[10px] text-slate-500">
+                                Smart Preparation
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Main Card -->
+
+                <div class="rounded-[2rem] border border-white/10
+                            bg-white/5 p-3 shadow-2xl
+                            backdrop-blur-xl">
+
+                    <div class="rounded-[1.5rem] bg-white p-6 sm:p-8">
+
+
+                        <div class="flex items-center justify-between">
+
+                            <div>
+
+                                <span class="text-[10px] font-black
+                                             uppercase tracking-[0.2em]
+                                             text-blue-600">
+
+                                    Preparation Program
+
+                                </span>
+
+                                <h2 class="mt-2 text-2xl font-black
+                                           text-slate-900">
+
+                                    Competitive Exams
+
+                                </h2>
+
+                                <p class="mt-1 text-xs text-slate-500">
+
+                                    Learn • Practice • Revise • Test
+
+                                </p>
+
+                            </div>
+
+
+                            <div class="flex h-14 w-14 items-center
+                                        justify-center rounded-2xl
+                                        bg-blue-50 text-blue-600">
+
+                                <i data-lucide="graduation-cap"
+                                   class="h-7 w-7"></i>
+
+                            </div>
+
+                        </div>
+
+
+                        <div class="my-6 h-px bg-slate-100"></div>
+
+
+                        <!-- Preparation Modules -->
+
+                        <div class="space-y-3">
+
+
+                            <div class="flex items-center gap-3
+                                        rounded-xl bg-slate-50 p-3">
+
+                                <div class="flex h-10 w-10 items-center
+                                            justify-center rounded-xl
+                                            bg-blue-100 text-blue-600">
+
+                                    <i data-lucide="book-open"
+                                       class="h-5 w-5"></i>
+
+                                </div>
+
+                                <div>
+
+                                    <p class="text-sm font-bold">
+                                        Complete Syllabus
+                                    </p>
+
+                                    <p class="text-[11px] text-slate-500">
+                                        Topic-wise preparation
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="flex items-center gap-3
+                                        rounded-xl bg-slate-50 p-3">
+
+                                <div class="flex h-10 w-10 items-center
+                                            justify-center rounded-xl
+                                            bg-purple-100 text-purple-600">
+
+                                    <i data-lucide="newspaper"
+                                       class="h-5 w-5"></i>
+
+                                </div>
+
+                                <div>
+
+                                    <p class="text-sm font-bold">
+                                        Current Affairs
+                                    </p>
+
+                                    <p class="text-[11px] text-slate-500">
+                                        Daily & monthly updates
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="flex items-center gap-3
+                                        rounded-xl bg-slate-50 p-3">
+
+                                <div class="flex h-10 w-10 items-center
+                                            justify-center rounded-xl
+                                            bg-orange-100 text-orange-600">
+
+                                    <i data-lucide="clipboard-check"
+                                       class="h-5 w-5"></i>
+
+                                </div>
+
+                                <div>
+
+                                    <p class="text-sm font-bold">
+                                        Mock Tests
+                                    </p>
+
+                                    <p class="text-[11px] text-slate-500">
+                                        Exam-level practice
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="flex items-center gap-3
+                                        rounded-xl bg-slate-50 p-3">
+
+                                <div class="flex h-10 w-10 items-center
+                                            justify-center rounded-xl
+                                            bg-emerald-100 text-emerald-600">
+
+                                    <i data-lucide="bar-chart-3"
+                                       class="h-5 w-5"></i>
+
+                                </div>
+
+                                <div>
+
+                                    <p class="text-sm font-bold">
+                                        Performance Analysis
+                                    </p>
+
+                                    <p class="text-[11px] text-slate-500">
+                                        Identify & improve weak areas
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+                        <!-- Highlight -->
+
+                        <div class="mt-5 rounded-2xl bg-blue-600 p-5 text-white">
+
+                            <div class="flex items-center gap-3">
+
+                                <div class="flex h-11 w-11 items-center
+                                            justify-center rounded-xl
+                                            bg-white/15">
+
+                                    <i data-lucide="zap"
+                                       class="h-5 w-5"></i>
+
+                                </div>
+
+                                <div>
+
+                                    <p class="text-sm font-black">
+                                        Smart Exam Preparation
+                                    </p>
+
+                                    <p class="mt-1 text-[11px]
+                                              text-blue-100">
+
+                                        Concept + Practice + Revision
+
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =========================================================
+     EXAM CATEGORIES
+========================================================= -->
+
+<section id="exams" class="bg-white py-16 sm:py-20">
+
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+
+        <!-- Heading -->
+
+        <div class="mx-auto max-w-3xl text-center">
+
+            <span class="inline-flex items-center gap-2 rounded-full
+                         bg-blue-50 px-4 py-2 text-xs font-bold
+                         uppercase tracking-widest text-blue-600">
+
+                <i data-lucide="layers"
+                   class="h-4 w-4"></i>
+
+                Exam Categories
+
+            </span>
+
+
+            <h2 class="mt-4 text-3xl font-black text-slate-900
+                       sm:text-4xl lg:text-5xl">
+
+                Prepare For Your Dream Exam
+
+            </h2>
+
+
+            <p class="mt-4 text-sm leading-7 text-slate-500">
+
+                एक ही platform पर अलग-अलग competitive examinations
+                के लिए structured preparation।
+
+            </p>
+
+        </div>
+
+
+
+        <!-- Cards -->
+
+        <div class="mt-12 grid gap-5 sm:grid-cols-2
+                    lg:grid-cols-3">
+
+
+            <!-- BPSC -->
+
+            <div class="group rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm transition
+                        hover:-translate-y-2 hover:shadow-xl">
+
+                <div class="flex items-start justify-between">
+
+                    <div class="flex h-14 w-14 items-center
+                                justify-center rounded-2xl
+                                bg-blue-50 text-blue-600
+                                transition group-hover:bg-blue-600
+                                group-hover:text-white">
+
+                        <i data-lucide="landmark"
+                           class="h-7 w-7"></i>
+
+                    </div>
+
+                    <span class="rounded-full bg-blue-50 px-3 py-1
+                                 text-[10px] font-bold text-blue-600">
+                        BIHAR
+                    </span>
+
+                </div>
+
+
+                <h3 class="mt-5 text-xl font-black">
+                    BPSC
+                </h3>
+
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+
+                    BPSC Prelims & Mains की structured preparation,
+                    General Studies, Current Affairs और Bihar GK।
+
+                </p>
+
+
+                <a href="bpsc_details.html"
+                   class="mt-5 inline-flex items-center gap-2
+                          rounded-xl bg-blue-600 px-5 py-3
+                          text-xs font-bold text-white
+                          hover:bg-blue-700">
+
+                    Exam Details
+
+                    <i data-lucide="arrow-right"
+                       class="h-4 w-4"></i>
+
+                </a>
+
+            </div>
+
+
+
+            <!-- BIHAR POLICE -->
+
+            <div class="group rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm transition
+                        hover:-translate-y-2 hover:shadow-xl">
+
+                <div class="flex h-14 w-14 items-center
+                            justify-center rounded-2xl
+                            bg-red-50 text-red-600
+                            transition group-hover:bg-red-600
+                            group-hover:text-white">
+
+                    <i data-lucide="shield"
+                       class="h-7 w-7"></i>
+
+                </div>
+
+
+                <h3 class="mt-5 text-xl font-black">
+                    Bihar Police
+                </h3>
+
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+
+                    Bihar Police Constable, Daroga और related
+                    recruitment examinations की preparation।
+
+                </p>
+
+
+                <a href="bihar_police.html"
+                   class="mt-5 inline-flex items-center gap-2
+                          rounded-xl bg-red-600 px-5 py-3
+                          text-xs font-bold text-white
+                          hover:bg-red-700">
+
+                    Exam Details
+
+                    <i data-lucide="arrow-right"
+                       class="h-4 w-4"></i>
+
+                </a>
+
+            </div>
+
+
+
+            <!-- SSC -->
+
+            <div class="group rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm transition
+                        hover:-translate-y-2 hover:shadow-xl">
+
+                <div class="flex h-14 w-14 items-center
+                            justify-center rounded-2xl
+                            bg-purple-50 text-purple-600
+                            transition group-hover:bg-purple-600
+                            group-hover:text-white">
+
+                    <i data-lucide="file-check-2"
+                       class="h-7 w-7"></i>
+
+                </div>
+
+
+                <h3 class="mt-5 text-xl font-black">
+                    SSC Exams
+                </h3>
+
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+
+                    SSC CGL, CHSL, MTS, GD और अन्य SSC
+                    examinations के लिए preparation।
+
+                </p>
+
+
+                <a href="ssc.html"
+                   class="mt-5 inline-flex items-center gap-2
+                          rounded-xl bg-purple-600 px-5 py-3
+                          text-xs font-bold text-white
+                          hover:bg-purple-700">
+
+                    Exam Details
+
+                    <i data-lucide="arrow-right"
+                       class="h-4 w-4"></i>
+
+                </a>
+
+            </div>
+
+
+
+            <!-- RAILWAY -->
+
+            <div class="group rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm transition
+                        hover:-translate-y-2 hover:shadow-xl">
+
+                <div class="flex h-14 w-14 items-center
+                            justify-center rounded-2xl
+                            bg-orange-50 text-orange-600
+                            transition group-hover:bg-orange-600
+                            group-hover:text-white">
+
+                    <i data-lucide="train-front"
+                       class="h-7 w-7"></i>
+
+                </div>
+
+
+                <h3 class="mt-5 text-xl font-black">
+                    Railway Exams
+                </h3>
+
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+
+                    RRB NTPC, Group D, ALP, Technician और
+                    अन्य Railway recruitment examinations।
+
+                </p>
+
+
+                <a href="railway.html"
+                   class="mt-5 inline-flex items-center gap-2
+                          rounded-xl bg-orange-600 px-5 py-3
+                          text-xs font-bold text-white
+                          hover:bg-orange-700">
+
+                    Exam Details
+
+                    <i data-lucide="arrow-right"
+                       class="h-4 w-4"></i>
+
+                </a>
+
+            </div>
+
+
+
+            <!-- BANKING -->
+
+            <div class="group rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm transition
+                        hover:-translate-y-2 hover:shadow-xl">
+
+                <div class="flex h-14 w-14 items-center
+                            justify-center rounded-2xl
+                            bg-emerald-50 text-emerald-600
+                            transition group-hover:bg-emerald-600
+                            group-hover:text-white">
+
+                    <i data-lucide="building-2"
+                       class="h-7 w-7"></i>
+
+                </div>
+
+
+                <h3 class="mt-5 text-xl font-black">
+                    Banking Exams
+                </h3>
+
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+
+                    IBPS, SBI, Clerk, PO और अन्य banking
+                    examinations के लिए complete preparation।
+
+                </p>
+
+
+                <a href="banking.html"
+                   class="mt-5 inline-flex items-center gap-2
+                          rounded-xl bg-emerald-600 px-5 py-3
+                          text-xs font-bold text-white
+                          hover:bg-emerald-700">
+
+                    Exam Details
+
+                    <i data-lucide="arrow-right"
+                       class="h-4 w-4"></i>
+
+                </a>
+
+            </div>
+
+
+
+            <!-- DEFENCE -->
+
+            <div class="group rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm transition
+                        hover:-translate-y-2 hover:shadow-xl">
+
+                <div class="flex h-14 w-14 items-center
+                            justify-center rounded-2xl
+                            bg-slate-100 text-slate-700
+                            transition group-hover:bg-slate-800
+                            group-hover:text-white">
+
+                    <i data-lucide="shield-check"
+                       class="h-7 w-7"></i>
+
+                </div>
+
+
+                <h3 class="mt-5 text-xl font-black">
+                    Defence Exams
+                </h3>
+
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+
+                    Defence और uniform services examinations
+                    के लिए written exam preparation।
+
+                </p>
+
+
+                <a href="defence.html"
+                   class="mt-5 inline-flex items-center gap-2
+                          rounded-xl bg-slate-800 px-5 py-3
+                          text-xs font-bold text-white
+                          hover:bg-slate-900">
+
+                    Exam Details
+
+                    <i data-lucide="arrow-right"
+                       class="h-4 w-4"></i>
+
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =========================================================
+     SUBJECT PREPARATION
+========================================================= -->
+
+<section class="bg-slate-950 py-16 sm:py-20">
+
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+
+        <div class="grid items-center gap-12 lg:grid-cols-2">
+
+
+            <!-- LEFT -->
+
+            <div>
+
+                <span class="text-xs font-bold uppercase
+                             tracking-widest text-blue-400">
+
+                    Complete Preparation
+
+                </span>
+
+
+                <h2 class="mt-3 text-3xl font-black text-white
+                           sm:text-4xl">
+
+                    Build Strong Command
+                    Over Every Subject
+
+                </h2>
+
+
+                <p class="mt-5 text-sm leading-7 text-slate-400">
+
+                    Competitive exams में success के लिए
+                    concepts, speed, accuracy और regular practice
+                    सभी पर focus करें।
+
+                </p>
+
+
+                <div class="mt-8 grid grid-cols-2 gap-4">
+
+
+                    <div class="rounded-2xl border border-white/10
+                                bg-white/5 p-5">
+
+                        <i data-lucide="calculator"
+                           class="h-6 w-6 text-blue-400"></i>
+
+                        <h3 class="mt-3 text-sm font-bold text-white">
+                            Quantitative Aptitude
+                        </h3>
+
+                        <p class="mt-2 text-xs leading-5 text-slate-500">
+                            Maths & numerical practice
+                        </p>
+
+                    </div>
+
+
+                    <div class="rounded-2xl border border-white/10
+                                bg-white/5 p-5">
+
+                        <i data-lucide="brain"
+                           class="h-6 w-6 text-purple-400"></i>
+
+                        <h3 class="mt-3 text-sm font-bold text-white">
+                            Reasoning
+                        </h3>
+
+                        <p class="mt-2 text-xs leading-5 text-slate-500">
+                            Logical & analytical ability
+                        </p>
+
+                    </div>
+
+
+                    <div class="rounded-2xl border border-white/10
+                                bg-white/5 p-5">
+
+                        <i data-lucide="languages"
+                           class="h-6 w-6 text-emerald-400"></i>
+
+                        <h3 class="mt-3 text-sm font-bold text-white">
+                            English
+                        </h3>
+
+                        <p class="mt-2 text-xs leading-5 text-slate-500">
+                            Grammar & comprehension
+                        </p>
+
+                    </div>
+
+
+                    <div class="rounded-2xl border border-white/10
+                                bg-white/5 p-5">
+
+                        <i data-lucide="globe-2"
+                           class="h-6 w-6 text-orange-400"></i>
+
+                        <h3 class="mt-3 text-sm font-bold text-white">
+                            General Awareness
+                        </h3>
+
+                        <p class="mt-2 text-xs leading-5 text-slate-500">
+                            GK, GS & Current Affairs
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+
+            <!-- RIGHT -->
+
+            <div class="rounded-3xl border border-white/10
+                        bg-white/5 p-6 sm:p-8">
+
+                <div class="flex items-center justify-between">
+
+                    <div>
+
+                        <p class="text-xs font-bold uppercase
+                                  tracking-widest text-blue-400">
+
+                            Preparation Formula
+
+                        </p>
+
+                        <h3 class="mt-2 text-2xl font-black text-white">
+
+                            Learn → Practice → Test → Improve
+
+                        </h3>
+
+                    </div>
+
+                    <div class="hidden h-12 w-12 items-center
+                                justify-center rounded-xl
+                                bg-blue-500/10 text-blue-400 sm:flex">
+
+                        <i data-lucide="workflow"
+                           class="h-6 w-6"></i>
+
+                    </div>
+
+                </div>
+
+
+                <div class="mt-8 space-y-4">
+
+
+                    <div class="flex gap-4">
+
+                        <div class="flex h-10 w-10 shrink-0
+                                    items-center justify-center
+                                    rounded-xl bg-blue-600
+                                    text-sm font-black text-white">
+                            01
+                        </div>
+
+                        <div>
+
+                            <h4 class="font-bold text-white">
+                                Learn Concepts
+                            </h4>
+
+                            <p class="mt-1 text-xs leading-5 text-slate-500">
+                                Understand concepts from basics to advanced.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="flex gap-4">
+
+                        <div class="flex h-10 w-10 shrink-0
+                                    items-center justify-center
+                                    rounded-xl bg-purple-600
+                                    text-sm font-black text-white">
+                            02
+                        </div>
+
+                        <div>
+
+                            <h4 class="font-bold text-white">
+                                Practice Questions
+                            </h4>
+
+                            <p class="mt-1 text-xs leading-5 text-slate-500">
+                                Solve topic-wise and exam-level questions.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="flex gap-4">
+
+                        <div class="flex h-10 w-10 shrink-0
+                                    items-center justify-center
+                                    rounded-xl bg-orange-600
+                                    text-sm font-black text-white">
+                            03
+                        </div>
+
+                        <div>
+
+                            <h4 class="font-bold text-white">
+                                Take Mock Tests
+                            </h4>
+
+                            <p class="mt-1 text-xs leading-5 text-slate-500">
+                                Practice with timed mock examinations.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="flex gap-4">
+
+                        <div class="flex h-10 w-10 shrink-0
+                                    items-center justify-center
+                                    rounded-xl bg-emerald-600
+                                    text-sm font-black text-white">
+                            04
+                        </div>
+
+                        <div>
+
+                            <h4 class="font-bold text-white">
+                                Analyze Performance
+                            </h4>
+
+                            <p class="mt-1 text-xs leading-5 text-slate-500">
+                                Find weak areas and improve continuously.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =========================================================
+     WHY JOIN US
+========================================================= -->
+
+<section class="bg-white py-16 sm:py-20">
+
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+
+        <div class="mx-auto max-w-2xl text-center">
+
+            <span class="text-xs font-bold uppercase
+                         tracking-widest text-blue-600">
+
+                Why Join Us
+
+            </span>
+
+            <h2 class="mt-3 text-3xl font-black text-slate-900
+                       sm:text-4xl">
+
+                Everything You Need To Prepare Better
+
+            </h2>
+
+        </div>
+
+
+        <div class="mt-12 grid gap-5 sm:grid-cols-2
+                    lg:grid-cols-4">
+
+
+            <div class="rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm">
+
+                <div class="flex h-12 w-12 items-center
+                            justify-center rounded-xl
+                            bg-blue-100 text-blue-600">
+
+                    <i data-lucide="users"
+                       class="h-6 w-6"></i>
+
+                </div>
+
+                <h3 class="mt-5 font-black">
+                    Expert Guidance
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Experienced faculty के guidance के साथ preparation।
+                </p>
+
+            </div>
+
+
+            <div class="rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm">
+
+                <div class="flex h-12 w-12 items-center
+                            justify-center rounded-xl
+                            bg-purple-100 text-purple-600">
+
+                    <i data-lucide="newspaper"
+                       class="h-6 w-6"></i>
+
+                </div>
+
+                <h3 class="mt-5 font-black">
+                    Current Affairs
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Current events और general awareness preparation।
+                </p>
+
+            </div>
+
+
+            <div class="rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm">
+
+                <div class="flex h-12 w-12 items-center
+                            justify-center rounded-xl
+                            bg-orange-100 text-orange-600">
+
+                    <i data-lucide="clipboard-check"
+                       class="h-6 w-6"></i>
+
+                </div>
+
+                <h3 class="mt-5 font-black">
+                    Mock Tests
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Regular mock tests से exam temperament develop करें।
+                </p>
+
+            </div>
+
+
+            <div class="rounded-2xl border border-slate-200
+                        bg-white p-6 shadow-sm">
+
+                <div class="flex h-12 w-12 items-center
+                            justify-center rounded-xl
+                            bg-emerald-100 text-emerald-600">
+
+                    <i data-lucide="bar-chart-3"
+                       class="h-6 w-6"></i>
+
+                </div>
+
+                <h3 class="mt-5 font-black">
+                    Performance Analysis
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    आपकी performance और weak topics को track करें।
+                </p>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =========================================================
+     STUDY PLAN
+========================================================= -->
+
+<section class="bg-slate-50 py-16 sm:py-20">
+
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+
+        <div class="mx-auto max-w-2xl text-center">
+
+            <span class="text-xs font-bold uppercase
+                         tracking-widest text-blue-600">
+
+                Study Strategy
+
+            </span>
+
+            <h2 class="mt-3 text-3xl font-black text-slate-900
+                       sm:text-4xl">
+
+                Simple & Effective Study Plan
+
+            </h2>
+
+        </div>
+
+
+        <div class="mt-12 grid gap-5 md:grid-cols-4">
+
+
+            <div class="relative rounded-2xl bg-white p-6
+                        shadow-sm border border-slate-200">
+
+                <span class="text-4xl font-black text-blue-100">
+                    01
+                </span>
+
+                <h3 class="mt-4 font-black">
+                    Foundation
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Basic concepts और fundamentals clear करें।
+                </p>
+
+            </div>
+
+
+            <div class="relative rounded-2xl bg-white p-6
+                        shadow-sm border border-slate-200">
+
+                <span class="text-4xl font-black text-purple-100">
+                    02
+                </span>
+
+                <h3 class="mt-4 font-black">
+                    Practice
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Daily questions और previous papers solve करें।
+                </p>
+
+            </div>
+
+
+            <div class="relative rounded-2xl bg-white p-6
+                        shadow-sm border border-slate-200">
+
+                <span class="text-4xl font-black text-orange-100">
+                    03
+                </span>
+
+                <h3 class="mt-4 font-black">
+                    Mock Test
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Time-bound mock tests देकर speed improve करें।
+                </p>
+
+            </div>
+
+
+            <div class="relative rounded-2xl bg-white p-6
+                        shadow-sm border border-slate-200">
+
+                <span class="text-4xl font-black text-emerald-100">
+                    04
+                </span>
+
+                <h3 class="mt-4 font-black">
+                    Revision
+                </h3>
+
+                <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Weak topics revise करके final preparation करें।
+                </p>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =========================================================
+     CAREER OPTIONS
+========================================================= -->
+
+<section class="bg-white py-16 sm:py-20">
+
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+
+        <div class="grid items-center gap-10 lg:grid-cols-2">
+
+
+            <div>
+
+                <span class="text-xs font-bold uppercase
+                             tracking-widest text-blue-600">
+
+                    Career Opportunities
+
+                </span>
+
+
+                <h2 class="mt-3 text-3xl font-black text-slate-900
+                           sm:text-4xl">
+
+                    Build Your Government Career
+
+                </h2>
+
+
+                <p class="mt-5 text-sm leading-7 text-slate-500">
+
+                    सही preparation strategy के साथ विभिन्न
+                    government और competitive examinations की
+                    तैयारी करें।
+
+                </p>
+
+
+                <a href="#admission"
+                   class="mt-7 inline-flex items-center gap-2
+                          rounded-xl bg-blue-600 px-6 py-3.5
+                          text-sm font-bold text-white
+                          hover:bg-blue-700">
+
+                    Start Preparation
+
+                    <i data-lucide="arrow-right"
+                       class="h-4 w-4"></i>
+
+                </a>
+
+            </div>
+
+
+
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-3">
+
+
+                <div class="rounded-2xl bg-slate-50 p-5 text-center">
+
+                    <i data-lucide="landmark"
+                       class="mx-auto h-6 w-6 text-blue-600"></i>
+
+                    <p class="mt-3 text-xs font-bold">
+                        Civil Services
+                    </p>
+
+                </div>
+
+
+                <div class="rounded-2xl bg-slate-50 p-5 text-center">
+
+                    <i data-lucide="shield"
+                       class="mx-auto h-6 w-6 text-red-600"></i>
+
+                    <p class="mt-3 text-xs font-bold">
+                        Police Services
+                    </p>
+
+                </div>
+
+
+                <div class="rounded-2xl bg-slate-50 p-5 text-center">
+
+                    <i data-lucide="train-front"
+                       class="mx-auto h-6 w-6 text-orange-600"></i>
+
+                    <p class="mt-3 text-xs font-bold">
+                        Railway
+                    </p>
+
+                </div>
+
+
+                <div class="rounded-2xl bg-slate-50 p-5 text-center">
+
+                    <i data-lucide="building-2"
+                       class="mx-auto h-6 w-6 text-emerald-600"></i>
+
+                    <p class="mt-3 text-xs font-bold">
+                        Banking
+                    </p>
+
+                </div>
+
+
+                <div class="rounded-2xl bg-slate-50 p-5 text-center">
+
+                    <i data-lucide="file-check-2"
+                       class="mx-auto h-6 w-6 text-purple-600"></i>
+
+                    <p class="mt-3 text-xs font-bold">
+                        SSC
+                    </p>
+
+                </div>
+
+
+                <div class="rounded-2xl bg-slate-50 p-5 text-center">
+
+                    <i data-lucide="star"
+                       class="mx-auto h-6 w-6 text-yellow-600"></i>
+
+                    <p class="mt-3 text-xs font-bold">
+                        Other Exams
+                    </p>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+
+<!-- =========================================================
+     ADMISSION CTA
+========================================================= -->
+
+<section id="admission"
+         class="relative overflow-hidden bg-blue-600 py-16 sm:py-20">
+
+    <div class="absolute -left-20 -top-20 h-60 w-60
+                rounded-full bg-white/10 blur-3xl"></div>
+
+    <div class="absolute -right-20 -bottom-20 h-72 w-72
+                rounded-full bg-white/10 blur-3xl"></div>
+
+
+    <div class="relative mx-auto max-w-4xl px-4 text-center">
+
+
+        <div class="mx-auto flex h-14 w-14 items-center
+                    justify-center rounded-2xl bg-white
+                    text-blue-600">
+
+            <i data-lucide="trophy"
+               class="h-7 w-7"></i>
+
+        </div>
+
+
+        <h2 class="mt-6 text-3xl font-black text-white
+                   sm:text-4xl">
+
+            Ready To Crack Your Dream Exam?
+
+        </h2>
+
+
+        <p class="mx-auto mt-4 max-w-2xl text-sm leading-7
+                  text-blue-100">
+
+            आज से अपनी competitive exam preparation शुरू करें।
+            सही strategy, regular practice और consistent मेहनत
+            के साथ अपने लक्ष्य की ओर बढ़ें।
+
+        </p>
+
+
+        <div class="mt-8 flex flex-col justify-center
+                    gap-3 sm:flex-row">
+
+
+            <a href="tel:+910000000000"
+               class="inline-flex items-center justify-center
+                      gap-2 rounded-xl bg-white px-7 py-3.5
+                      text-sm font-bold text-blue-700
+                      hover:bg-slate-100">
+
+                <i data-lucide="phone"
+                   class="h-4 w-4"></i>
+
+                Call Now
+
+            </a>
+
+
+            <a href="https://wa.me/910000000000"
+               target="_blank"
+               class="inline-flex items-center justify-center
+                      gap-2 rounded-xl bg-blue-800 px-7 py-3.5
+                      text-sm font-bold text-white
+                      hover:bg-blue-900">
+
+                <i data-lucide="message-circle"
+                   class="h-4 w-4"></i>
+
+                WhatsApp Enquiry
+
+            </a>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- ========================================================= -->
+<!-- FOOTER -->
+<!-- ========================================================= -->
+
+<footer class="bg-slate-950 text-slate-300">
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+<div class="py-16 grid sm:grid-cols-2 lg:grid-cols-4 gap-10">
+
+
+<!-- FOOTER ABOUT -->
+
+<div>
+
+<div class="flex items-center gap-3">
+
+<div class="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-violet-600 flex items-center justify-center text-white font-black text-xl">
+P
+</div>
+
+<div>
+
+<div class="font-black text-white text-lg">
+PNS Academy
+</div>
+
+<div class="text-xs text-slate-500">
+Learn • Grow • Succeed
+</div>
+
+</div>
+
+</div>
+
+<p class="mt-5 text-slate-400 leading-7">
+Computer education aur professional digital
+skills ke through students ko career-ready banana.
+</p>
+
+
+<div class="flex gap-3 mt-6">
+
+<a href="#"
+class="w-10 h-10 rounded-xl bg-white/5 hover:bg-blue-600 flex items-center justify-center transition">
+
+<i data-lucide="facebook" class="w-5 h-5"></i>
+
+</a>
+
+<a href="#"
+class="w-10 h-10 rounded-xl bg-white/5 hover:bg-pink-600 flex items-center justify-center transition">
+
+<i data-lucide="instagram" class="w-5 h-5"></i>
+
+</a>
+
+<a href="#"
+class="w-10 h-10 rounded-xl bg-white/5 hover:bg-red-600 flex items-center justify-center transition">
+
+<i data-lucide="youtube" class="w-5 h-5"></i>
+
+</a>
+
+<a href="#"
+class="w-10 h-10 rounded-xl bg-white/5 hover:bg-green-600 flex items-center justify-center transition">
+
+<i data-lucide="message-circle" class="w-5 h-5"></i>
+
+</a>
+
+</div>
+
+</div>
+
+
+<!-- QUICK LINKS -->
+
+<div>
+
+<h3 class="text-white font-bold text-lg">
+Quick Links
+</h3>
+
+<ul class="mt-5 space-y-3">
+
+<li>
+<a href="index.html" class="hover:text-white transition">
+Home
+</a>
+</li>
+
+<li>
+<a href="about.html" class="hover:text-white transition">
+About Us
+</a>
+</li>
+
+<li>
+<a href="courses.html" class="hover:text-white transition">
+Our Courses
+</a>
+</li>
+
+<li>
+<a href="franchise.html" class="hover:text-white transition">
+Franchise
+</a>
+</li>
+
+<li>
+<a href="career.html" class="hover:text-white transition">
+Career
+</a>
+</li>
+
+<li>
+<a href="contact.html" class="hover:text-white transition">
+Contact
+</a>
+</li>
+
+</ul>
+
+</div>
+
+
+<!-- COURSES -->
+
+<div>
+
+<h3 class="text-white font-bold text-lg">
+Popular Courses
+</h3>
+
+<ul class="mt-5 space-y-3">
+
+<li>
+<a href="courses.html" class="hover:text-white transition">
+ADCA
+</a>
+</li>
+
+<li>
+<a href="courses.html" class="hover:text-white transition">
+Graphic Designing
+</a>
+</li>
+
+<li>
+<a href="courses.html" class="hover:text-white transition">
+Tally Prime With GST
+</a>
+</li>
+
+<li>
+<a href="courses.html" class="hover:text-white transition">
+Digital Marketing
+</a>
+</li>
+
+<li>
+<a href="courses.html" class="hover:text-white transition">
+Website Design
+</a>
+</li>
+
+<li>
+<a href="courses.html" class="hover:text-white transition">
+Python Programming
+</a>
+</li>
+
+</ul>
+
+</div>
+
+
+<!-- CONTACT -->
+
+<div>
+
+<h3 class="text-white font-bold text-lg">
+Contact Information
+</h3>
+
+<div class="mt-5 space-y-5">
+
+<div class="flex gap-3">
+
+<i data-lucide="map-pin"
+class="w-5 h-5 text-blue-400 shrink-0">
+</i>
+
+<span>
+PNS Academy,<br>
+Bihar, India
+</span>
+
+</div>
+
+
+<div class="flex gap-3">
+
+<i data-lucide="phone"
+class="w-5 h-5 text-blue-400 shrink-0">
+</i>
+
+<a href="tel:+919876543210"
+class="hover:text-white">
++91 98765 43210
+</a>
+
+</div>
+
+
+<div class="flex gap-3">
+
+<i data-lucide="mail"
+class="w-5 h-5 text-blue-400 shrink-0">
+</i>
+
+<a href="mailto:info@pnsacademy.in"
+class="hover:text-white">
+info@pnsacademy.in
+</a>
+
+</div>
+
+
+<div class="flex gap-3">
+
+<i data-lucide="clock"
+class="w-5 h-5 text-blue-400 shrink-0">
+</i>
+
+<span>
+Mon – Sat<br>
+09:00 AM – 06:00 PM
+</span>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<div class="border-t border-white/10 py-6 flex flex-col md:flex-row justify-between items-center gap-3 text-sm">
+
+<p>
+<span id="year"></span> © 2026 PNS Academy Designed  By Er. Pushpak Kumar  
+</p>
+<!--
+<div class="flex gap-5">
+
+<a href="#" class="hover:text-white">
+
+</a>
+
+<a href="idealsoftech.in" class="hover:text-white">
+
+</a>
+
+--> 
+</div>
+
+</div>
+
+</div>
+
+</footer>
+
+
+
+<!-- =====================================================
+     WHATSAPP CHATBOT
+===================================================== -->
+
+<div id="whatsappWidget"
+     class="fixed bottom-5 right-5 z-[99999] font-sans">
+
+    <!-- CHAT WINDOW -->
+    <div id="whatsappPanel"
+         class="hidden absolute bottom-[75px] right-0 w-[350px]
+                max-w-[calc(100vw-30px)]
+                overflow-hidden rounded-2xl bg-white
+                shadow-[0_15px_50px_rgba(0,0,0,.25)]
+                border border-gray-200
+                origin-bottom-right
+                transition-all duration-300">
+
+        <!-- HEADER -->
+        <div class="bg-[#075E54] px-4 py-4 text-white">
+
+            <div class="flex items-center justify-between">
+
+                <div class="flex items-center gap-3">
+
+                    <!-- PROFILE IMAGE -->
+                    <div class="relative">
+
+                        <img
+                            src="https://www.idealdigiskills.com/img/logo.png"
+                            alt="Support"
+                            class="h-11 w-11 rounded-full
+                                   border-2 border-white
+                                   object-cover bg-white"
+                        >
+
+                        <span class="absolute bottom-0 right-0
+                                     h-3 w-3 rounded-full
+                                     border-2 border-[#075E54]
+                                     bg-[#25D366]">
+                        </span>
+
+                    </div>
+
+                    <div>
+
+                        <h3 class="text-sm font-bold">
+                            Support Team
+                        </h3>
+
+                        <p class="text-[10px] text-green-100">
+                            ● Typically replies instantly
+                        </p>
+
+                    </div>
+
+                </div>
+
+
+                <!-- CLOSE -->
+                <button
+                    id="closeWhatsapp"
+                    class="flex h-8 w-8 items-center justify-center
+                           rounded-full hover:bg-white/10
+                           text-xl">
+
+                    ×
+
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <!-- CHAT BODY -->
+        <div class="bg-[#efeae2] px-3 py-4">
+
+            
+
+            <!-- DEPARTMENT TITLE -->
+            <p class="mb-2 px-1 text-[11px] font-semibold text-gray-500">
+
+                Choose a department
+
+            </p>
+
+
+            <!-- DEPARTMENTS -->
+
+            <div class="space-y-2">
+
+
+                <!-- ADMISSION -->
+                <button
+                    class="wa-department flex w-full items-center gap-3
+                           rounded-xl bg-white p-3 text-left
+                           shadow-sm transition
+                           hover:-translate-y-0.5
+                           hover:shadow-md"
+                    data-number="919876543210"
+                    data-message="Hello, I want information about admission and courses."
+                >
+
+                    <div class="flex h-10 w-10 shrink-0
+                                items-center justify-center
+                                rounded-full bg-blue-100
+                                text-sm font-bold text-blue-600">
+
+                        A
+
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+
+                        <h4 class="text-xs font-bold text-gray-800">
+
+                            Admission
+
+                        </h4>
+
+                        <p class="text-[10px] text-gray-500">
+
+                            Course & admission enquiry
+
+                        </p>
+
+                    </div>
+
+                    <span class="text-[#25D366]">
+                        →
+                    </span>
+
+                </button>
+
+
+                <!-- ACCOUNTS -->
+                <button
+                    class="wa-department flex w-full items-center gap-3
+                           rounded-xl bg-white p-3 text-left
+                           shadow-sm transition
+                           hover:-translate-y-0.5
+                           hover:shadow-md"
+                    data-number="919876543211"
+                    data-message="Hello, I want information about fees and payment."
+                >
+
+                    <div class="flex h-10 w-10 shrink-0
+                                items-center justify-center
+                                rounded-full bg-orange-100
+                                text-sm font-bold text-orange-600">
+
+                        ₹
+
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+
+                        <h4 class="text-xs font-bold text-gray-800">
+
+                            Fees & Accounts
+
+                        </h4>
+
+                        <p class="text-[10px] text-gray-500">
+
+                            Fees & payment enquiry
+
+                        </p>
+
+                    </div>
+
+                    <span class="text-[#25D366]">
+                        →
+                    </span>
+
+                </button>
+ <!-- SUPPORT -->
+                <button
+                    class="wa-department flex w-full items-center gap-3
+                           rounded-xl bg-white p-3 text-left
+                           shadow-sm transition
+                           hover:-translate-y-0.5
+                           hover:shadow-md"
+                    data-number="919876543212"
+                    data-message="Hello, I need technical support."
+                >
+
+                    <div class="flex h-10 w-10 shrink-0
+                                items-center justify-center
+                                rounded-full bg-green-100
+                                text-sm font-bold text-green-600">
+
+                        S
+
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+
+                        <h4 class="text-xs font-bold text-gray-800">
+
+                           Career Counseling 
+
+                        </h4>
+
+                        <p class="text-[10px] text-gray-500">
+
+                            Job Placement  & Internship
+
+                        </p>
+
+                    </div>
+
+                    <span class="text-[#25D366]">
+                        →
+                    </span>
+
+                </button>
+
+                <!-- SUPPORT -->
+                <button
+                    class="wa-department flex w-full items-center gap-3
+                           rounded-xl bg-white p-3 text-left
+                           shadow-sm transition
+                           hover:-translate-y-0.5
+                           hover:shadow-md"
+                    data-number="919876543212"
+                    data-message="Hello, I need technical support."
+                >
+
+                    <div class="flex h-10 w-10 shrink-0
+                                items-center justify-center
+                                rounded-full bg-green-100
+                                text-sm font-bold text-green-600">
+
+                        S
+
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+
+                        <h4 class="text-xs font-bold text-gray-800">
+
+                            Technical Support
+
+                        </h4>
+
+                        <p class="text-[10px] text-gray-500">
+
+                            Technical help & support
+
+                        </p>
+
+                    </div>
+
+                    <span class="text-[#25D366]">
+                        →
+                    </span>
+
+                </button>
+
+
+                <!-- FRANCHISE -->
+                <button
+                    class="wa-department flex w-full items-center gap-3
+                           rounded-xl bg-white p-3 text-left
+                           shadow-sm transition
+                           hover:-translate-y-0.5
+                           hover:shadow-md"
+                    data-number="919876543213"
+                    data-message="Hello, I am interested in franchise."
+                >
+
+                    <div class="flex h-10 w-10 shrink-0
+                                items-center justify-center
+                                rounded-full bg-purple-100
+                                text-sm font-bold text-purple-600">
+
+                        F
+
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+
+                        <h4 class="text-xs font-bold text-gray-800">
+
+                            Franchise
+
+                        </h4>
+
+                        <p class="text-[10px] text-gray-500">
+
+                            Franchise enquiry
+
+                        </p>
+
+                    </div>
+
+                    <span class="text-[#25D366]">
+                        →
+                    </span>
+
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <!-- FOOTER -->
+        <div class="border-t bg-white px-3 py-2 text-center">
+
+            <p class="text-[9px] text-gray-400">
+
+                Powered by WhatsApp
+
+            </p>
+
+        </div>
+
+    </div>
+
+
+    <!-- FLOATING BUTTON -->
+
+    <button
+        id="whatsappButton"
+        aria-label="WhatsApp Chat"
+        class="group relative flex h-[62px] w-[62px]
+               items-center justify-center
+               rounded-full bg-[#25D366]
+               text-white
+               shadow-[0_8px_30px_rgba(37,211,102,.45)]
+               transition-all duration-300
+               hover:scale-110 hover:bg-[#20bd5a]">
+
+        <!-- PULSE -->
+        <span class="absolute inset-0 rounded-full
+                     bg-[#25D366]
+                     animate-ping opacity-20">
+        </span>
+
+
+        <!-- REAL WHATSAPP STYLE ICON -->
+        <svg
+            viewBox="0 0 32 32"
+            class="relative z-10 h-9 w-9 fill-white"
+            aria-hidden="true">
+
+            <path d="M19.11 17.08c-.27-.14-1.59-.78-1.84-.87
+                     -.25-.09-.43-.14-.61.14
+                     -.18.27-.7.87-.86 1.04
+                     -.16.18-.32.2-.59.07
+                     -.27-.14-1.12-.41-2.13-1.31
+                     -.79-.7-1.32-1.57-1.47-1.84
+                     -.16-.27-.02-.42.12-.56
+                     .12-.12.27-.32.41-.48
+                     .14-.16.18-.27.27-.45
+                     .09-.18.05-.34-.02-.48
+                     -.07-.14-.61-1.47-.84-2.01
+                     -.22-.53-.45-.46-.61-.47
+                     -.16-.01-.34-.01-.52-.01
+                     -.18 0-.48.07-.73.34
+                     -.25.27-.95.93-.95 2.27
+                     0 1.34.98 2.63 1.11 2.81
+                     .14.18 1.92 2.93 4.65 4.11
+                     .65.28 1.16.45 1.56.58
+                     .66.21 1.26.18 1.73.11
+                     .53-.08 1.59-.65 1.81-1.28
+                     .22-.63.22-1.17.16-1.28
+                     -.07-.11-.25-.18-.52-.32z"/>
+
+            <path d="M16 3.2C8.93 3.2 3.2 8.93 3.2 16
+                     c0 2.26.59 4.38 1.63 6.22L3 29
+                     l6.98-1.83A12.73 12.73 0 0 0 16 28.8
+                     c7.07 0 12.8-5.73 12.8-12.8
+                     S23.07 3.2 16 3.2zm0 23.35
+                     c-2.01 0-3.88-.58-5.46-1.58
+                     l-.39-.24-4.14 1.08 1.1-4.03
+                     -.26-.41A10.55 10.55 0 1 1 16 26.55z"/>
+
+        </svg>
+
+
+        <!-- NOTIFICATION -->
+        <span class="absolute -right-0.5 -top-0.5
+                     flex h-5 w-5 items-center justify-center
+                     rounded-full border-2 border-white
+                     bg-red-500 text-[9px] font-bold">
+
+            1
+
+        </span>
+
+    </button>
+
+</div>
+
+
+
+
+<!-- ============================================================
+     JAVASCRIPT
+============================================================ -->
+
+<script>
+    /* =====================================================
+   WHATSAPP CHATBOT
+===================================================== */
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const button =
+        document.getElementById("whatsappButton");
+
+    const panel =
+        document.getElementById("whatsappPanel");
+
+    const close =
+        document.getElementById("closeWhatsapp");
+
+    const departments =
+        document.querySelectorAll(".wa-department");
+
+
+    /* OPEN / CLOSE */
+
+    button?.addEventListener("click", (e) => {
+
+        e.stopPropagation();
+
+        panel.classList.toggle("hidden");
+
+    });
+
+
+    /* CLOSE */
+
+    close?.addEventListener("click", (e) => {
+
+        e.stopPropagation();
+
+        panel.classList.add("hidden");
+
+    });
+
+
+    /* DEPARTMENT */
+
+    departments.forEach((department) => {
+
+        department.addEventListener("click", () => {
+
+            const number =
+                department.dataset.number;
+
+            const message =
+                department.dataset.message ||
+                "Hello, I need some information.";
+
+
+            if (!number) return;
+
+
+            const url =
+                `https://wa.me/${number}?text=${
+                    encodeURIComponent(message)
+                }`;
+
+
+            window.open(url, "_blank");
+
+
+            panel.classList.add("hidden");
+
+        });
+
+    });
+
+
+    /* OUTSIDE CLICK */
+
+    document.addEventListener("click", (e) => {
+
+        const widget =
+            document.getElementById(
+                "whatsappWidget"
+            );
+
+        if (
+            widget &&
+            !widget.contains(e.target)
+        ) {
+
+            panel.classList.add("hidden");
+
+        }
+
+    });
+
+
+    /* ESC */
+
+    document.addEventListener("keydown", (e) => {
+
+        if (e.key === "Escape") {
+
+            panel.classList.add("hidden");
+
+        }
+
+    });
+
+});
+
+    /* =========================================
+       LUCIDE ICONS
+    ========================================= */
+
+    lucide.createIcons();
+
+
+    /* =========================================
+       MOBILE MENU
+    ========================================= */
+
+    const mobileBtn =
+        document.getElementById("mobileBtn");
+
+    const mobileMenu =
+        document.getElementById("mobileMenu");
+
+
+    mobileBtn.addEventListener("click", () => {
+
+        mobileMenu.classList.toggle("hidden");
+
+    });
+
+
+    /* Close Mobile Menu */
+
+    document
+        .querySelectorAll("#mobileMenu a")
+        .forEach(link => {
+
+            link.addEventListener("click", () => {
+
+                mobileMenu.classList.add("hidden");
+
+            });
+
+        });
+
+
+    /* =========================================
+       CONTACT FORM
+    ========================================= */
+
+    document
+        .getElementById("contactForm")
+        .addEventListener("submit", function(e) {
+
+            e.preventDefault();
+
+            alert(
+                "Thank you! Your enquiry has been submitted."
+            );
+
+            this.reset();
+
+        });
+
+
+    /* =========================================
+       SCROLL REVEAL
+    ========================================= */
+
+    const revealElements =
+        document.querySelectorAll(
+            "section:not(#home)"
+        );
+
+
+    const revealObserver =
+        new IntersectionObserver(
+            entries => {
+
+                entries.forEach(entry => {
+
+                    if (entry.isIntersecting) {
+
+                        entry.target.style.opacity = "1";
+
+                        entry.target.style.transform =
+                            "translateY(0)";
+
+                    }
+
+                });
+
+            },
+            {
+                threshold: .12
+            }
+        );
+
+
+    revealElements.forEach(section => {
+
+        section.style.opacity = "0";
+
+        section.style.transform =
+            "translateY(30px)";
+
+        section.style.transition =
+            "opacity .8s ease, transform .8s ease";
+
+        revealObserver.observe(section);
+
+    });
+
+
+    /* =========================================
+       ACTIVE NAV ON SCROLL
+    ========================================= */
+
+    const sections =
+        document.querySelectorAll(
+            "section[id]"
+        );
+
+    const navLinks =
+        document.querySelectorAll(
+            ".desktop-nav a"
+        );
+
+
+    window.addEventListener("scroll", () => {
+
+        let current = "";
+
+        sections.forEach(section => {
+
+            const sectionTop =
+                section.offsetTop - 150;
+
+            if (
+                window.scrollY >= sectionTop
+            ) {
+
+                current =
+                    section.getAttribute("id");
+
+            }
+
+        });
+
+
+        navLinks.forEach(link => {
+
+            link.classList.remove(
+                "text-[#090c9f]"
+            );
+
+            if (
+                link.getAttribute("href") ===
+                "#" + current
+            ) {
+
+                link.classList.add(
+                    "text-[#090c9f]"
+                );
+
+            }
+
+        });
+
+    });
+
+
+    /* =========================================
+       PREVENT IMAGE DRAG
+    ========================================= */
+
+    document
+        .querySelectorAll("img")
+        .forEach(img => {
+
+            img.addEventListener(
+                "dragstart",
+                e => e.preventDefault()
+            );
+
+        });
+document.addEventListener("DOMContentLoaded", function () {
+
+  const menuBtn = document.getElementById("menuBtn");
+  const mobileMenu = document.getElementById("mobileMenu");
+  const menuIcon = document.getElementById("menuIcon");
+
+  /* =====================================
+     MOBILE MENU OPEN / CLOSE
+  ===================================== */
+
+  menuBtn.addEventListener("click", function (e) {
+
+    e.stopPropagation();
+
+    const isOpen = mobileMenu.classList.contains("show");
+
+    if (isOpen) {
+
+      closeMobileMenu();
+
+    } else {
+
+      openMobileMenu();
+
+    }
+
+  });
+
+
+  function openMobileMenu() {
+
+    mobileMenu.classList.add("show");
+
+    menuBtn.setAttribute("aria-expanded", "true");
+
+    menuBtn.setAttribute("aria-label", "Close menu");
+
+    menuIcon.classList.remove("fa-bars");
+
+    menuIcon.classList.add("fa-xmark");
+
+  }
+
+
+  function closeMobileMenu() {
+
+    mobileMenu.classList.remove("show");
+
+    menuBtn.setAttribute("aria-expanded", "false");
+
+    menuBtn.setAttribute("aria-label", "Open menu");
+
+    menuIcon.classList.remove("fa-xmark");
+
+    menuIcon.classList.add("fa-bars");
+
+    closeMobileDropdowns();
+
+  }
+
+
+  /* =====================================
+     MOBILE DROPDOWNS
+  ===================================== */
+
+  const mobileGroups =
+    document.querySelectorAll(".mobile-group");
+
+
+  mobileGroups.forEach(function (group) {
+
+    const toggle =
+      group.querySelector(".mobile-toggle");
+
+
+    toggle.addEventListener("click", function (e) {
+
+      e.stopPropagation();
+
+      const isOpen =
+        group.classList.contains("open");
+
+
+      /* Close all other dropdowns */
+
+      mobileGroups.forEach(function (otherGroup) {
+
+        if (otherGroup !== group) {
+
+          otherGroup.classList.remove("open");
+
+          const otherToggle =
+            otherGroup.querySelector(".mobile-toggle");
+
+          otherToggle.classList.remove("active");
+
+        }
+
+      });
+
+
+      /* Toggle current */
+
+      if (isOpen) {
+
+        group.classList.remove("open");
+
+        toggle.classList.remove("active");
+
+      } else {
+
+        group.classList.add("open");
+
+        toggle.classList.add("active");
+
+      }
+
+    });
+
+  });
+
+
+  function closeMobileDropdowns() {
+
+    mobileGroups.forEach(function (group) {
+
+      group.classList.remove("open");
+
+      const toggle =
+        group.querySelector(".mobile-toggle");
+
+      toggle.classList.remove("active");
+
+    });
+
+  }
+
+
+  /* =====================================
+     MOBILE LINK CLICK
+  ===================================== */
+
+  const mobileLinks =
+    document.querySelectorAll(
+      ".mobile-link, .mobile-submenu a, .mobile-outline, .mobile-solid"
+    );
+
+
+  mobileLinks.forEach(function (link) {
+
+    link.addEventListener("click", function () {
+
+      closeMobileMenu();
+
+    });
+
+  });
+
+
+  /* =====================================
+     DESKTOP DROPDOWNS
+  ===================================== */
+
+  const desktopDropdowns =
+    document.querySelectorAll(".nav-dropdown");
+
+
+  desktopDropdowns.forEach(function (dropdown) {
+
+    const toggle =
+      dropdown.querySelector(".nav-dropdown-toggle");
+
+
+    toggle.addEventListener("click", function (e) {
+
+      e.stopPropagation();
+
+
+      const isOpen =
+        dropdown.classList.contains("open");
+
+
+      /* Close all */
+
+      desktopDropdowns.forEach(function (item) {
+
+        item.classList.remove("open");
+
+      });
+
+
+      /* Open current */
+
+      if (!isOpen) {
+
+        dropdown.classList.add("open");
+
+      }
+
+    });
+
+  });
+
+
+  /* =====================================
+     OUTSIDE CLICK
+  ===================================== */
+
+  document.addEventListener("click", function (e) {
+
+    /* Desktop dropdown */
+
+    if (!e.target.closest(".nav-dropdown")) {
+
+      desktopDropdowns.forEach(function (dropdown) {
+
+        dropdown.classList.remove("open");
+
+      });
+
+    }
+
+
+    /* Mobile menu */
+
+    if (
+      !e.target.closest("#mobileMenu") &&
+      !e.target.closest("#menuBtn")
+    ) {
+
+      closeMobileMenu();
+
+    }
+
+  });
+
+
+  /* =====================================
+     ESC KEY
+  ===================================== */
+
+  document.addEventListener("keydown", function (e) {
+
+    if (e.key === "Escape") {
+
+      closeMobileMenu();
+
+      desktopDropdowns.forEach(function (dropdown) {
+
+        dropdown.classList.remove("open");
+
+      });
+
+    }
+
+  });
+
+
+  /* =====================================
+     WINDOW RESIZE
+  ===================================== */
+
+  window.addEventListener("resize", function () {
+
+    if (window.innerWidth >= 1024) {
+
+      closeMobileMenu();
+
+    }
+
+  });
+
+
+  /* =====================================
+     ACTIVE NAV LINK
+  ===================================== */
+
+  const allNavLinks =
+    document.querySelectorAll(
+      ".nav-link:not(.nav-dropdown-toggle)"
+    );
+
+
+  allNavLinks.forEach(function (link) {
+
+    link.addEventListener("click", function () {
+
+      allNavLinks.forEach(function (item) {
+
+        item.classList.remove("active");
+
+      });
+
+      this.classList.add("active");
+
+    });
+
+  });
+
+
+});
+</script>
+<!-- ========================================================= -->
+<!-- MODERN FLOATING CALL BUTTON -->
+<!-- ========================================================= -->
+
+<style>
+    /* Floating Call Button */
+    .modern-call-wrapper {
+        position: fixed;
+        left: 22px;
+        bottom: 22px;
+        z-index: 99999;
+        font-family: Arial, sans-serif;
+    }
+
+    .modern-call-btn {
+        width: 58px;
+        height: 58px;
+        border-radius: 50%;
+        border: 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        background: linear-gradient(
+            blue,
+            white,
+       
+        );
+
+        color: blue;
+        box-shadow:
+            0 10px 30px rgba(128, 0, 0, 0.35),
+            0 0 0 5px rgba(128, 0, 0, 0.08);
+
+        transition: all .3s ease;
+        position: relative;
+    }
+
+    .modern-call-btn:hover {
+        transform: translateY(-4px) scale(1.05);
+
+        box-shadow:
+            0 15px 35px rgba(128, 0, 0, 0.45),
+            0 0 0 7px rgba(128, 0, 0, 0.10);
+    }
+
+    .modern-call-btn svg {
+        width: 26px;
+        height: 26px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    /* Pulse Effect */
+    .modern-call-btn::before {
+        content: "";
+        position: absolute;
+        inset: -7px;
+        border-radius: 50%;
+        border: 2px solid rgba(128, 0, 0, .25);
+        animation: callPulse 2s infinite;
+    }
+
+    @keyframes callPulse {
+        0% {
+            transform: scale(.9);
+            opacity: .8;
+        }
+
+        70% {
+            transform: scale(1.25);
+            opacity: 0;
+        }
+
+        100% {
+            transform: scale(1.25);
+            opacity: 0;
+        }
+    }
+
+    /* Small Online Dot */
+    .call-online-dot {
+        position: absolute;
+        left: 1px;
+        top: 1px;
+        width: 13px;
+        height: 13px;
+        background: #22c55e;
+        border: 2px solid #fff;
+        border-radius: 50%;
+    }
+
+    /* Popup */
+    .call-popup {
+        position: absolute;
+       left: 0;
+        bottom: 72px;
+        width: 245px;
+
+        background: rgba(255, 255, 255, .96);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+
+        border: 1px solid rgba(255,255,255,.7);
+        border-radius: 18px;
+
+        padding: 16px;
+
+        box-shadow:
+            0 20px 50px rgba(0,0,0,.18);
+
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(10px) scale(.96);
+        transform-origin: bottom right;
+
+        transition: all .3s ease;
+    }
+
+    .call-popup.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0) scale(1);
+    }
+
+    .call-popup-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .call-icon-small {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        background: linear-gradient(
+            135deg,
+            #800000,
+            #dc2626
+        );
+
+        color: #fff;
+    }
+
+    .call-icon-small svg {
+        width: 19px;
+        height: 19px;
+    }
+
+    .call-popup-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #111827;
+        margin: 0;
+    }
+
+    .call-popup-subtitle {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 2px;
+    }
+
+    .call-number {
+        background: #f8fafc;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+        text-align: center;
+    }
+
+    .call-now {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+
+        padding: 11px 14px;
+        border-radius: 10px;
+
+        background: linear-gradient(
+            135deg,
+            #800000,
+            #dc2626
+        );
+
+        color: #fff;
+        text-decoration: none;
+
+        font-size: 14px;
+        font-weight: 700;
+
+        box-shadow: 0 7px 20px rgba(128,0,0,.20);
+
+        transition: .25s ease;
+    }
+
+    .call-now:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(128,0,0,.30);
+    }
+
+    .call-now svg {
+        width: 17px;
+        height: 17px;
+    }
+
+    /* Mobile */
+    @media (max-width: 640px) {
+
+        .modern-call-wrapper {
+            right: 15px;
+            bottom: 15px;
+        }
+
+        .modern-call-btn {
+            width: 54px;
+            height: 54px;
+        }
+
+        .modern-call-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .call-popup {
+            width: 220px;
+            bottom: 66px;
+        }
+    }
+</style>
+
+
+<div class="modern-call-wrapper">
+
+    <!-- Popup -->
+    <div class="call-popup" id="callPopup">
+
+        <div class="call-popup-header">
+
+            <div class="call-icon-small">
+
+                <svg viewBox="0 0 24 24">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2
+                    19.79 19.79 0 0 1-8.63-3.07
+                    19.5 19.5 0 0 1-6-6
+                    19.79 19.79 0 0 1-3.07-8.67
+                    A2 2 0 0 1 4.11 2h3
+                    a2 2 0 0 1 2 1.72
+                    12.84 12.84 0 0 0 .7 2.81
+                    2 2 0 0 1-.45 2.11L8.09 9.91
+                    a16 16 0 0 0 6 6l1.27-1.27
+                    a2 2 0 0 1 2.11-.45
+                    12.84 12.84 0 0 0 2.81.7
+                    A2 2 0 0 1 22 16.92z"/>
+                </svg>
+
+            </div>
+
+            <div>
+                <p class="call-popup-title">
+                    Need Help?
+                </p>
+
+                <div class="call-popup-subtitle">
+                    Our team is ready to help
+                </div>
+            </div>
+
+        </div>
+
+
+        <div class="call-number">
+            📞 7519884465
+        </div>
+
+
+        <a
+            href="tel:+918084510393"
+            class="call-now"
+        >
+
+            <svg viewBox="0 0 24 24">
+                <path
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M22 16.92v3a2 2 0 0 1-2.18 2
+                    19.79 19.79 0 0 1-8.63-3.07
+                    19.5 19.5 0 0 1-6-6
+                    19.79 19.79 0 0 1-3.07-8.67
+                    A2 2 0 0 1 4.11 2h3
+                    a2 2 0 0 1 2 1.72
+                    12.84 12.84 0 0 0 .7 2.81
+                    2 2 0 0 1-.45 2.11L8.09 9.91
+                    a16 16 0 0 0 6 6l1.27-1.27
+                    a2 2 0 0 1 2.11-.45
+                    12.84 12.84 0 0 0 2.81.7
+                    A2 2 0 0 1 22 16.92z"
+                />
+            </svg>
+
+            Call Now
+
+        </a>
+
+    </div>
+
+
+    <!-- Floating Button -->
+    <button
+        type="button"
+        class="modern-call-btn"
+        id="callButton"
+        aria-label="Call us"
+    >
+
+        <svg viewBox="0 0 24 24">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2
+            19.79 19.79 0 0 1-8.63-3.07
+            19.5 19.5 0 0 1-6-6
+            19.79 19.79 0 0 1-3.07-8.67
+            A2 2 0 0 1 4.11 2h3
+            a2 2 0 0 1 2 1.72
+            12.84 12.84 0 0 0 .7 2.81
+            2 2 0 0 1-.45 2.11L8.09 9.91
+            a16 16 0 0 0 6 6l1.27-1.27
+            a2 2 0 0 1 2.11-.45
+            12.84 12.84 0 0 0 2.81.7
+            A2 2 0 0 1 22 16.92z"/>
+        </svg>
+
+        <span class="call-online-dot"></span>
+
+    </button>
+
+</div>
+
+
+<script>
+    const callButton = document.getElementById("callButton");
+    const callPopup = document.getElementById("callPopup");
+
+    callButton.addEventListener("click", function () {
+        callPopup.classList.toggle("show");
+    });
+
+    // Close when clicking outside
+    document.addEventListener("click", function (event) {
+
+        if (!event.target.closest(".modern-call-wrapper")) {
+            callPopup.classList.remove("show");
+        }
+
+    });
+</script>
+
+<script src="https://unpkg.com/typed.js@2.0.16/dist/typed.umd.js"></script>
+
+    <script src="js/script.js"></script>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+   
+</body>
+</html>
+

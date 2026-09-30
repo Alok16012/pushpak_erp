@@ -1,0 +1,2402 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Node.js & Next.js Development Course | PNS Academy</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    boxShadow: {
+                        soft: "0 20px 50px rgba(15,23,42,.10)"
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+                BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .hero-bg {
+            background:
+                radial-gradient(circle at 15% 20%, rgba(255,255,255,.20), transparent 28%),
+                radial-gradient(circle at 85% 15%, rgba(255,255,255,.16), transparent 25%),
+                linear-gradient(135deg, #0f172a 0%, #1e1b4b 42%, #312e81 72%, #7c3aed 100%);
+        }
+
+        .glass {
+            background: rgba(255,255,255,.10);
+            backdrop-filter: blur(18px);
+            border: 1px solid rgba(255,255,255,.16);
+        }
+
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height .35s ease;
+        }
+
+        .accordion-item.active .accordion-content {
+            max-height: 500px;
+        }
+
+        .accordion-item.active .plus-icon {
+            transform: rotate(45deg);
+        }
+
+        .plus-icon {
+            transition: transform .25s ease;
+        }
+
+        .tab-active {
+            background: #4f46e5;
+            color: white;
+        }
+
+        .gradient-text {
+            background: linear-gradient(90deg, #4f46e5, #9333ea);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-800">
+
+<!-- =========================================================
+     NAVBAR
+========================================================= -->
+
+<header class="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200">
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        <div class="h-16 flex items-center justify-between">
+
+            <!-- Logo -->
+            <a href="#" class="flex items-center gap-3">
+
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600
+                            flex items-center justify-center text-white font-black shadow-lg">
+                    P
+                </div>
+
+                <div>
+                    <div class="font-black text-lg leading-none">
+                        PNS Academy
+                    </div>
+
+                    <div class="text-[10px] uppercase tracking-widest text-slate-500">
+                        Skill • Career • Success
+                    </div>
+                </div>
+
+            </a>
+
+            <!-- Desktop Menu -->
+            <nav class="hidden lg:flex items-center gap-7 text-sm font-semibold">
+
+                <a href="#overview" class="hover:text-indigo-600 transition">
+                    Overview
+                </a>
+
+                <a href="#syllabus" class="hover:text-indigo-600 transition">
+                    Syllabus
+                </a>
+
+                <a href="#projects" class="hover:text-indigo-600 transition">
+                    Projects
+                </a>
+
+                <a href="#career" class="hover:text-indigo-600 transition">
+                    Career
+                </a>
+
+                <a href="#admission" class="hover:text-indigo-600 transition">
+                    Admission
+                </a>
+
+                <a href="#faq" class="hover:text-indigo-600 transition">
+                    FAQ
+                </a>
+
+                <a href="#admission"
+                   class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white
+                          hover:bg-indigo-700 transition shadow-lg">
+                    Apply Now
+                </a>
+
+            </nav>
+
+            <!-- Mobile Button -->
+            <button id="menuBtn"
+                    class="lg:hidden w-10 h-10 rounded-xl border border-slate-200
+                           flex items-center justify-center text-xl">
+                ☰
+            </button>
+
+        </div>
+
+        <!-- Mobile Menu -->
+        <div id="mobileMenu" class="hidden lg:hidden pb-5">
+
+            <div class="grid gap-2 text-sm font-semibold">
+
+                <a href="#overview" class="px-4 py-3 rounded-xl hover:bg-slate-100">
+                    Overview
+                </a>
+
+                <a href="#syllabus" class="px-4 py-3 rounded-xl hover:bg-slate-100">
+                    Syllabus
+                </a>
+
+                <a href="#projects" class="px-4 py-3 rounded-xl hover:bg-slate-100">
+                    Projects
+                </a>
+
+                <a href="#career" class="px-4 py-3 rounded-xl hover:bg-slate-100">
+                    Career
+                </a>
+
+                <a href="#admission" class="px-4 py-3 rounded-xl hover:bg-slate-100">
+                    Admission
+                </a>
+
+                <a href="#faq" class="px-4 py-3 rounded-xl hover:bg-slate-100">
+                    FAQ
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</header>
+
+
+<!-- =========================================================
+     STICKY COURSE TABS
+========================================================= -->
+
+<div class="sticky top-16 z-40 bg-white border-b border-slate-200">
+
+    <div class="max-w-7xl mx-auto px-3 sm:px-6">
+
+        <div class="flex overflow-x-auto gap-2 py-2 text-xs sm:text-sm font-bold">
+
+            <a href="#overview"
+               class="tab px-4 py-2 rounded-lg whitespace-nowrap tab-active">
+                Overview
+            </a>
+
+            <a href="#syllabus"
+               class="tab px-4 py-2 rounded-lg whitespace-nowrap hover:bg-slate-100">
+                Syllabus
+            </a>
+
+            <a href="#projects"
+               class="tab px-4 py-2 rounded-lg whitespace-nowrap hover:bg-slate-100">
+                Projects
+            </a>
+
+            <a href="#career"
+               class="tab px-4 py-2 rounded-lg whitespace-nowrap hover:bg-slate-100">
+                Career
+            </a>
+
+            <a href="#admission"
+               class="tab px-4 py-2 rounded-lg whitespace-nowrap hover:bg-slate-100">
+                Admission
+            </a>
+
+            <a href="#faq"
+               class="tab px-4 py-2 rounded-lg whitespace-nowrap hover:bg-slate-100">
+                FAQ
+            </a>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =========================================================
+     HERO
+========================================================= -->
+
+<section class="hero-bg text-white">
+
+    <div class="max-w-[1500px] mx-auto px-5 sm:px-8 lg:px-12">
+
+        <div class="min-h-[600px] lg:min-h-[650px]
+                    grid lg:grid-cols-[1.25fr_.75fr]
+                    gap-10 lg:gap-16 items-center py-14 lg:py-20">
+
+            <!-- Hero Content -->
+
+            <div>
+
+                <div class="inline-flex items-center gap-2
+                            px-4 py-2 rounded-full glass
+                            text-xs sm:text-sm font-bold mb-6">
+
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+
+                    Professional Web Development Program
+
+                </div>
+
+                <h1 class="text-4xl sm:text-5xl lg:text-7xl
+                           font-black tracking-tight leading-[1.05]">
+
+                    Node.js &
+
+                    <span class="text-violet-300">
+                        Next.js
+                    </span>
+
+                    Development
+
+                </h1>
+
+                <p class="mt-6 max-w-3xl text-base sm:text-lg
+                          text-slate-200 leading-8">
+
+                    Become a professional modern web developer by learning
+                    Node.js, Express.js, MongoDB, REST API, Authentication,
+                    Next.js, Server-Side Rendering, API Routes, Database
+                    Integration and real-world full-stack application
+                    development.
+
+                </p>
+
+
+                <!-- Tags -->
+
+                <div class="flex flex-wrap gap-2 mt-7">
+
+                    <span class="glass px-4 py-2 rounded-full text-xs font-bold">
+                        Node.js
+                    </span>
+
+                    <span class="glass px-4 py-2 rounded-full text-xs font-bold">
+                        Express.js
+                    </span>
+
+                    <span class="glass px-4 py-2 rounded-full text-xs font-bold">
+                        MongoDB
+                    </span>
+
+                    <span class="glass px-4 py-2 rounded-full text-xs font-bold">
+                        REST API
+                    </span>
+
+                    <span class="glass px-4 py-2 rounded-full text-xs font-bold">
+                        Next.js
+                    </span>
+
+                    <span class="glass px-4 py-2 rounded-full text-xs font-bold">
+                        Git & GitHub
+                    </span>
+
+                </div>
+
+
+                <!-- CTA -->
+
+                <div class="flex flex-col sm:flex-row gap-4 mt-9">
+
+                    <a href="#admission"
+                       class="inline-flex justify-center items-center
+                              px-7 py-4 rounded-2xl bg-white
+                              text-indigo-700 font-black
+                              hover:bg-slate-100 transition shadow-xl">
+
+                        Apply for Admission →
+
+                    </a>
+
+                    <a href="#syllabus"
+                       class="inline-flex justify-center items-center
+                              px-7 py-4 rounded-2xl glass
+                              font-black hover:bg-white/20 transition">
+
+                        View Complete Syllabus
+
+                    </a>
+
+                </div>
+
+            </div>
+
+
+            <!-- Hero Card -->
+
+            <div class="glass rounded-[2rem] p-6 sm:p-8 shadow-2xl">
+
+                <div class="flex items-center justify-between mb-7">
+
+                    <div>
+                        <p class="text-xs text-slate-300">
+                            Course Fee
+                        </p>
+
+                        <div class="flex items-end gap-3">
+
+                            <span class="text-4xl font-black">
+                                ₹20,000
+                            </span>
+
+                            <del class="text-slate-400">
+                                ₹35,000
+                            </del>
+
+                        </div>
+                    </div>
+
+                    <span class="px-3 py-1 rounded-full
+                                 bg-emerald-400/20 text-emerald-300
+                                 text-xs font-black">
+                        SPECIAL OFFER
+                    </span>
+
+                </div>
+
+
+                <div class="grid grid-cols-2 gap-3">
+
+                    <div class="rounded-2xl bg-white/10 p-4">
+                        <div class="text-2xl font-black">6</div>
+                        <div class="text-xs text-slate-300 mt-1">
+                            Months
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl bg-white/10 p-4">
+                        <div class="text-2xl font-black">12+</div>
+                        <div class="text-xs text-slate-300 mt-1">
+                            Live Projects
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl bg-white/10 p-4">
+                        <div class="text-2xl font-black">Online</div>
+                        <div class="text-xs text-slate-300 mt-1">
+                            Learning
+                        </div>
+                    </div>
+
+                    <div class="rounded-2xl bg-white/10 p-4">
+                        <div class="text-2xl font-black">Yes</div>
+                        <div class="text-xs text-slate-300 mt-1">
+                            Certificate
+                        </div>
+                    </div>
+
+                </div>
+
+
+                <div class="mt-6 p-4 rounded-2xl bg-black/20">
+
+                    <div class="text-xs text-slate-300">
+                        Career Focus
+                    </div>
+
+                    <div class="font-black mt-1">
+                        Full Stack • Backend • Next.js
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     OVERVIEW
+========================================================= -->
+
+<section id="overview" class="py-20">
+
+    <div class="max-w-7xl mx-auto px-5 sm:px-8">
+
+        <div class="max-w-3xl">
+
+            <span class="text-indigo-600 font-black text-sm uppercase tracking-widest">
+                Course Overview
+            </span>
+
+            <h2 class="text-3xl sm:text-5xl font-black mt-3">
+                Build Modern Web Applications
+            </h2>
+
+            <p class="mt-5 text-slate-600 leading-8">
+
+                This professional program takes you from JavaScript
+                fundamentals to backend development and modern
+                Next.js application development.
+
+            </p>
+
+        </div>
+
+
+        <div class="grid md:grid-cols-3 gap-6 mt-12">
+
+            <div class="bg-white rounded-3xl p-7 shadow-soft border border-slate-100">
+
+                <div class="w-14 h-14 rounded-2xl bg-indigo-50
+                            text-indigo-600 flex items-center justify-center
+                            text-2xl font-black">
+                    JS
+                </div>
+
+                <h3 class="font-black text-xl mt-6">
+                    Node.js Development
+                </h3>
+
+                <p class="text-slate-600 text-sm leading-7 mt-3">
+                    JavaScript runtime, modules, npm, asynchronous
+                    programming, filesystem, events and backend development.
+                </p>
+
+            </div>
+
+
+            <div class="bg-white rounded-3xl p-7 shadow-soft border border-slate-100">
+
+                <div class="w-14 h-14 rounded-2xl bg-purple-50
+                            text-purple-600 flex items-center justify-center
+                            text-xl font-black">
+                    API
+                </div>
+
+                <h3 class="font-black text-xl mt-6">
+                    Express & REST API
+                </h3>
+
+                <p class="text-slate-600 text-sm leading-7 mt-3">
+                    Build scalable APIs with Express.js, middleware,
+                    validation, authentication, CRUD and database integration.
+                </p>
+
+            </div>
+
+
+            <div class="bg-white rounded-3xl p-7 shadow-soft border border-slate-100">
+
+                <div class="w-14 h-14 rounded-2xl bg-blue-50
+                            text-blue-600 flex items-center justify-center
+                            text-xl font-black">
+                    N
+                </div>
+
+                <h3 class="font-black text-xl mt-6">
+                    Next.js Development
+                </h3>
+
+                <p class="text-slate-600 text-sm leading-7 mt-3">
+                    Learn modern Next.js architecture, routing, server
+                    components, rendering, API routes and production deployment.
+                </p>
+
+            </div>
+
+        </div>
+
+
+        <!-- Learning Outcomes -->
+
+        <div class="mt-16">
+
+            <h3 class="text-2xl font-black">
+                What You Will Learn
+            </h3>
+
+            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-7">
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ JavaScript & ES6+
+                </div>
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ Node.js Fundamentals
+                </div>
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ Express.js
+                </div>
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ REST API
+                </div>
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ MongoDB
+                </div>
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ Authentication
+                </div>
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ Next.js
+                </div>
+
+                <div class="bg-white border rounded-2xl p-5 font-bold">
+                    ✓ Deployment
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     TOOLS
+========================================================= -->
+
+<section class="py-16 bg-slate-900 text-white">
+
+    <div class="max-w-7xl mx-auto px-5 sm:px-8">
+
+        <div class="text-center">
+
+            <span class="text-indigo-300 font-black text-sm uppercase tracking-widest">
+                Technology Stack
+            </span>
+
+            <h2 class="text-3xl sm:text-4xl font-black mt-3">
+                Tools & Technologies Covered
+            </h2>
+
+        </div>
+
+
+        <div class="flex flex-wrap justify-center gap-3 mt-10">
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                JavaScript
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Node.js
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Express.js
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                MongoDB
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Mongoose
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Next.js
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                React
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                REST API
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Postman
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                VS Code
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Git
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                GitHub
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Vercel
+            </span>
+
+            <span class="px-5 py-3 rounded-xl bg-white/10 border border-white/10 font-bold">
+                Render
+            </span>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     SYLLABUS
+========================================================= -->
+
+<section id="syllabus" class="py-20">
+
+    <div class="max-w-6xl mx-auto px-5 sm:px-8">
+
+        <div class="text-center max-w-3xl mx-auto">
+
+            <span class="text-indigo-600 font-black text-sm uppercase tracking-widest">
+                Complete Syllabus
+            </span>
+
+            <h2 class="text-3xl sm:text-5xl font-black mt-3">
+                Node.js & Next.js Course Syllabus
+            </h2>
+
+            <p class="text-slate-600 mt-5 leading-7">
+                Click any module to view detailed topics.
+            </p>
+
+        </div>
+
+
+        <div class="mt-12 space-y-4">
+
+
+            <!-- PART A -->
+
+            <div class="rounded-3xl overflow-hidden border border-slate-200">
+
+                <div class="px-6 py-4 bg-slate-900 text-white font-black">
+                    PART A — JAVASCRIPT & NODE.JS FOUNDATION
+                </div>
+
+
+                <!-- Module 1 -->
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5
+                                   flex items-center justify-between text-left">
+
+                        <span class="font-black">
+                            01. JavaScript Fundamentals
+                        </span>
+
+                        <span class="plus-icon text-2xl">
+                            +
+                        </span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Variables & Data Types • Operators • Conditions •
+                            Loops • Functions • Scope • Arrays • Objects •
+                            Strings • ES6 Introduction • Arrow Functions •
+                            Template Literals • Destructuring.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Module 2 -->
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            02. Modern JavaScript & ES6+
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Let & Const • Spread & Rest Operators •
+                            Map • Filter • Reduce • Modules •
+                            Promises • Async/Await • Error Handling •
+                            Callback Functions.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Module 3 -->
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            03. Node.js Introduction
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Node.js Architecture • Runtime Environment •
+                            V8 Engine • Node Installation • REPL •
+                            Node CLI • npm • package.json • Dependencies •
+                            Development Workflow.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Module 4 -->
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            04. Node.js Core Modules
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            File System • Path • OS • Events • HTTP •
+                            URL • Crypto • Streams • Buffers •
+                            Environment Variables.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Module 5 -->
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            05. Asynchronous Programming
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Callbacks • Promises • Async/Await •
+                            Event Loop • Non-Blocking I/O •
+                            Error Handling • Parallel Operations.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- Module 6 -->
+
+                <div class="accordion-item bg-white">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            06. Node Package Management
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            npm Commands • Package Installation •
+                            Scripts • Semantic Versioning •
+                            Global Packages • nodemon • Environment Setup.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- PART B -->
+
+            <div class="rounded-3xl overflow-hidden border border-slate-200 mt-8">
+
+                <div class="px-6 py-4 bg-indigo-600 text-white font-black">
+                    PART B — EXPRESS.JS & BACKEND DEVELOPMENT
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            07. Express.js Fundamentals
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Express Installation • Server Creation •
+                            Routes • Request • Response • Middleware •
+                            Static Files • Error Handling.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            08. REST API Development
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            REST Architecture • HTTP Methods •
+                            GET • POST • PUT • PATCH • DELETE •
+                            Status Codes • JSON Response • API Testing.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            09. MongoDB Database
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            MongoDB Concepts • Collections • Documents •
+                            CRUD • MongoDB Atlas • Queries • Indexes •
+                            Database Design.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            10. Mongoose
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Schema • Models • Validation • CRUD •
+                            Query Methods • Population • Relationships •
+                            Middleware.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            11. Authentication & Authorization
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Registration • Login • Password Hashing •
+                            JWT • Cookies • Sessions • Protected Routes •
+                            Role Based Access • Admin Authentication.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            12. API Security
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            CORS • Helmet • Input Validation •
+                            Rate Limiting • Secure Passwords •
+                            Environment Variables • API Security Practices.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- PART C -->
+
+            <div class="rounded-3xl overflow-hidden border border-slate-200 mt-8">
+
+                <div class="px-6 py-4 bg-purple-600 text-white font-black">
+                    PART C — NEXT.JS DEVELOPMENT
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            13. Next.js Introduction
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Next.js Overview • React & Next.js •
+                            Project Setup • App Router • Folder Structure •
+                            Development Server.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            14. Next.js Routing
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            App Router • Dynamic Routes • Nested Routes •
+                            Route Groups • Navigation • Link Component •
+                            Loading UI • Error Pages.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            15. Server & Client Components
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Server Components • Client Components •
+                            Rendering Concepts • Component Architecture •
+                            Data Fetching.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            16. Next.js Data Fetching
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Fetch API • Server Data Fetching •
+                            Caching Concepts • Revalidation •
+                            API Integration • Loading States.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            17. Next.js API Routes
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Route Handlers • GET • POST • PUT • DELETE •
+                            API Responses • Database Integration •
+                            Backend Services.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            18. Next.js Forms & Authentication
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Forms • Validation • Authentication Flow •
+                            Protected Pages • Cookies • Sessions •
+                            User Dashboard.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- PART D -->
+
+            <div class="rounded-3xl overflow-hidden border border-slate-200 mt-8">
+
+                <div class="px-6 py-4 bg-emerald-600 text-white font-black">
+                    PART D — ADVANCED DEVELOPMENT & LIVE PROJECTS
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            19. Full Stack Integration
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Next.js Frontend • Node.js Backend •
+                            Express API • MongoDB • Authentication •
+                            CRUD • API Integration.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            20. Git & GitHub
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Git Installation • Repository • Commit •
+                            Branch • Merge • Pull • Push • GitHub Repository •
+                            Collaboration • Version Control.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            21. Testing & Debugging
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Debugging • Console • Network Tab •
+                            API Testing with Postman • Error Handling •
+                            Performance Optimization.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            22. Deployment
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Production Build • Environment Variables •
+                            Vercel • Render • Cloud Deployment •
+                            Domain Setup • Deployment Troubleshooting.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white border-b">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            23. Professional Full Stack Project
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Requirement Analysis • UI Structure •
+                            Database Design • Backend API •
+                            Authentication • Admin Panel •
+                            Frontend Integration • Testing.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="accordion-item bg-white">
+
+                    <button class="accordion-btn w-full px-6 py-5 flex justify-between text-left">
+
+                        <span class="font-black">
+                            24. Final Node.js & Next.js Project
+                        </span>
+
+                        <span class="plus-icon text-2xl">+</span>
+
+                    </button>
+
+                    <div class="accordion-content">
+
+                        <div class="px-6 pb-6 text-sm text-slate-600 leading-8">
+
+                            Complete production-style application with
+                            Next.js frontend, Node.js/Express backend,
+                            MongoDB database, authentication, admin panel,
+                            REST API and live deployment.
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     PROJECTS
+========================================================= -->
+
+<section id="projects" class="py-20 bg-slate-100">
+
+    <div class="max-w-7xl mx-auto px-5 sm:px-8">
+
+        <div class="text-center">
+
+            <span class="text-indigo-600 font-black text-sm uppercase tracking-widest">
+                Practical Training
+            </span>
+
+            <h2 class="text-3xl sm:text-5xl font-black mt-3">
+                Live Projects
+            </h2>
+
+        </div>
+
+
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-12">
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">🛒</div>
+                <h3 class="font-black mt-5">E-Commerce API</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Product, user, cart and order management backend.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">🎓</div>
+                <h3 class="font-black mt-5">Student Management</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Student, course, admission and dashboard system.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">📊</div>
+                <h3 class="font-black mt-5">Admin Dashboard</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Authentication, users, reports and management modules.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">📰</div>
+                <h3 class="font-black mt-5">News Portal</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Next.js based dynamic news and content platform.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">💼</div>
+                <h3 class="font-black mt-5">Job Portal</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Job listings, applications, users and admin panel.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">📞</div>
+                <h3 class="font-black mt-5">CRM System</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Leads, enquiries, follow-ups and customer management.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">📝</div>
+                <h3 class="font-black mt-5">Blog Platform</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Posts, categories, users, comments and API integration.
+                </p>
+            </div>
+
+            <div class="bg-white rounded-3xl p-6 shadow-soft">
+                <div class="text-3xl">🚀</div>
+                <h3 class="font-black mt-5">Final Full Stack App</h3>
+                <p class="text-sm text-slate-600 mt-2">
+                    Complete production-ready Node.js + Next.js project.
+                </p>
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     CAREER
+========================================================= -->
+
+<section id="career" class="py-20">
+
+    <div class="max-w-7xl mx-auto px-5 sm:px-8">
+
+        <div class="grid lg:grid-cols-2 gap-12 items-center">
+
+            <div>
+
+                <span class="text-indigo-600 font-black text-sm uppercase tracking-widest">
+                    Career Opportunities
+                </span>
+
+                <h2 class="text-3xl sm:text-5xl font-black mt-3">
+                    Start Your Web Development Career
+                </h2>
+
+                <p class="text-slate-600 mt-5 leading-8">
+
+                    After completing the program, students can work on
+                    backend, full-stack and modern Next.js projects.
+
+                </p>
+
+            </div>
+
+
+            <div class="grid sm:grid-cols-2 gap-4">
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    Node.js Developer
+                </div>
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    Backend Developer
+                </div>
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    Next.js Developer
+                </div>
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    Full Stack Developer
+                </div>
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    JavaScript Developer
+                </div>
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    API Developer
+                </div>
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    Web Application Developer
+                </div>
+
+                <div class="border rounded-2xl p-5 font-bold">
+                    Freelance Developer
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     FEE
+========================================================= -->
+
+<section class="py-20 bg-slate-900 text-white">
+
+    <div class="max-w-5xl mx-auto px-5 text-center">
+
+        <span class="text-indigo-300 font-black text-sm uppercase tracking-widest">
+            Course Investment
+        </span>
+
+        <h2 class="text-3xl sm:text-5xl font-black mt-3">
+            Professional Node.js & Next.js Program
+        </h2>
+
+
+        <div class="max-w-md mx-auto mt-10 rounded-[2rem]
+                    bg-white text-slate-900 p-8 shadow-2xl">
+
+            <div class="text-sm text-slate-500">
+                Complete Course Fee
+            </div>
+
+            <div class="text-5xl font-black mt-2">
+                ₹20,000
+            </div>
+
+            <del class="text-slate-400">
+                ₹35,000
+            </del>
+
+            <div class="mt-6 grid gap-3 text-left text-sm">
+
+                <div class="p-3 bg-slate-50 rounded-xl">
+                    ✓ 6 Months Training
+                </div>
+
+                <div class="p-3 bg-slate-50 rounded-xl">
+                    ✓ Complete Node.js + Next.js Syllabus
+                </div>
+
+                <div class="p-3 bg-slate-50 rounded-xl">
+                    ✓ Live Projects
+                </div>
+
+                <div class="p-3 bg-slate-50 rounded-xl">
+                    ✓ Project Guidance
+                </div>
+
+                <div class="p-3 bg-slate-50 rounded-xl">
+                    ✓ Course Certificate
+                </div>
+
+            </div>
+
+            <a href="#admission"
+               class="block mt-7 bg-indigo-600 hover:bg-indigo-700
+                      text-white font-black py-4 rounded-xl transition">
+
+                Apply Now
+
+            </a>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     ELIGIBILITY
+========================================================= -->
+
+<section class="py-20">
+
+    <div class="max-w-7xl mx-auto px-5 sm:px-8">
+
+        <div class="grid md:grid-cols-2 gap-8">
+
+            <div class="bg-white border rounded-3xl p-8 shadow-soft">
+
+                <h3 class="text-2xl font-black">
+                    Eligibility
+                </h3>
+
+                <ul class="mt-6 space-y-4 text-sm text-slate-600">
+
+                    <li>✓ 10th / 12th Pass Students</li>
+                    <li>✓ ITI / Diploma Students</li>
+                    <li>✓ College Students</li>
+                    <li>✓ BCA / BSc IT / B.Tech Students</li>
+                    <li>✓ Working Professionals</li>
+                    <li>✓ Beginners Interested in Web Development</li>
+
+                </ul>
+
+            </div>
+
+
+            <div class="bg-white border rounded-3xl p-8 shadow-soft">
+
+                <h3 class="text-2xl font-black">
+                    Requirements
+                </h3>
+
+                <ul class="mt-6 space-y-4 text-sm text-slate-600">
+
+                    <li>✓ Basic Computer Knowledge</li>
+                    <li>✓ Laptop / Desktop Recommended</li>
+                    <li>✓ Internet Connection</li>
+                    <li>✓ Basic English Reading Ability</li>
+                    <li>✓ Regular Coding Practice</li>
+                    <li>✓ No Prior Node.js Experience Required</li>
+
+                </ul>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     ADMISSION
+========================================================= -->
+
+<section id="admission" class="py-20 bg-slate-100">
+
+    <div class="max-w-6xl mx-auto px-5 sm:px-8">
+
+        <div class="grid lg:grid-cols-2 gap-10">
+
+            <!-- Info -->
+
+            <div>
+
+                <span class="text-indigo-600 font-black text-sm uppercase tracking-widest">
+                    Admission
+                </span>
+
+                <h2 class="text-3xl sm:text-5xl font-black mt-3">
+                    Start Learning Node.js & Next.js
+                </h2>
+
+                <p class="text-slate-600 leading-8 mt-5">
+
+                    Fill the admission form and our counsellor will
+                    contact you for course details, batch timing and fees.
+
+                </p>
+
+
+                <div class="mt-8 space-y-4">
+
+                    <div class="bg-white rounded-2xl p-5 border">
+                        📞 <strong>Phone:</strong> +91 99999 99999
+                    </div>
+
+                    <div class="bg-white rounded-2xl p-5 border">
+                        ✉️ <strong>Email:</strong> info@pnsacademy.com
+                    </div>
+
+                    <div class="bg-white rounded-2xl p-5 border">
+                        📍 <strong>Location:</strong> Bihar, India
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- Form -->
+
+            <form id="admissionForm"
+                  class="bg-white rounded-[2rem] p-6 sm:p-8
+                         shadow-soft border border-slate-100">
+
+                <h3 class="text-2xl font-black">
+                    Admission Enquiry
+                </h3>
+
+
+                <div class="grid gap-5 mt-7">
+
+                    <div>
+
+                        <label class="text-sm font-bold">
+                            Student Name
+                        </label>
+
+                        <input id="studentName"
+                               required
+                               type="text"
+                               placeholder="Enter your name"
+                               class="w-full mt-2 px-4 py-3 rounded-xl
+                                      border border-slate-200 outline-none
+                                      focus:border-indigo-500">
+
+                    </div>
+
+
+                    <div>
+
+                        <label class="text-sm font-bold">
+                            Mobile Number
+                        </label>
+
+                        <input id="mobile"
+                               required
+                               type="tel"
+                               placeholder="Enter mobile number"
+                               class="w-full mt-2 px-4 py-3 rounded-xl
+                                      border border-slate-200 outline-none
+                                      focus:border-indigo-500">
+
+                    </div>
+
+
+                    <div>
+
+                        <label class="text-sm font-bold">
+                            Email
+                        </label>
+
+                        <input id="email"
+                               type="email"
+                               placeholder="Enter email"
+                               class="w-full mt-2 px-4 py-3 rounded-xl
+                                      border border-slate-200 outline-none
+                                      focus:border-indigo-500">
+
+                    </div>
+
+
+                    <div>
+
+                        <label class="text-sm font-bold">
+                            Qualification
+                        </label>
+
+                        <select id="qualification"
+                                class="w-full mt-2 px-4 py-3 rounded-xl
+                                       border border-slate-200 outline-none">
+
+                            <option value="">
+                                Select Qualification
+                            </option>
+
+                            <option>10th</option>
+                            <option>12th</option>
+                            <option>ITI</option>
+                            <option>Diploma</option>
+                            <option>Graduation</option>
+                            <option>Post Graduation</option>
+
+                        </select>
+
+                    </div>
+
+
+                    <div>
+
+                        <label class="text-sm font-bold">
+                            Preferred Mode
+                        </label>
+
+                        <select id="mode"
+                                class="w-full mt-2 px-4 py-3 rounded-xl
+                                       border border-slate-200 outline-none">
+
+                            <option>Online</option>
+                            <option>Offline</option>
+                            <option>Both</option>
+
+                        </select>
+
+                    </div>
+
+
+                    <div>
+
+                        <label class="text-sm font-bold">
+                            Message
+                        </label>
+
+                        <textarea id="message"
+                                  rows="4"
+                                  placeholder="Write your message..."
+                                  class="w-full mt-2 px-4 py-3 rounded-xl
+                                         border border-slate-200 outline-none
+                                         focus:border-indigo-500"></textarea>
+
+                    </div>
+
+
+                    <button type="submit"
+                            class="w-full py-4 rounded-xl
+                                   bg-indigo-600 hover:bg-indigo-700
+                                   text-white font-black transition">
+
+                        Apply via WhatsApp
+
+                    </button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     CERTIFICATE
+========================================================= -->
+
+<section class="py-20">
+
+    <div class="max-w-5xl mx-auto px-5">
+
+        <div class="rounded-[2rem] bg-gradient-to-br
+                    from-indigo-600 to-purple-700
+                    text-white p-8 sm:p-12 text-center">
+
+            <div class="text-5xl">
+                🏆
+            </div>
+
+            <h2 class="text-3xl sm:text-4xl font-black mt-5">
+                Course Completion Certificate
+            </h2>
+
+            <p class="max-w-2xl mx-auto mt-4 text-indigo-100 leading-7">
+
+                Successfully complete the training and projects to
+                receive a professional course completion certificate
+                from PNS Academy.
+
+            </p>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     FAQ
+========================================================= -->
+
+<section id="faq" class="py-20 bg-slate-100">
+
+    <div class="max-w-4xl mx-auto px-5">
+
+        <div class="text-center">
+
+            <span class="text-indigo-600 font-black text-sm uppercase tracking-widest">
+                FAQ
+            </span>
+
+            <h2 class="text-3xl sm:text-5xl font-black mt-3">
+                Frequently Asked Questions
+            </h2>
+
+        </div>
+
+
+        <div class="mt-10 space-y-4">
+
+
+            <div class="faq-item bg-white border rounded-2xl overflow-hidden">
+
+                <button class="faq-btn w-full px-6 py-5 text-left
+                               flex justify-between font-black">
+
+                    Is this course suitable for beginners?
+
+                    <span class="faq-icon text-xl">+</span>
+
+                </button>
+
+                <div class="faq-content hidden px-6 pb-6 text-sm
+                            text-slate-600 leading-7">
+
+                    Yes. The program starts with JavaScript and gradually
+                    moves toward Node.js, Express.js, MongoDB and Next.js.
+
+                </div>
+
+            </div>
+
+
+            <div class="faq-item bg-white border rounded-2xl overflow-hidden">
+
+                <button class="faq-btn w-full px-6 py-5 text-left
+                               flex justify-between font-black">
+
+                    Will I learn both Node.js and Next.js?
+
+                    <span class="faq-icon text-xl">+</span>
+
+                </button>
+
+                <div class="faq-content hidden px-6 pb-6 text-sm
+                            text-slate-600 leading-7">
+
+                    Yes. The course covers Node.js backend development
+                    along with modern Next.js application development.
+
+                </div>
+
+            </div>
+
+
+            <div class="faq-item bg-white border rounded-2xl overflow-hidden">
+
+                <button class="faq-btn w-full px-6 py-5 text-left
+                               flex justify-between font-black">
+
+                    Will there be live projects?
+
+                    <span class="faq-icon text-xl">+</span>
+
+                </button>
+
+                <div class="faq-content hidden px-6 pb-6 text-sm
+                            text-slate-600 leading-7">
+
+                    Yes. Students work on multiple practical projects
+                    including APIs, dashboards, management systems and
+                    full-stack applications.
+
+                </div>
+
+            </div>
+
+
+            <div class="faq-item bg-white border rounded-2xl overflow-hidden">
+
+                <button class="faq-btn w-full px-6 py-5 text-left
+                               flex justify-between font-black">
+
+                    Is MongoDB included?
+
+                    <span class="faq-icon text-xl">+</span>
+
+                </button>
+
+                <div class="faq-content hidden px-6 pb-6 text-sm
+                            text-slate-600 leading-7">
+
+                    Yes. MongoDB and Mongoose are included for
+                    database design and application development.
+
+                </div>
+
+            </div>
+
+
+            <div class="faq-item bg-white border rounded-2xl overflow-hidden">
+
+                <button class="faq-btn w-full px-6 py-5 text-left
+                               flex justify-between font-black">
+
+                    Will I receive a certificate?
+
+                    <span class="faq-icon text-xl">+</span>
+
+                </button>
+
+                <div class="faq-content hidden px-6 pb-6 text-sm
+                            text-slate-600 leading-7">
+
+                    Yes. Eligible students receive a PNS Academy
+                    course completion certificate.
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     FINAL CTA
+========================================================= -->
+
+<section class="py-20 bg-gradient-to-r from-indigo-600 to-purple-700 text-white">
+
+    <div class="max-w-5xl mx-auto px-5 text-center">
+
+        <h2 class="text-3xl sm:text-5xl font-black">
+            Ready to Become a Full Stack Developer?
+        </h2>
+
+        <p class="mt-5 text-indigo-100 leading-7">
+
+            Learn Node.js + Express.js + MongoDB + Next.js
+            and build professional real-world applications.
+
+        </p>
+
+        <div class="flex flex-col sm:flex-row justify-center gap-4 mt-8">
+
+            <a href="#admission"
+               class="px-8 py-4 rounded-xl bg-white text-indigo-700
+                      font-black hover:bg-slate-100 transition">
+
+                Apply Now
+
+            </a>
+
+            <a href="#syllabus"
+               class="px-8 py-4 rounded-xl border border-white/30
+                      font-black hover:bg-white/10 transition">
+
+                View Syllabus
+
+            </a>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     FOOTER
+========================================================= -->
+
+<footer class="bg-slate-950 text-slate-400">
+
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 py-12">
+
+        <div class="grid md:grid-cols-3 gap-10">
+
+            <div>
+
+                <div class="flex items-center gap-3 text-white">
+
+                    <div class="w-10 h-10 rounded-xl bg-indigo-600
+                                flex items-center justify-center
+                                font-black">
+                        P
+                    </div>
+
+                    <div class="font-black text-xl">
+                        PNS Academy
+                    </div>
+
+                </div>
+
+                <p class="mt-5 text-sm leading-7">
+                    Professional computer education and career
+                    focused skill development programs.
+                </p>
+
+            </div>
+
+
+            <div>
+
+                <h3 class="text-white font-black">
+                    Node.js & Next.js
+                </h3>
+
+                <div class="mt-5 space-y-3 text-sm">
+
+                    <a href="#overview" class="block hover:text-white">
+                        Course Overview
+                    </a>
+
+                    <a href="#syllabus" class="block hover:text-white">
+                        Complete Syllabus
+                    </a>
+
+                    <a href="#projects" class="block hover:text-white">
+                        Projects
+                    </a>
+
+                    <a href="#career" class="block hover:text-white">
+                        Career
+                    </a>
+
+                </div>
+
+            </div>
+
+
+            <div>
+
+                <h3 class="text-white font-black">
+                    Contact
+                </h3>
+
+                <div class="mt-5 space-y-3 text-sm">
+
+                    <p>📞 +91 99999 99999</p>
+
+                    <p>✉️ info@pnsacademy.com</p>
+
+                    <p>📍 Bihar, India</p>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="border-t border-white/10 mt-10 pt-6
+                    text-center text-xs">
+
+            © 2026 PNS Academy. All Rights Reserved.
+
+        </div>
+
+    </div>
+
+</footer>
+
+
+<!-- =========================================================
+     FLOATING WHATSAPP
+========================================================= -->
+
+<a href="https://wa.me/919999999999"
+   target="_blank"
+   class="fixed bottom-5 right-5 z-50
+          w-14 h-14 rounded-full
+          bg-green-500 text-white
+          flex items-center justify-center
+          text-2xl shadow-2xl hover:scale-110 transition">
+
+    ☎
+
+</a>
+
+
+<!-- =========================================================
+     JAVASCRIPT
+========================================================= -->
+
+<script>
+
+    /* Mobile Menu */
+
+    const menuBtn = document.getElementById("menuBtn");
+    const mobileMenu = document.getElementById("mobileMenu");
+
+    menuBtn.addEventListener("click", () => {
+        mobileMenu.classList.toggle("hidden");
+    });
+
+
+    /* Accordion */
+
+    document.querySelectorAll(".accordion-btn").forEach(button => {
+
+        button.addEventListener("click", () => {
+
+            const item = button.closest(".accordion-item");
+
+            document.querySelectorAll(".accordion-item").forEach(other => {
+
+                if (other !== item) {
+                    other.classList.remove("active");
+                }
+
+            });
+
+            item.classList.toggle("active");
+
+        });
+
+    });
+
+
+    /* FAQ */
+
+    document.querySelectorAll(".faq-btn").forEach(button => {
+
+        button.addEventListener("click", () => {
+
+            const item = button.closest(".faq-item");
+            const content = item.querySelector(".faq-content");
+            const icon = item.querySelector(".faq-icon");
+
+            document.querySelectorAll(".faq-item").forEach(other => {
+
+                if (other !== item) {
+
+                    other.querySelector(".faq-content").classList.add("hidden");
+
+                    other.querySelector(".faq-icon").textContent = "+";
+
+                }
+
+            });
+
+            content.classList.toggle("hidden");
+
+            icon.textContent =
+                content.classList.contains("hidden") ? "+" : "−";
+
+        });
+
+    });
+
+
+    /* Admission Form -> WhatsApp */
+
+    document.getElementById("admissionForm")
+        .addEventListener("submit", function(e) {
+
+            e.preventDefault();
+
+            const name =
+                document.getElementById("studentName").value;
+
+            const mobile =
+                document.getElementById("mobile").value;
+
+            const email =
+                document.getElementById("email").value;
+
+            const qualification =
+                document.getElementById("qualification").value;
+
+            const mode =
+                document.getElementById("mode").value;
+
+            const message =
+                document.getElementById("message").value;
+
+
+            const whatsappMessage =
+
+`*Node.js & Next.js Course Admission Enquiry*
+
+*Student Name:* ${name}
+
+*Mobile:* ${mobile}
+
+*Email:* ${email}
+
+*Qualification:* ${qualification}
+
+*Preferred Mode:* ${mode}
+
+*Message:* ${message}
+
+*Course:* Node.js & Next.js Development
+
+*PNS Academy*`;
+
+
+            const whatsappNumber = "919999999999";
+
+            const url =
+                "https://wa.me/" +
+                whatsappNumber +
+                "?text=" +
+                encodeURIComponent(whatsappMessage);
+
+
+            window.open(url, "_blank");
+
+        });
+
+
+    /* Course Tabs */
+
+    const sections = document.querySelectorAll(
+        "#overview, #syllabus, #projects, #career, #admission, #faq"
+    );
+
+    const tabs = document.querySelectorAll(".tab");
+
+    window.addEventListener("scroll", () => {
+
+        let current = "";
+
+        sections.forEach(section => {
+
+            const top = section.offsetTop - 180;
+
+            if (window.scrollY >= top) {
+                current = section.getAttribute("id");
+            }
+
+        });
+
+
+        tabs.forEach(tab => {
+
+            tab.classList.remove("tab-active");
+
+            if (tab.getAttribute("href") === "#" + current) {
+                tab.classList.add("tab-active");
+            }
+
+        });
+
+    });
+
+</script>
+
+</body>
+</html>
