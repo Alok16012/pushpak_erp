@@ -725,6 +725,16 @@ export async function updateCourse(id: string, input: Record<string, unknown>) {
   }
   const { data, error } = await supabase.from("courses").update(payload).eq("id", id).select("*").single();
   if (error) throw new Error(describeCategoryRejection(error));
+  // Switching a course off takes it back from every branch that had it, so
+  // making it active again does not quietly hand it back out.
+  if (payload.isActive === false) {
+    const { error: takeBackError } = await supabase
+      .from("branch_courses")
+      .update({ isOffered: false, updatedAt: nowIso() })
+      .eq("courseId", id)
+      .eq("isOffered", true);
+    if (takeBackError) throw new Error(takeBackError.message);
+  }
   return { success: true, data: mapCourse(data as Record<string, unknown>) };
 }
 

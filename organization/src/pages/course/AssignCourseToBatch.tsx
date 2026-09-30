@@ -551,13 +551,13 @@ export default function AssignCourseToBatch() {
                 <p className="text-sm text-muted-foreground">Loading…</p>
               ) : offeredCourseIds.size === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No course has been assigned to your branch yet, so every course in the
-                  organisation is available to you for now.
+                  No course has been assigned to your branch yet. Ask the organisation office
+                  to assign one before admitting students.
                 </p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {courses
-                    .filter((course) => offeredCourseIds.has(course.id))
+                    .filter((course) => offeredCourseIds.has(course.id) && course.isActive !== false)
                     .map((course) => (
                       <Badge key={course.id} variant="secondary">
                         {course.name} ({course.code})

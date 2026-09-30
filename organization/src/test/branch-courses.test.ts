@@ -23,6 +23,7 @@ function builder(table: string) {
       call.filters[column] = value;
       return chain;
     },
+    single: () => Promise.resolve({ data: (rows[table] ?? [])[0] ?? null, error: null }),
     maybeSingle: () => Promise.resolve({ data: (rows[table] ?? [])[0] ?? null, error: null }),
     insert: (values: unknown) => {
       call.inserted = values;
@@ -42,7 +43,7 @@ vi.mock("@/lib/supabase/client", () => ({
   supabaseUrl: "https://project.supabase.co",
 }));
 
-const { getCourses, getBranchCourseIds, setBranchCourseOffered } = await import("@/lib/supabase/data");
+const { getCourses, getBranchCourseIds, setBranchCourseOffered, updateCourse } = await import("@/lib/supabase/data");
 
 const COURSES = [
   { id: "c1", name: "ADCA", code: "ADCA", organizationId: "org1", baseFee: 1000, durationValue: 12 },
@@ -98,6 +99,20 @@ describe("getCourses", () => {
     rows.courses = [...COURSES.slice(0, 2), { ...COURSES[2], isActive: false }];
     const result = await getCourses("org1");
     expect(result.data).toHaveLength(3);
+  });
+});
+
+describe("updateCourse", () => {
+  it("takes an inactive course back from every branch", async () => {
+    await updateCourse("c3", { isActive: false });
+    const takeBack = calls.find((c) => c.table === "branch_courses" && c.updated);
+    expect(takeBack?.updated).toMatchObject({ isOffered: false });
+    expect(takeBack?.filters).toMatchObject({ courseId: "c3" });
+  });
+
+  it("leaves the branches alone when the course stays active", async () => {
+    await updateCourse("c3", { name: "DTP Advanced" });
+    expect(calls.some((c) => c.table === "branch_courses")).toBe(false);
   });
 });
 
