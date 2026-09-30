@@ -1,149 +1,146 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* Idealdigiskills ERP — design system.
-   The palette is taken from the institution's own crest: the gold of the open
-   book is the attention colour, the indigo of the gradient is the ink, and the
-   emerald is reserved for "things are going well". Gold appears on roughly one
-   element per screen — the primary action — so that it still means something
-   when it does appear. Everything else is warm neutral. */
+   The palette follows the public website: its blue-600 is the attention
+   colour (the primary action, one per screen), slate is the neutral family,
+   and emerald is reserved for "things are going well". */
 
 @layer base {
   :root {
-    --background: 40 24% 97%;
-    --foreground: 226 30% 12%;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
 
-    --card: 40 40% 99%;
-    --card-foreground: 226 30% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 226 30% 12%;
+    --popover-foreground: 222 47% 11%;
 
-    /* The single primary action: crest gold, ink text. */
-    --primary: 38 82% 52%;
-    --primary-foreground: 226 40% 10%;
+    /* The single primary action: website blue, white text. */
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 40 16% 93%;
-    --secondary-foreground: 226 30% 14%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 14%;
 
-    --muted: 40 16% 93%;
-    --muted-foreground: 226 10% 42%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 42%;
 
     /* Back to its shadcn meaning — the quiet hover surface, not a brand colour. */
-    --accent: 40 20% 91%;
-    --accent-foreground: 226 30% 14%;
+    --accent: 214 60% 95%;
+    --accent-foreground: 222 47% 14%;
 
-    /* Gold, split by job: --brand fills, --brand-ink is the contrast-safe
+    /* Blue, split by job: --brand fills, --brand-ink is the contrast-safe
        version for small text such as eyebrow labels. */
-    --brand: 38 82% 52%;
-    --brand-foreground: 226 40% 10%;
-    --brand-ink: 30 84% 32%;
+    --brand: 221 83% 53%;
+    --brand-foreground: 0 0% 100%;
+    --brand-ink: 224 76% 42%;
 
-    --destructive: 4 74% 50%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 158 62% 32%;
+    --success: 158 64% 32%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 26 86% 44%;
+    --warning: 21 90% 45%;
     --warning-foreground: 0 0% 100%;
 
-    --info: 205 62% 40%;
+    --info: 199 89% 38%;
     --info-foreground: 0 0% 100%;
 
-    --border: 40 14% 87%;
-    --input: 40 14% 84%;
-    --ring: 38 82% 46%;
+    --border: 214 32% 91%;
+    --input: 214 32% 86%;
+    --ring: 221 83% 53%;
 
     --radius: 0.7rem;
 
-    --sidebar-background: 226 32% 11%;
-    --sidebar-foreground: 40 18% 88%;
-    --sidebar-primary: 38 82% 56%;
-    --sidebar-primary-foreground: 226 40% 10%;
-    --sidebar-accent: 226 26% 17%;
-    --sidebar-accent-foreground: 40 24% 96%;
-    --sidebar-border: 226 22% 19%;
-    --sidebar-ring: 38 82% 56%;
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 214 32% 88%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 18%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 20%;
+    --sidebar-ring: 217 91% 60%;
 
-    --chart-1: 226 44% 34%;
-    --chart-2: 158 52% 36%;
-    --chart-3: 38 82% 52%;
-    --chart-4: 14 66% 54%;
-    --chart-5: 196 48% 40%;
+    --chart-1: 221 83% 53%;
+    --chart-2: 158 64% 38%;
+    --chart-3: 243 75% 59%;
+    --chart-4: 21 90% 50%;
+    --chart-5: 199 89% 42%;
 
-    --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
 
-    --shadow-sm: 0 1px 2px 0 hsl(226 30% 12% / 0.05);
-    --shadow: 0 1px 3px 0 hsl(226 30% 12% / 0.08), 0 1px 2px -1px hsl(226 30% 12% / 0.06);
-    --shadow-md: 0 4px 6px -1px hsl(226 30% 12% / 0.08), 0 2px 4px -2px hsl(226 30% 12% / 0.06);
-    --shadow-lg: 0 10px 15px -3px hsl(226 30% 12% / 0.08), 0 4px 6px -4px hsl(226 30% 12% / 0.05);
-    --shadow-xl: 0 20px 25px -5px hsl(226 30% 12% / 0.1), 0 8px 10px -6px hsl(226 30% 12% / 0.05);
+    --shadow-sm: 0 1px 2px 0 hsl(222 47% 11% / 0.05);
+    --shadow: 0 1px 3px 0 hsl(222 47% 11% / 0.08), 0 1px 2px -1px hsl(222 47% 11% / 0.06);
+    --shadow-md: 0 4px 6px -1px hsl(222 47% 11% / 0.08), 0 2px 4px -2px hsl(222 47% 11% / 0.06);
+    --shadow-lg: 0 10px 15px -3px hsl(222 47% 11% / 0.08), 0 4px 6px -4px hsl(222 47% 11% / 0.05);
+    --shadow-xl: 0 20px 25px -5px hsl(222 47% 11% / 0.1), 0 8px 10px -6px hsl(222 47% 11% / 0.05);
   }
 
   .dark {
-    /* Warm near-black rather than blue-black: gold sits in its own temperature
-       family instead of fighting a cold ground. */
-    --background: 32 12% 6%;
-    --foreground: 40 22% 94%;
+    /* Slate-950 ground, the same cool family as the website's dark footer. */
+    --background: 229 84% 5%;
+    --foreground: 210 40% 96%;
 
-    --card: 30 10% 9%;
-    --card-foreground: 40 22% 94%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 96%;
 
-    --popover: 30 10% 10%;
-    --popover-foreground: 40 22% 94%;
+    --popover: 222 47% 10%;
+    --popover-foreground: 210 40% 96%;
 
-    --primary: 38 84% 56%;
-    --primary-foreground: 30 40% 8%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 30 8% 15%;
-    --secondary-foreground: 40 22% 94%;
+    --secondary: 217 33% 15%;
+    --secondary-foreground: 210 40% 96%;
 
-    --muted: 30 8% 14%;
-    --muted-foreground: 38 10% 64%;
+    --muted: 217 33% 14%;
+    --muted-foreground: 215 20% 65%;
 
-    --accent: 30 8% 16%;
-    --accent-foreground: 40 22% 94%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 96%;
 
-    --brand: 38 84% 58%;
-    --brand-foreground: 30 40% 8%;
-    --brand-ink: 38 88% 64%;
+    --brand: 217 91% 60%;
+    --brand-foreground: 0 0% 100%;
+    --brand-ink: 213 94% 72%;
 
-    --destructive: 4 68% 52%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 48% 44%;
-    --success-foreground: 30 40% 8%;
+    --success: 152 56% 46%;
+    --success-foreground: 229 84% 5%;
 
-    --warning: 32 86% 55%;
-    --warning-foreground: 30 40% 8%;
+    --warning: 27 96% 58%;
+    --warning-foreground: 229 84% 5%;
 
-    --info: 200 58% 52%;
-    --info-foreground: 30 40% 8%;
+    --info: 199 89% 56%;
+    --info-foreground: 229 84% 5%;
 
-    --border: 30 8% 17%;
-    --input: 30 8% 19%;
-    --ring: 38 84% 56%;
+    --border: 217 33% 17%;
+    --input: 217 33% 20%;
+    --ring: 217 91% 60%;
 
-    --sidebar-background: 30 10% 8%;
-    --sidebar-foreground: 40 18% 90%;
-    --sidebar-primary: 38 84% 58%;
-    --sidebar-primary-foreground: 30 40% 8%;
-    --sidebar-accent: 30 8% 15%;
-    --sidebar-accent-foreground: 40 22% 96%;
-    --sidebar-border: 30 8% 17%;
-    --sidebar-ring: 38 84% 58%;
+    --sidebar-background: 222 47% 7%;
+    --sidebar-foreground: 214 32% 88%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 217 33% 15%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217 33% 17%;
+    --sidebar-ring: 217 91% 60%;
 
-    /* Warm bone rather than gold: a bar series is too much surface area to
+    /* Light slate rather than blue: a bar series is too much surface area to
        spend the accent on, so the dominant value stays neutral and only the
        series that needs chasing is coloured. */
-    --chart-1: 40 16% 78%;
-    --chart-2: 152 48% 48%;
-    --chart-3: 224 58% 64%;
-    --chart-4: 14 72% 60%;
-    --chart-5: 196 52% 52%;
+    --chart-1: 214 32% 78%;
+    --chart-2: 152 56% 48%;
+    --chart-3: 217 91% 64%;
+    --chart-4: 21 90% 60%;
+    --chart-5: 199 89% 56%;
   }
 }
 

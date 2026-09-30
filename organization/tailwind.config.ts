@@ -110,7 +110,7 @@ export default {
   			'accordion-up': 'accordion-up 0.2s ease-out'
   		},
 		// Defer to --font-sans in index.css. This previously hardcoded Inter,
-		// which silently overrode the DM Sans the app downloads on every load.
+		// which silently overrode the Poppins the app downloads on every load.
 		fontFamily: {
 			sans: ['var(--font-sans)']
 		},
