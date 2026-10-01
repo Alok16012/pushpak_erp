@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
@@ -12,19 +12,51 @@ const websiteDir = path.join(root, "website");
 const distDir = path.join(root, "dist");
 
 /**
+ * What website/cms.js needs to read the content the ERP saves: the same
+ * Supabase project and public (anon) key the ERP itself is built with.
+ */
+function cmsConfig(env: Record<string, string>) {
+  const config = { url: env.VITE_SUPABASE_URL || "", key: env.VITE_SUPABASE_ANON_KEY || "" };
+  return `window.CMS_CONFIG = ${JSON.stringify(config)};\n`;
+}
+
+/** Every page of the website, named for the ERP's page picker. */
+function websitePages() {
+  return fs
+    .readdirSync(websiteDir)
+    .filter((f) => f.endsWith(".html"))
+    .sort()
+    .map((f) => {
+      const name = f.slice(0, -5);
+      const html = fs.readFileSync(path.join(websiteDir, f), "utf8");
+      const h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html)?.[1] ?? "";
+      const heading = h1.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim();
+      return { name, heading: heading.slice(0, 80) };
+    });
+}
+
+/**
  * The public website (plain HTML in `website/`) is served from the site root,
  * next to the ERP. In dev it is served straight from disk; on build it is
  * copied into `dist/` around the ERP's own `dist/computercentre/`, together
  * with the host redirects that keep the ERP's client-side routes and the old
  * `.php` addresses working.
  */
-function website(): Plugin {
+function website(env: Record<string, string>): Plugin {
   return {
     name: "public-website",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = decodeURIComponent((req.url || "/").split("?")[0]);
         if (url.startsWith(APP_BASE) || url === APP_BASE.slice(0, -1)) return next();
+        if (url === "/cms-config.js") {
+          res.setHeader("Content-Type", "text/javascript");
+          return res.end(cmsConfig(env));
+        }
+        if (url === "/cms-pages.json") {
+          res.setHeader("Content-Type", "application/json");
+          return res.end(JSON.stringify(websitePages()));
+        }
         let file = path.join(websiteDir, url === "/" ? "index.html" : url);
         if (file.endsWith(".php")) file = file.slice(0, -4) + ".html";
         if (!file.startsWith(websiteDir) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
@@ -38,6 +70,8 @@ function website(): Plugin {
     },
     closeBundle() {
       fs.cpSync(websiteDir, distDir, { recursive: true });
+      fs.writeFileSync(path.join(distDir, "cms-config.js"), cmsConfig(env));
+      fs.writeFileSync(path.join(distDir, "cms-pages.json"), JSON.stringify(websitePages()));
       const pages = fs.readdirSync(websiteDir).filter((f) => f.endsWith(".html")).map((f) => f.slice(0, -5));
       const redirects = [
         `${APP_BASE.slice(0, -1)}  ${APP_BASE}  301`,
@@ -50,7 +84,7 @@ function website(): Plugin {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig(() => ({
+export default defineConfig(({ mode }) => ({
   base: APP_BASE,
   server: {
     host: "::",
@@ -59,7 +93,7 @@ export default defineConfig(() => ({
       overlay: false,
     },
   },
-  plugins: [react(), website()],
+  plugins: [react(), website({ ...loadEnv(mode, root, "VITE_"), ...process.env } as Record<string, string>)],
   build: {
     outDir: "dist/computercentre",
     emptyOutDir: true,

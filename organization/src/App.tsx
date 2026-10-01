@@ -91,6 +91,7 @@ const GenerateAdmitCards = lazy(() => import("./pages/cards/GenerateAdmitCards")
 
 // Settings
 const GeneralSettings = lazy(() => import("./pages/settings/GeneralSettings"));
+const WebsiteContent = lazy(() => import("./pages/website/WebsiteContent"));
 const PaymentGateway = lazy(() => import("./pages/settings/PaymentGateway"));
 const PaymentQRCode = lazy(() => import("./pages/settings/PaymentQRCode"));
 const BatchPaymentQR = lazy(() => import("./pages/settings/BatchPaymentQR"));
@@ -251,6 +252,7 @@ const App = () => (
 
           {/* Settings */}
           <Route path="/settings/general" element={<GeneralSettings />} />
+          <Route path="/website/content" element={<WebsiteContent />} />
           <Route path="/settings/payment-gateway" element={<PaymentGateway />} />
           <Route path="/settings/payment-qr" element={<PaymentQRCode />} />
           <Route path="/settings/batch-qr" element={<BatchPaymentQR />} />

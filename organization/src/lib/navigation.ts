@@ -228,6 +228,13 @@ export const menuItems: MenuItem[] = [
       { title: "All Session Years", url: "/session/all", icon: ListChecks },
     ],
   },
+  {
+    // The organisation's public website at the site root, not a branch's
+    // mini-site (that is "Website Settings" under Branch Management).
+    title: "Main Website",
+    icon: Globe,
+    items: [{ title: "Website Content", url: "/website/content", icon: LayoutTemplate }],
+  },
 ];
 
 /**

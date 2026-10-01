@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script src="/cms-config.js"></script>
+<script src="/cms.js" defer></script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -715,7 +718,7 @@
 
 <body>
 
-<header id="siteHeader"
+<header id="siteHeader" data-cms-scope="header"
     class="fixed top-0 left-0 right-0 z-50">
 
 
@@ -4419,7 +4422,7 @@ document.querySelectorAll('a[href^="#"]').forEach(link => {
 <!-- FOOTER -->
 <!-- ========================================================= -->
 
-<footer class="bg-slate-950 text-slate-300">
+<footer class="bg-slate-950 text-slate-300" data-cms-scope="footer">
 
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
