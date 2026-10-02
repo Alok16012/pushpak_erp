@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Playground } from "livecodes";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -17,16 +16,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Code2, FilePlus2, Save, Trash2 } from "lucide-react";
+import { Code2, FilePlus2, Loader2, Maximize2, Minimize2, Save, Trash2 } from "lucide-react";
+import { useFullscreen } from "@/hooks/use-fullscreen";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import {
+  CODE_LAB_URL,
   LAB_LANGUAGES,
   codeFingerprint,
-  createPortalPlayground,
   isLabLanguage,
   readSavedConfig,
   starterConfig,
+  waitForLabApi,
+  type LabApi,
   type LabLanguage,
 } from "@/lib/codeLab";
 import {
@@ -37,45 +39,60 @@ import {
 } from "@/lib/practiceFiles";
 
 /**
- * The LiveCodes editor, mounted once per `key`. Written out rather than taken
- * from `livecodes/react` so the frame can be created without popups -- see
- * `createPortalPlayground`.
+ * The full LiveCodes app, mounted once per `key` with the file to open.
+ *
+ * It is self-hosted on this site, so it shows its whole UI -- the Project,
+ * Settings and Help menus, templates, import/export, every language -- where
+ * the SDK's embed showed a cut-down editor. Student code still runs on
+ * LiveCodes' sandbox origin, not on this one.
  */
 function LabPlayground({
   config,
   onReady,
+  className,
 }: {
   config: ReturnType<typeof starterConfig>;
-  onReady: (sdk: Playground) => void;
+  onReady: (api: LabApi) => void;
+  className?: string;
 }) {
-  const box = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
   // Read once: the parent remounts this with a new key to change the config.
   const initial = useRef({ config, onReady });
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
 
-  useEffect(() => {
-    const container = box.current;
-    if (!container) return;
-    let sdk: Playground | null = null;
-    let gone = false;
-    createPortalPlayground(container, { config: initial.current.config, loading: "eager" })
-      .then((created) => {
-        if (gone) {
-          created.destroy();
-          return;
-        }
-        sdk = created;
-        initial.current.onReady(created);
+  const connect = () => {
+    const el = frame.current;
+    if (!el) return;
+    waitForLabApi(el)
+      .then(async (api) => {
+        await api.setConfig(initial.current.config);
+        setState("ready");
+        initial.current.onReady(api);
       })
-      .catch(() => {
-        // The frame shows its own error; there is nothing to hand back.
-      });
-    return () => {
-      gone = true;
-      sdk?.destroy();
-    };
-  }, []);
+      .catch(() => setState("failed"));
+  };
 
-  return <div ref={box} style={{ height: 620 }} />;
+  return (
+    <div className={`relative ${className ?? ""}`}>
+      <iframe
+        ref={frame}
+        title="Code Lab"
+        src={CODE_LAB_URL}
+        onLoad={connect}
+        allow="clipboard-read; clipboard-write; fullscreen"
+        className="h-full w-full border-0"
+      />
+      {state !== "ready" && (
+        <div className="absolute inset-0 grid place-items-center bg-[#1e1e1e] text-sm text-white/70">
+          {state === "loading" ? (
+            <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Opening the Code Lab…</span>
+          ) : (
+            <span>The Code Lab could not open. Check the internet connection and reload the page.</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -90,7 +107,9 @@ export default function CodeLab() {
   const { toast } = useToast();
   const owner = { ownerId: user?.id ?? "", organizationId: user?.organizationId, branchId: user?.branchId };
 
-  const playground = useRef<Playground | null>(null);
+  const playground = useRef<LabApi | null>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const fullscreen = useFullscreen(stage);
   /** The editors' content as last opened or saved; "unsaved" is a difference from it. */
   const baseline = useRef<string | null>(null);
   const [files, setFiles] = useState<PracticeFile[]>([]);
@@ -140,8 +159,26 @@ export default function CodeLab() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
+  // "Unsaved" is checked by comparing the editors with what was opened or
+  // saved, every couple of seconds, rather than by an edit event: the app
+  // also changes its code on its own (formatting, a template), and a compare
+  // cannot miss a change the way a missed event would.
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      const api = playground.current;
+      if (!api || baseline.current === null) return;
+      try {
+        setCodeDirty(codeFingerprint(await api.getCode()) !== baseline.current);
+      } catch {
+        /* the app is reloading; the next tick will tell */
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, []);
+
   const mount = (config: ReturnType<typeof starterConfig>) => {
-    // Cleared so the first content the new editor reports becomes the baseline.
+    // Cleared so the file as the new editor opens it becomes the baseline.
+    playground.current = null;
     baseline.current = null;
     setBootConfig(config);
     setBootKey((k) => k + 1);
@@ -298,8 +335,11 @@ export default function CodeLab() {
           </CardContent>
         </Card>
 
-        <Card className="min-w-0 overflow-hidden">
-          <div className="flex flex-wrap items-center gap-2 border-b p-3">
+        <Card
+          ref={stage}
+          className={`min-w-0 overflow-hidden ${fullscreen.active ? "flex flex-col rounded-none border-0" : ""}`}
+        >
+          <div className="flex flex-wrap items-center gap-2 border-b bg-card p-3">
             <Code2 className="h-4 w-4 shrink-0 text-brand-ink" />
             <Input
               aria-label="File name"
@@ -311,22 +351,31 @@ export default function CodeLab() {
               {LAB_LANGUAGES.find((l) => l.id === language)?.label}
             </Badge>
             {dirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
-            <Button className="ml-auto gap-2" onClick={save} disabled={saving || !owner.ownerId}>
-              <Save className="h-4 w-4" />
-              {saving ? "Saving…" : "Save"}
-            </Button>
+            <div className="ml-auto flex gap-2">
+              {fullscreen.supported && (
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={fullscreen.toggle}
+                  aria-label={fullscreen.active ? "Exit full screen" : "Full screen"}
+                  title={fullscreen.active ? "Exit full screen (Esc)" : "Full screen"}
+                >
+                  {fullscreen.active ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+              )}
+              <Button className="gap-2" onClick={save} disabled={saving || !owner.ownerId}>
+                <Save className="h-4 w-4" />
+                {saving ? "Saving…" : "Save"}
+              </Button>
+            </div>
           </div>
           <LabPlayground
             key={bootKey}
             config={bootConfig}
-            onReady={(sdk) => {
-              playground.current = sdk;
-              sdk.watch("code", ({ code }) => {
-                const now = codeFingerprint(code);
-                // The first report is the file as it opened, not an edit.
-                if (baseline.current === null) baseline.current = now;
-                else setCodeDirty(now !== baseline.current);
-              });
+            className={fullscreen.active ? "min-h-0 flex-1" : "h-[calc(100vh-15rem)] min-h-[560px]"}
+            onReady={async (api) => {
+              playground.current = api;
+              baseline.current = codeFingerprint(await api.getCode());
             }}
           />
           <p className="border-t px-3 py-2 text-[11px] text-muted-foreground">

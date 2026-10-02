@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 
-import { LAB_LANGUAGES, codeFingerprint, isLabLanguage, readSavedConfig, starterConfig } from "@/lib/codeLab";
+import { CODE_LAB_URL, LAB_LANGUAGES, codeFingerprint, isLabLanguage, readSavedConfig, starterConfig, waitForLabApi } from "@/lib/codeLab";
 import { canAccess } from "@/lib/navigation";
 
 describe("Code Lab starters", () => {
@@ -78,5 +80,38 @@ describe("who can open the tools", () => {
       expect(canAccess("franchise", path)).toBe(true);
       expect(canAccess("student", path)).toBe(true);
     }
+  });
+});
+
+describe("the full LiveCodes app", () => {
+  const coder = path.resolve(__dirname, "../../public/coder");
+
+  it("is self-hosted, with the loader patched to open its full UI in our frame", () => {
+    const loader = fs.readdirSync(path.join(coder, "livecodes")).find((f) => /^index\.[a-f0-9]+\.js$/.test(f));
+    expect(loader, "run node scripts/fetch-livecodes.mjs").toBeDefined();
+    const source = fs.readFileSync(path.join(coder, "livecodes", loader!), "utf8");
+    expect(source).toContain('O()&&r.get("full")==null');
+    expect(fs.existsSync(path.join(coder, "index.html"))).toBe(true);
+    expect(fs.existsSync(path.join(coder, "app.html"))).toBe(true);
+  });
+
+  it("is opened in full mode, with nothing popping up over the file", () => {
+    expect(CODE_LAB_URL).toMatch(/coder\/\?full&welcome=false&recoverUnsaved=false$/);
+  });
+
+  it("hands over the app's API once it has loaded", async () => {
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    const api = { getConfig: () => Promise.resolve({}) };
+    setTimeout(() => Object.assign(frame.contentWindow!, { livecodes: api }), 300);
+    await expect(waitForLabApi(frame, 5_000)).resolves.toBe(api);
+    frame.remove();
+  });
+
+  it("gives up on an app that never loads", async () => {
+    const frame = document.createElement("iframe");
+    document.body.appendChild(frame);
+    await expect(waitForLabApi(frame, 300)).rejects.toThrow(/too long/);
+    frame.remove();
   });
 });

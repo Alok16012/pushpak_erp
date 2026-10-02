@@ -11,5 +11,16 @@
             "destination": "/:page.html",
             "permanent": true
         }
+    ],
+    "headers": [
+        {
+            "source": "/computercentre/coder/(.*)",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                }
+            ]
+        }
     ]
 }

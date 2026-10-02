@@ -6,7 +6,7 @@
  * ninety-odd languages LiveCodes can run. Each starter is a working program,
  * so a student's first Run shows output rather than a blank pane.
  */
-import { createPlayground, type Code, type Config, type EmbedOptions } from "livecodes";
+import type { Code, Config, Playground } from "livecodes";
 
 export type LabLanguage = "web" | "javascript" | "python" | "c" | "sql";
 
@@ -146,38 +146,41 @@ export function readSavedConfig(
 export const codeFingerprint = (code: Pick<Code, "markup" | "style" | "script">): string =>
   [code.markup?.content ?? "", code.style?.content ?? "", code.script?.content ?? ""].join("\u0000");
 
-/** A sandbox token list, less the one that lets the frame open new windows. */
-export const withoutPopups = (sandbox: string) =>
-  sandbox
-    .split(/\s+/)
-    .filter((token) => token && token !== "allow-popups")
-    .join(" ");
+/**
+ * The full LiveCodes app, self-hosted in public/coder (see
+ * scripts/fetch-livecodes.mjs), with its menus, projects, templates,
+ * import/export and every language. `full` asks for that UI inside our frame;
+ * `welcome=false` and `recoverUnsaved=false` keep its start screen and its
+ * "recover your last project?" prompt from covering the file being opened --
+ * the student's files are the ones under My files.
+ */
+export const CODE_LAB_URL = `${import.meta.env.BASE_URL}coder/?full&welcome=false&recoverUnsaved=false`;
+
+/** What the Code Lab page asks of the app: the same calls the SDK offers. */
+export type LabApi = Pick<Playground, "getConfig" | "setConfig" | "getCode" | "run">;
 
 /**
- * `createPlayground`, with the playground unable to open windows of its own.
+ * The app's API, once it has loaded in the frame.
  *
- * LiveCodes always runs as an embed inside an iframe, and an embed's logo is an
- * "Edit on LiveCodes" button that opens the student's code on livecodes.io in
- * a new tab -- out of the portal, onto someone else's site. There is no option
- * to hide it, so the frame is denied popups instead and the button goes
- * nowhere. Everything else the playground does happens inside its own frame.
- *
- * The SDK sets the sandbox and the src in one synchronous stretch before its
- * first await, so the patched `setAttribute` is in place for exactly that call
- * and no other.
+ * The app is on our own origin, so its loader's `window.livecodes` is read
+ * straight off the frame -- no postMessage bridge in between. It appears when
+ * the app finishes loading, which takes a few seconds the first time (the
+ * editors come from a CDN), so this waits for it rather than guessing.
  */
-export function createPortalPlayground(
-  container: HTMLElement,
-  options: EmbedOptions,
-) {
-  const proto = HTMLIFrameElement.prototype;
-  const original = proto.setAttribute;
-  proto.setAttribute = function (this: HTMLIFrameElement, name: string, value: string) {
-    return original.call(this, name, name === "sandbox" ? withoutPopups(value) : value);
-  };
-  try {
-    return createPlayground(container, options);
-  } finally {
-    proto.setAttribute = original;
-  }
+export function waitForLabApi(frame: HTMLIFrameElement, timeoutMs = 60_000): Promise<LabApi> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const check = () => {
+      let api: unknown;
+      try {
+        api = (frame.contentWindow as (Window & { livecodes?: unknown }) | null)?.livecodes;
+      } catch {
+        return reject(new Error("The Code Lab frame is not on this site."));
+      }
+      if (api && typeof (api as LabApi).getConfig === "function") return resolve(api as LabApi);
+      if (Date.now() - started > timeoutMs) return reject(new Error("The Code Lab took too long to load."));
+      setTimeout(check, 250);
+    };
+    check();
+  });
 }

@@ -18,5 +18,12 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
 
+# The Code Lab (self-hosted LiveCodes): its compiler runs on LiveCodes'
+# sandbox origin and loads these scripts cross-origin.
+[[headers]]
+  for = "/computercentre/coder/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+
 # Routing lives in dist/_redirects, written by the build: the website is
 # served from /, the ERP from /computercentre/ (see vite.config.ts).

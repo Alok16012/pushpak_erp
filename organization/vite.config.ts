@@ -48,6 +48,25 @@ function website(env: Record<string, string>): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = decodeURIComponent((req.url || "/").split("?")[0]);
+        // The Code Lab's LiveCodes app (public/coder) is served untouched: the
+        // dev server would otherwise inject its client into the HTML ahead of
+        // LiveCodes' import map, which the browser then ignores, and the app
+        // never finishes loading. Its compiler, on LiveCodes' sandbox origin,
+        // also reads these files cross-origin.
+        if (url.startsWith(`${APP_BASE}coder/`)) {
+          const coderDir = path.join(root, "public", "coder");
+          let file = path.join(coderDir, url.slice(`${APP_BASE}coder/`.length));
+          if (file.endsWith(path.sep) || file === coderDir) file = path.join(file, "index.html");
+          if (!file.startsWith(coderDir) || !fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
+          const types: Record<string, string> = {
+            ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".json": "application/json",
+            ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".xml": "application/xml", ".ico": "image/x-icon", ".woff2": "font/woff2", ".wasm": "application/wasm",
+            ".webmanifest": "application/manifest+json",
+          };
+          res.setHeader("Content-Type", types[path.extname(file)] || "application/octet-stream");
+          res.setHeader("Access-Control-Allow-Origin", "*");
+          return void fs.createReadStream(file).pipe(res);
+        }
         if (url.startsWith(APP_BASE) || url === APP_BASE.slice(0, -1)) return next();
         if (url === "/cms-config.js") {
           res.setHeader("Content-Type", "text/javascript");
