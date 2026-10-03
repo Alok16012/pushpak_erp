@@ -16,6 +16,39 @@ export interface AssignableStudent {
   /** The batch they are in today, or "" when they are unplaced. */
   batchId: string;
   courseId: string;
+  /** Every course they are enrolled on (`students.courseIds`), the main one included. */
+  courseIds?: string[];
+  /** The branch that admitted them. */
+  branchId?: string;
+}
+
+/** The batch being filled, as far as who may join it goes. */
+export interface BatchForAssignment {
+  courseId?: string | null;
+  branchId?: string | null;
+}
+
+/** The courses a student is enrolled on: the main one and any others. */
+export const enrolledCourses = (student: AssignableStudent) =>
+  [...new Set([student.courseId, ...(student.courseIds ?? [])].filter(Boolean))];
+
+/**
+ * Why this student cannot join this batch, or null when they can.
+ *
+ * A batch teaches one course at one branch. A student placed in a batch of a
+ * course they never enrolled on gets that course's timetable on their portal
+ * under the name of their own course; one placed in another branch's batch
+ * is taught at a centre that did not admit them.
+ */
+export function eligibility(student: AssignableStudent, batch: BatchForAssignment | null | undefined): string | null {
+  if (!batch) return null;
+  if (batch.branchId && student.branchId && student.branchId !== batch.branchId) return "belongs to another branch";
+  if (batch.courseId) {
+    const courses = enrolledCourses(student);
+    if (!courses.length) return "has no course yet";
+    if (!courses.includes(batch.courseId)) return "is not enrolled on this batch's course";
+  }
+  return null;
 }
 
 export type Placement = "Unassigned" | "In this batch" | "In another batch";
@@ -47,9 +80,19 @@ export function assignmentProblem(input: {
   selected: AssignableStudent[];
   capacity: number | undefined | null;
   taken: number;
+  batch?: BatchForAssignment | null;
 }): string | null {
   if (!input.batchId) return "Pick the batch to assign these students to.";
   if (!input.selected.length) return "Select at least one student.";
+
+  const refused = input.selected
+    .map((student) => ({ student, why: eligibility(student, input.batch) }))
+    .filter((r): r is { student: AssignableStudent; why: string } => r.why !== null);
+  if (refused.length) {
+    const named = refused.slice(0, 3).map((r) => `${r.student.name} ${r.why}`).join("; ");
+    const more = refused.length > 3 ? ` (and ${refused.length - 3} more)` : "";
+    return `Cannot join this batch: ${named}${more}.`;
+  }
 
   const joining = input.selected.filter((student) => student.batchId !== input.batchId);
   const free = seatsLeft(input.capacity, input.taken);

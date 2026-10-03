@@ -18,6 +18,7 @@ import { CalendarCheck, Check, Clock3, Download, FileText, X } from "lucide-reac
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadCsv } from "@/lib/export";
+import { getUsers, type SystemUserRow } from "@/lib/supabase/data";
 
 /** The four the office keeps to, or whatever else was typed in its place. */
 type HolidayType = string;
@@ -52,25 +53,21 @@ const HOLIDAY_TYPES: { value: HolidayType; label: string }[] = [
   { value: "earned_leave", label: "Earned Leave" },
 ];
 
-/** Seeded employee list matching the app's user metadata shape. */
-const EMPLOYEES: Employee[] = [
-  { id: "EMP-001", name: "Rahul Verma", email: "rahul@pushpak.local", department: "Administration", designation: "Office Manager", branchId: "branch-1" },
-  { id: "EMP-002", name: "Priya Sharma", email: "priya@pushpak.local", department: "Academics", designation: "Faculty", branchId: "branch-1" },
-  { id: "EMP-003", name: "Amit Patel", email: "amit@pushpak.local", department: "IT", designation: "System Admin", branchId: "branch-1" },
-  { id: "EMP-004", name: "Sneha Gupta", email: "sneha@pushpak.local", department: "Accounts", designation: "Accountant", branchId: "branch-1" },
-  { id: "EMP-005", name: "Vikram Singh", email: "vikram@pushpak.local", department: "Examination", designation: "Exam Coordinator", branchId: "branch-1" },
-  { id: "EMP-006", name: "Kavita Joshi", email: "kavita@pushpak.local", department: "Science", designation: "Lab Incharge", branchId: "branch-1" },
-  { id: "EMP-007", name: "Rajesh Kumar", email: "rajesh@pushpak.local", department: "Reception", designation: "Receptionist", branchId: "branch-1" },
-  { id: "EMP-008", name: "Anita Desai", email: "anita@pushpak.local", department: "Library", designation: "Librarian", branchId: "branch-1" },
-];
-
 const STORAGE_KEY = "erp-holiday-applications";
 
-const SEED_APPLICATIONS: Application[] = [
-  { id: "HOL-1001", employeeId: "EMP-001", employeeName: "Rahul Verma", department: "Administration", designation: "Office Manager", holidayType: "public_holiday", fromDate: "2026-08-15", toDate: "2026-08-15", reason: "Independence Day", status: "approved", appliedAt: "2026-08-01 09:00" },
-  { id: "HOL-1002", employeeId: "EMP-002", employeeName: "Priya Sharma", department: "Academics", designation: "Faculty", holidayType: "casual_leave", fromDate: "2026-08-20", toDate: "2026-08-21", reason: "Personal work", status: "pending", appliedAt: "2026-08-18 10:30" },
-  { id: "HOL-1003", employeeId: "EMP-003", employeeName: "Amit Patel", department: "IT", designation: "System Admin", holidayType: "sick_leave", fromDate: "2026-08-25", toDate: "2026-08-26", reason: "Fever", status: "pending", appliedAt: "2026-08-24 08:15" },
-];
+/** Applications the page used to invent on first open. A browser that opened
+ *  it then still holds them; they are dropped on load. */
+const INVENTED = new Set(["HOL-1001", "HOL-1002", "HOL-1003"]);
+
+/** The institute's own staff, as User Management lists them. */
+const asEmployee = (u: SystemUserRow): Employee => ({
+  id: u.id,
+  name: u.name || u.email,
+  email: u.email,
+  department: u.branch || u.organization || "—",
+  designation: (u.role || "Staff").replace(/_/g, " "),
+  branchId: u.branchId,
+});
 
 const STATUS_STYLE: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800 border-amber-200",
@@ -85,10 +82,29 @@ export default function HolidayApply() {
   const [applications, setApplications] = useState<Application[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
+      if (stored) return (JSON.parse(stored) as Application[]).filter((a) => !INVENTED.has(a.id));
     } catch { /* fall through */ }
-    return SEED_APPLICATIONS;
+    return [];
   });
+
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    getUsers(user?.organizationId ?? null, user?.branchId ?? null)
+      .then((result) => {
+        if (!cancelled) setEmployees(result.data.filter((u) => u.isActive !== false && u.role?.toUpperCase() !== "STUDENT").map(asEmployee));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast({
+            title: "Could not load staff",
+            description: error instanceof Error ? error.message : "Please try again",
+            variant: "destructive",
+          });
+        }
+      });
+    return () => { cancelled = true; };
+  }, [user?.organizationId, user?.branchId, toast]);
 
   const [mode, setMode] = useState<"list" | "form">("list");
   const [employeeId, setEmployeeId] = useState("");
@@ -99,18 +115,18 @@ export default function HolidayApply() {
   const [search, setSearch] = useState("");
 
   const selectedEmployee = useMemo(
-    () => EMPLOYEES.find((e) => e.id === employeeId),
-    [employeeId],
+    () => employees.find((e) => e.id === employeeId),
+    [employees, employeeId],
   );
 
   /** Auto-detect current logged-in employee by email. */
   useEffect(() => {
     if (!user?.email) return;
-    const match = EMPLOYEES.find((e) => e.email.toLowerCase() === user.email!.toLowerCase());
+    const match = employees.find((e) => e.email.toLowerCase() === user.email!.toLowerCase());
     if (match) {
       setEmployeeId(match.id);
     }
-  }, [user?.email]);
+  }, [employees, user?.email]);
 
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(applications)); }, [applications]);
 
@@ -322,14 +338,14 @@ export default function HolidayApply() {
             <div className="mx-auto max-w-3xl space-y-6">
               <div className="grid gap-5 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <Label>Employee ID</Label>
+                  <Label>Employee</Label>
                   <Select value={employeeId} onValueChange={setEmployeeId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select employee" />
                     </SelectTrigger>
                     <SelectContent>
-                      {EMPLOYEES.map((e) => (
-                        <SelectItem key={e.id} value={e.id}>{e.id} — {e.name}</SelectItem>
+                      {employees.map((e) => (
+                        <SelectItem key={e.id} value={e.id}>{e.name} — {e.designation}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

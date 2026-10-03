@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   assignmentProblem,
+  eligibility,
   movingFrom,
   placementOf,
   seatsLeft,
@@ -89,5 +90,36 @@ describe("movingFrom", () => {
   it("names those being moved out of another batch", () => {
     const moved = movingFrom([student("1"), student("2", "b2"), student("3", "b1")], "b1");
     expect(moved.map((s) => s.id)).toEqual(["2"]);
+  });
+});
+
+describe("who may join a batch", () => {
+  const student = (over: Partial<AssignableStudent> = {}): AssignableStudent => ({
+    id: "s1", name: "Krishna Singh", code: "APP-1", phone: "", batchId: "", courseId: "adca", courseIds: [], branchId: "b1", ...over,
+  });
+  const batch = { courseId: "adca", branchId: "b1" };
+
+  it("lets in a student of the batch's course and branch", () => {
+    expect(eligibility(student(), batch)).toBeNull();
+  });
+
+  it("counts a second course the student is enrolled on", () => {
+    expect(eligibility(student({ courseId: "tally", courseIds: ["tally", "adca"] }), batch)).toBeNull();
+  });
+
+  it("keeps out a student of another course", () => {
+    expect(eligibility(student({ courseId: "tally" }), batch)).toMatch(/not enrolled/);
+  });
+
+  it("keeps out a student of another branch", () => {
+    expect(eligibility(student({ branchId: "b2" }), batch)).toMatch(/another branch/);
+  });
+
+  it("refuses the whole assignment, naming who cannot join", () => {
+    const problem = assignmentProblem({
+      batchId: "x", batch, capacity: null, taken: 0,
+      selected: [student(), student({ id: "s2", name: "Durga Prasad", courseId: "tally" })],
+    });
+    expect(problem).toMatch(/Durga Prasad is not enrolled/);
   });
 });

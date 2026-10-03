@@ -12,7 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { GraduationCap, Clock, CheckCircle, XCircle, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { getStudents, updateStudent } from "@/lib/supabase/data";
+import { getStudents } from "@/lib/supabase/data";
+import { listInvoices, updateStudentRow, type InvoiceRow } from "@/lib/supabase/studentFee";
+import {
+  REQUIRED_DOCUMENTS,
+  admissionView,
+  paymentFor,
+  requestedDocuments,
+  uploadedDocuments,
+  type AdmissionPayment,
+  type AdmissionView,
+} from "@/lib/onlineAdmissions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
@@ -27,29 +37,28 @@ interface OnlineAdmission {
   course: string;
   batch: string;
   documents: string[];
-  paymentStatus: "paid" | "pending" | "failed";
-  status: "pending" | "approved" | "rejected" | "under_review";
+  paymentStatus: AdmissionPayment;
+  status: AdmissionView;
   requestedDocuments?: string[];
   decisionNote?: string;
 }
 
-const REQUIRED_DOCUMENTS = [
-  "Photo",
-  "10th Marksheet",
-  "12th Marksheet",
-  "Aadhar",
-  "Transfer Certificate",
-  "Caste Certificate",
-];
-
-/** Seed data shown while the API is unavailable or empty. */
-const SEED: OnlineAdmission[] = [
-  { id: "1", applicationNo: "APP2024001", date: "2024-01-15", name: "Rahul Verma", email: "rahul@example.com", phone: "+91 98765 43210", course: "Computer Science", batch: "CS-2024-A", documents: ["Photo", "10th Marksheet", "12th Marksheet", "Aadhar"], paymentStatus: "paid", status: "pending" },
-  { id: "2", applicationNo: "APP2024002", date: "2024-01-14", name: "Priya Singh", email: "priya@example.com", phone: "+91 87654 32109", course: "Commerce", batch: "COM-2024-A", documents: ["Photo", "10th Marksheet", "12th Marksheet"], paymentStatus: "paid", status: "under_review" },
-  { id: "3", applicationNo: "APP2024003", date: "2024-01-14", name: "Amit Kumar", email: "amit@example.com", phone: "+91 76543 21098", course: "Engineering", batch: "ENG-2024-A", documents: ["Photo", "10th Marksheet", "12th Marksheet", "Aadhar", "Transfer Certificate"], paymentStatus: "paid", status: "approved" },
-  { id: "4", applicationNo: "APP2024004", date: "2024-01-13", name: "Sneha Gupta", email: "sneha@example.com", phone: "+91 65432 10987", course: "Science", batch: "SCI-2024-A", documents: ["Photo", "10th Marksheet"], paymentStatus: "pending", status: "pending" },
-  { id: "5", applicationNo: "APP2024005", date: "2024-01-12", name: "Vikram Rao", email: "vikram@example.com", phone: "+91 54321 09876", course: "Arts", batch: "ART-2024-A", documents: ["Photo", "10th Marksheet", "12th Marksheet", "Aadhar"], paymentStatus: "failed", status: "rejected" },
-];
+/** A students row, as far as this list reads it. */
+type StudentRecord = Record<string, unknown> & {
+  id: string;
+  applicationNo?: string;
+  enrollmentNo?: string;
+  admissionDate?: string;
+  createdAt?: string;
+  firstName?: string;
+  middleName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  course?: { name?: string } | null;
+  batch?: { name?: string } | null;
+  decisionNote?: string;
+};
 
 const columns: Column<OnlineAdmission>[] = [
   {
@@ -96,8 +105,8 @@ const columns: Column<OnlineAdmission>[] = [
     key: "paymentStatus",
     header: "Payment",
     cell: (admission) => (
-      <Badge variant={admission.paymentStatus === "paid" ? "default" : admission.paymentStatus === "pending" ? "secondary" : "destructive"}>
-        {admission.paymentStatus}
+      <Badge variant={admission.paymentStatus === "paid" ? "default" : admission.paymentStatus === "pending" ? "destructive" : "secondary"}>
+        {admission.paymentStatus === "none" ? "no invoice" : admission.paymentStatus}
       </Badge>
     ),
   },
@@ -122,59 +131,91 @@ export default function OnlineAdmissionList() {
   const [reason, setReason] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     const fetchStudents = async () => {
+      setLoading(true);
       try {
-        const result = await getStudents(branchId, 1, 100);
-        if (result.data.length > 0) {
-          setAdmissions(result.data.map(s => ({
+        // Invoices decide the Payment column. A failure there leaves the column
+        // unknown rather than the page empty.
+        const [result, invoiceResult] = await Promise.all([
+          getStudents(branchId, 1, 100),
+          listInvoices(branchId ?? null).catch(() => ({ data: [] as InvoiceRow[] })),
+        ]);
+        const byStudent = new Map<string, InvoiceRow[]>();
+        for (const invoice of invoiceResult.data) {
+          const id = String(invoice.studentId ?? "");
+          byStudent.set(id, [...(byStudent.get(id) ?? []), invoice]);
+        }
+        if (cancelled) return;
+        setAdmissions(
+          (result.data as StudentRecord[]).map((s) => ({
             id: s.id,
-            applicationNo: s.enrollmentNo || s.applicationNo || "APP-" + s.id.slice(0, 8),
-            date: s.admissionDate || new Date().toISOString().split('T')[0],
+            applicationNo: s.applicationNo || s.enrollmentNo || "—",
+            date: s.admissionDate || s.createdAt || "",
             name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
             email: s.email || "",
             phone: s.phone,
             course: s.course?.name || "Not assigned",
             batch: s.batch?.name || "Not assigned",
-            documents: [],
-            paymentStatus: "pending" as const,
-            status: s.admissionStatus === "APPROVED" ? "approved" : s.admissionStatus === "REJECTED" ? "rejected" : s.admissionStatus === "UNDER_REVIEW" ? "under_review" : "pending",
-          })));
-        } else {
-          setAdmissions(SEED);
-        }
-      } catch {
-        setAdmissions(SEED);
+            documents: uploadedDocuments(s),
+            paymentStatus: paymentFor(byStudent.get(String(s.id)) ?? []),
+            status: admissionView(s),
+            requestedDocuments: requestedDocuments(s),
+            decisionNote: s.decisionNote || "",
+          })),
+        );
+      } catch (error) {
+        if (cancelled) return;
+        setAdmissions([]);
+        toast({
+          title: "Could not load applications",
+          description: error instanceof Error ? error.message : "Please try again",
+          variant: "destructive",
+        });
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    fetchStudents();
-  }, []);
+    void fetchStudents();
+    return () => {
+      cancelled = true;
+    };
+  }, [branchId, toast]);
 
+  /** Saves the decision, and shows it only once the database has it. */
   const updateAdmission = async (id: string, changes: Partial<OnlineAdmission>) => {
-    setAdmissions((prev) => prev.map((a) => (a.id === id ? { ...a, ...changes } : a)));
     try {
-      await updateStudent(id, branchId, changes as Record<string, unknown>);
-    } catch {
-      toast({ title: "Update failed", description: "Could not save changes to the server.", variant: "destructive" });
+      // updateStudentRow writes `status` to the real column, admissionStatus,
+      // and stores the requested documents as the text the column holds.
+      await updateStudentRow(id, changes as Record<string, unknown>);
+      setAdmissions((prev) => prev.map((a) => (a.id === id ? { ...a, ...changes } : a)));
+      return true;
+    } catch (error) {
+      toast({
+        title: "Could not save",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive",
+      });
+      return false;
     }
   };
 
-  const approve = (admission: OnlineAdmission) => {
+  const approve = async (admission: OnlineAdmission) => {
     if (admission.status === "approved") {
       toast({ title: "Already approved", description: admission.applicationNo });
       return;
     }
-    if (admission.paymentStatus !== "paid") {
+    if (admission.paymentStatus === "pending") {
       toast({
         title: "Payment not settled",
-        description: `${admission.applicationNo} shows payment ${admission.paymentStatus}. Collect the fee first.`,
+        description: `${admission.applicationNo} has fees outstanding. Collect them first.`,
         variant: "destructive",
       });
       return;
     }
-    updateAdmission(admission.id, { status: "approved", decisionNote: "" });
-    toast({ title: "Application approved", description: `${admission.name} · ${admission.course}` });
+    if (await updateAdmission(admission.id, { status: "approved", decisionNote: "", requestedDocuments: [] })) {
+      toast({ title: "Application approved", description: `${admission.name} · ${admission.course}` });
+    }
   };
 
   const openRequest = (admission: OnlineAdmission) => {
@@ -182,30 +223,32 @@ export default function OnlineAdmissionList() {
     setRequested(REQUIRED_DOCUMENTS.filter((doc) => !admission.documents.includes(doc)));
   };
 
-  const sendRequest = () => {
+  const sendRequest = async () => {
     if (!requesting) return;
     if (!requested.length) {
       toast({ title: "Pick at least one document to request", variant: "destructive" });
       return;
     }
-    updateAdmission(requesting.id, { status: "under_review", requestedDocuments: requested });
-    toast({
-      title: "Documents requested",
-      description: `${requested.length} document(s) requested from ${requesting.name}.`,
-    });
-    setRequesting(null);
+    if (await updateAdmission(requesting.id, { status: "under_review", requestedDocuments: requested })) {
+      toast({
+        title: "Documents requested",
+        description: `${requested.length} document(s) requested from ${requesting.name}.`,
+      });
+      setRequesting(null);
+    }
   };
 
-  const confirmReject = () => {
+  const confirmReject = async () => {
     if (!rejecting) return;
     if (!reason.trim()) {
       toast({ title: "Add a rejection reason", variant: "destructive" });
       return;
     }
-    updateAdmission(rejecting.id, { status: "rejected", decisionNote: reason.trim() });
-    toast({ title: "Application rejected", description: rejecting.applicationNo });
-    setRejecting(null);
-    setReason("");
+    if (await updateAdmission(rejecting.id, { status: "rejected", decisionNote: reason.trim() })) {
+      toast({ title: "Application rejected", description: rejecting.applicationNo });
+      setRejecting(null);
+      setReason("");
+    }
   };
 
   const exportData = () => {

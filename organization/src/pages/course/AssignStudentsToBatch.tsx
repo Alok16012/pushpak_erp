@@ -26,6 +26,8 @@ import { downloadCsv } from "@/lib/export";
 import { formatPhone } from "@/lib/phone";
 import {
   assignmentProblem,
+  eligibility,
+  enrolledCourses,
   movingFrom,
   placementOf,
   seatsLeft,
@@ -97,6 +99,8 @@ export default function AssignStudentsToBatch() {
           phone: String(row.phone ?? ""),
           batchId: String(row.batchId ?? ""),
           courseId: String(row.courseId ?? ""),
+          courseIds: Array.isArray(row.courseIds) ? (row.courseIds as unknown[]).map(String) : [],
+          branchId: String(row.branchId ?? ""),
         })),
       );
     } catch (error) {
@@ -144,14 +148,16 @@ export default function AssignStudentsToBatch() {
     const digits = q.replace(/\D/g, "");
     return students.filter((student) => {
       if (student.batchId === batchId && batchId) return false;
-      if (courseId !== "all" && student.courseId !== courseId) return false;
+      // Once a batch is picked, only those who may join it are offered.
+      if (batch && eligibility(student, batch)) return false;
+      if (courseId !== "all" && !enrolledCourses(student).includes(courseId)) return false;
       const where = placementOf(student, batchId);
       if (placement !== "All" && where !== placement) return false;
       if (!q) return true;
       const haystack = `${student.name} ${student.code} ${student.phone}`.toLowerCase();
       return haystack.includes(q) || (digits.length >= 4 && haystack.includes(digits));
     });
-  }, [students, batchId, courseId, placement, search]);
+  }, [students, batch, batchId, courseId, placement, search]);
 
   const selected = useMemo(
     () => students.filter((student) => selectedIds.includes(student.id)),
@@ -174,6 +180,7 @@ export default function AssignStudentsToBatch() {
       selected,
       capacity: batch?.maxStudents,
       taken: assigned.length,
+      batch,
     });
     if (problem) {
       toast({ title: "Cannot assign yet", description: problem, variant: "destructive" });

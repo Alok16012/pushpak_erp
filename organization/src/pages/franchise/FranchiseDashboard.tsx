@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AlertTriangle, ArrowUpRight, BookOpen, ClipboardCheck, IndianRupee, MoreHorizontal, Plus, Receipt, UserPlus, Users, Wallet } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -8,27 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { getDashboardStats, getWallet } from "@/lib/supabase/data";
+import { getDashboardRows, type DashboardRows } from "@/lib/supabase/dashboardCharts";
+import { admissionFunnel, belowAttendance, monthlyFees, todaysBatches } from "@/lib/dashboardCharts";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
-/** One franchise's own month — the organisation-wide roll-up is the admin's. */
-const collections = [
-  { m: "Apr", collected: 3.2, due: 0.9 }, { m: "May", collected: 3.8, due: 0.7 },
-  { m: "Jun", collected: 3.1, due: 1.2 }, { m: "Jul", collected: 4.4, due: 0.6 },
-  { m: "Aug", collected: 4.1, due: 0.8 },
-];
-const funnel = [
-  { stage: "New enquiries", count: 18, to: "/enquiry/branch" },
-  { stage: "Follow-up due", count: 7, to: "/reception/enquiry" },
-  { stage: "Online applications", count: 5, to: "/student/online-admissions" },
-  { stage: "Admitted this month", count: 11, to: "/student/view" },
-];
-const batchesToday = [
-  { name: "2026-A · Computer Applications", time: "09:30 – 11:00", faculty: "Prof. Sarah Johnson", strength: 32 },
-  { name: "2026-B · Tally & Accounting", time: "11:30 – 13:00", faculty: "Mr. Michael Brown", strength: 26 },
-  { name: "2026-C · Spoken English", time: "16:00 – 17:30", faculty: "Ms. Emily Davis", strength: 21 },
-];
 /** Below this a branch cannot issue certificates or ID cards. */
 const WALLET_FLOOR = 25_000;
 
@@ -77,8 +62,31 @@ export default function FranchiseDashboard() {
     return () => { cancelled = true; };
   }, [branchId]);
 
+  // The branch's own records behind the chart, the pipeline and today's batches.
+  const [rows, setRows] = useState<DashboardRows | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getDashboardRows(branchId ?? null, user?.organizationId ?? null).then((r) => {
+      if (!cancelled) setRows(r);
+    });
+    return () => { cancelled = true; };
+  }, [branchId, user?.organizationId]);
+
   const money = (value: number) => (value >= 100000 ? `₹${(value / 100000).toFixed(1)}L` : `₹${Math.round(value / 1000)}K`);
   const now = new Date();
+  const collections = useMemo(() => (rows ? monthlyFees(rows.payments, rows.invoices, new Date()) : []), [rows]);
+  const batchesToday = useMemo(
+    () => (rows ? todaysBatches(rows.timings, rows.batches, rows.students, new Date()) : []),
+    [rows],
+  );
+  const stages = rows ? admissionFunnel(rows.enquiries, rows.students, new Date()) : null;
+  const funnel = [
+    { stage: "New enquiries", count: stages?.newEnquiries, to: "/enquiry/branch" },
+    { stage: "Follow-up due", count: stages?.followUpDue, to: "/reception/enquiry" },
+    { stage: "Online applications", count: stages?.onlineApplications, to: "/student/online-admissions" },
+    { stage: "Admitted this month", count: stages?.admittedThisMonth, to: "/student/view" },
+  ];
+  const lowAttendance = rows ? belowAttendance(rows.attendance) : 0;
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
   const branch = user?.name ?? "Your branch";
 
@@ -91,8 +99,8 @@ export default function FranchiseDashboard() {
 
   const alerts = [
     ...(wallet !== null && wallet < WALLET_FLOOR ? [{ text: `Wallet balance is ₹${wallet.toLocaleString("en-IN")} — below the ₹${WALLET_FLOOR.toLocaleString("en-IN")} floor for issuing certificates.`, to: "/branch/wallet", action: "Recharge" }] : []),
-    { text: `${funnel[1].count} enquiries are waiting on a follow-up call.`, to: "/reception/enquiry", action: "Open reception" },
-    { text: "9 students are below the 75% attendance requirement.", to: "/attendance/report", action: "See report" },
+    ...(stages?.followUpDue ? [{ text: `${stages.followUpDue} ${stages.followUpDue === 1 ? "enquiry is" : "enquiries are"} waiting on a follow-up call.`, to: "/reception/enquiry", action: "Open reception" }] : []),
+    ...(lowAttendance ? [{ text: `${lowAttendance} ${lowAttendance === 1 ? "student is" : "students are"} below the 75% attendance requirement (last 30 days).`, to: "/attendance/report", action: "See report" }] : []),
   ];
 
   return (
@@ -126,7 +134,7 @@ export default function FranchiseDashboard() {
       <section className="mb-5 grid gap-5 xl:grid-cols-[1.5fr_1fr]">
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
-            <div><CardTitle>Collections</CardTitle><div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-[2px] bg-chart-1" />Collected</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-[2px] bg-chart-4" />Still due</span><span>· ₹ lakh, last five months</span></div></div>
+            <div><CardTitle>Collections</CardTitle><div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-[2px] bg-chart-1" />Collected</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-[2px] bg-chart-4" />Still due</span><span>· ₹ thousand, last five months</span></div></div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -182,7 +190,7 @@ export default function FranchiseDashboard() {
             {funnel.map((stage) => (
               <Link key={stage.stage} to={stage.to} className="flex items-center justify-between gap-3 border-b py-3 last:border-0 hover:text-brand-ink">
                 <span className="text-sm">{stage.stage}</span>
-                <span className="tabular text-sm font-semibold">{stage.count}</span>
+                <span className="tabular text-sm font-semibold">{stage.count ?? "—"}</span>
               </Link>
             ))}
           </CardContent>
@@ -191,8 +199,11 @@ export default function FranchiseDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex-row items-center justify-between space-y-0"><CardTitle>Today's batches</CardTitle><Button variant="outline" size="sm" asChild><Link to="/attendance/mark">Mark attendance</Link></Button></CardHeader>
           <CardContent className="space-y-1">
+            {rows && !batchesToday.length && (
+              <p className="py-3 text-sm text-muted-foreground">No batch has a class today. Class days and times are set in Batch Timing.</p>
+            )}
             {batchesToday.map((batch) => (
-              <div key={batch.name} className="flex flex-wrap items-center gap-3 border-b py-3 last:border-0">
+              <div key={batch.key} className="flex flex-wrap items-center gap-3 border-b py-3 last:border-0">
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{batch.name}</p><p className="text-xs text-muted-foreground">{batch.time} · {batch.faculty}</p></div>
                 <Badge variant="outline">{batch.strength} students</Badge>
               </div>

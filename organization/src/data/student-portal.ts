@@ -1,21 +1,11 @@
 /**
- * The signed-in student's own record. The staff-side ERP already models all of
- * this per-institution; the portal needs one learner's slice of it, so it is
- * kept here as seed data and persisted per browser like the other screens the
- * API does not expose yet.
+ * The shapes the student portal reads its own record into, and the sums it
+ * shows over them. The records themselves come from the database
+ * (getStudentProfile, getStudentAttendance … in lib/supabase/data.ts).
  */
 import type { StudentDocument } from "@/lib/documents";
 import type { IdCardStudent } from "@/data/id-card-templates";
 import type { AdmitCardStudent } from "@/data/admit-card-templates";
-
-export const PORTAL_KEYS = {
-  profile: "erp-portal-profile",
-  attendance: "erp-portal-attendance",
-  fees: "erp-portal-fees",
-  results: "erp-portal-results",
-  classes: "erp-portal-classes",
-  requests: "erp-portal-requests",
-};
 
 export interface StudentProfile {
   id: string;
@@ -101,97 +91,8 @@ export interface PortalRequest {
 }
 
 const DAY = 86_400_000;
-/** `YYYY-MM-DD`, `offset` days from today — fixtures must stay near "now" or
- *  every month filter in the portal opens empty. */
-export const isoDate = (offset: number) =>
-  new Date(Date.now() + offset * DAY).toISOString().slice(0, 10);
-const at = (offsetDays: number, hour: number, minute = 0) => {
-  const when = new Date(Date.now() + offsetDays * DAY);
-  when.setHours(hour, minute, 0, 0);
-  return when.toISOString();
-};
-
-export const PROFILE_SEED: StudentProfile = {
-  id: "STU2201",
-  name: "Aarav Sharma",
-  enrollmentNo: "IDS/2026/2201",
-  rollNo: "2201",
-  course: "Advanced Diploma in Computer Applications",
-  courseCode: "ADCA",
-  courseFee: 64500,
-  batch: "2026-A",
-  section: "A",
-  branch: "Kothrud Branch",
-  email: "aarav.sharma@student.idealdigiskills.com",
-  phone: "+91 98220 41100",
-  whatsapp: "+91 98220 41100",
-  guardian: "Meera Sharma",
-  parentage: "Son of",
-  guardianPhone: "+91 98220 41199",
-  address: "24 Shivaji Nagar, Pune - 411005",
-  dob: "12 Mar 2007",
-  bloodGroup: "B+",
-  admissionDate: isoDate(-210),
-  photo: null,
-};
-
-const SUBJECTS = ["Programming Fundamentals", "Database Systems", "Web Technologies", "Communication Skills", "Mathematics"];
-
-/**
- * Forty-five weekdays of history. The pattern is deterministic so the summary
- * percentages are the same every time the portal is opened fresh.
- */
-export const ATTENDANCE_SEED: AttendanceDay[] = (() => {
-  // Sundays are holidays; the pattern counts teaching days rather than raw
-  // days so absents and lates never collide with a Sunday and vanish.
-  let taught = 0;
-  return Array.from({ length: 45 }, (_, index) => {
-    const date = new Date(Date.now() - index * DAY);
-    const holiday = date.getDay() === 0;
-    if (!holiday) taught += 1;
-    const status: AttendanceDay["status"] =
-      holiday ? "holiday" : taught % 13 === 5 ? "absent" : taught % 7 === 3 ? "late" : "present";
-    return {
-      id: `att-${index}`,
-      date: date.toISOString().slice(0, 10),
-      subject: SUBJECTS[index % SUBJECTS.length],
-      status,
-    };
-  });
-})();
-
-export const INVOICE_SEED: PortalInvoice[] = [
-  { id: "inv-1", invoiceNo: "INV-2026-0101", description: "Admission fee", amount: 12000, paid: 12000, dueDate: isoDate(-205), method: "UPI", paidAt: isoDate(-208), receiptNo: "RCT-2026-0101" },
-  { id: "inv-2", invoiceNo: "INV-2026-0142", description: "Term 1 tuition fee", amount: 24000, paid: 24000, dueDate: isoDate(-120), method: "Bank Transfer", paidAt: isoDate(-124), receiptNo: "RCT-2026-0142" },
-  { id: "inv-3", invoiceNo: "INV-2026-0208", description: "Term 2 tuition fee", amount: 24000, paid: 10000, dueDate: isoDate(-6), method: "UPI", paidAt: isoDate(-20), receiptNo: "RCT-2026-0208" },
-  { id: "inv-4", invoiceNo: "INV-2026-0263", description: "Examination & certification fee", amount: 4500, paid: 0, dueDate: isoDate(12) },
-];
-
-export const RESULT_SEED: PortalResult[] = [
-  { id: "res-1", exam: "Mid-term", subject: "Programming Fundamentals", maxMarks: 100, passMarks: 40, marks: 82, examDate: isoDate(-96) },
-  { id: "res-2", exam: "Mid-term", subject: "Database Systems", maxMarks: 100, passMarks: 40, marks: 74, examDate: isoDate(-94) },
-  { id: "res-3", exam: "Mid-term", subject: "Web Technologies", maxMarks: 100, passMarks: 40, marks: 88, examDate: isoDate(-92) },
-  { id: "res-4", exam: "Mid-term", subject: "Communication Skills", maxMarks: 50, passMarks: 20, marks: 41, examDate: isoDate(-90) },
-  { id: "res-5", exam: "Mid-term", subject: "Mathematics", maxMarks: 100, passMarks: 40, marks: 67, examDate: isoDate(-88) },
-  { id: "res-6", exam: "Unit test 2", subject: "Programming Fundamentals", maxMarks: 25, passMarks: 10, marks: 22, examDate: isoDate(-24) },
-  { id: "res-7", exam: "Unit test 2", subject: "Database Systems", maxMarks: 25, passMarks: 10, marks: 19, examDate: isoDate(-22) },
-  { id: "res-8", exam: "Unit test 2", subject: "Web Technologies", maxMarks: 25, passMarks: 10, marks: 24, examDate: isoDate(-20) },
-];
-
-export const CLASS_SEED: PortalClass[] = [
-  { id: "cls-1", subject: "Web Technologies", topic: "React state and effects", faculty: "Prof. Sarah Johnson", platform: "Google Meet", link: "https://meet.google.com/ids-web-2026", startsAt: at(0, 17), minutes: 60 },
-  { id: "cls-2", subject: "Database Systems", topic: "Joins and subqueries", faculty: "Dr. John Smith", platform: "Zoom", link: "https://zoom.us/j/ids2026db", startsAt: at(1, 11, 30), minutes: 90 },
-  { id: "cls-3", subject: "Mathematics", topic: "Probability distributions", faculty: "Ms. Emily Davis", platform: "Microsoft Teams", link: "https://teams.microsoft.com/l/ids-math", startsAt: at(3, 9), minutes: 60 },
-  { id: "cls-4", subject: "Programming Fundamentals", topic: "Recursion workshop", faculty: "Mr. Michael Brown", platform: "Zoom", link: "https://zoom.us/j/ids2026prog", startsAt: at(-2, 16), minutes: 90, recording: "https://recordings.idealdigiskills.com/prog-recursion" },
-  { id: "cls-5", subject: "Communication Skills", topic: "Interview practice", faculty: "Ms. Emily Davis", platform: "Google Meet", link: "https://meet.google.com/ids-comm-2026", startsAt: at(-5, 15), minutes: 45, recording: "https://recordings.idealdigiskills.com/comm-interview" },
-  { id: "cls-6", subject: "Web Technologies", topic: "Responsive layout patterns", faculty: "Prof. Sarah Johnson", platform: "Google Meet", link: "https://meet.google.com/ids-web-2026", startsAt: at(-7, 17), minutes: 60, recording: "https://recordings.idealdigiskills.com/web-responsive" },
-];
-
-export const NOTICES = [
-  { id: "not-1", title: "Term 2 examination timetable published", body: "The timetable is on the results page. Admit cards open two weeks before the first paper.", date: isoDate(-2) },
-  { id: "not-2", title: "Library open on Saturdays", body: "The Kothrud branch library is now open 10:00–16:00 on Saturdays through the exam season.", date: isoDate(-6) },
-  { id: "not-3", title: "Fee counter timings", body: "Counter payments are accepted 09:30–17:00 on weekdays. Online payment is available any time from Fees & receipts.", date: isoDate(-11) },
-];
+/** `YYYY-MM-DD`, `offset` days from today. */
+const isoDate = (offset: number) => new Date(Date.now() + offset * DAY).toISOString().slice(0, 10);
 
 export const REQUEST_KINDS = [
   "Attendance correction",
