@@ -40,7 +40,7 @@ type Selection = {
   hidden: boolean;
 };
 
-/** One editable text or image, as website/cms.js lists it. */
+/** One editable text or image, as website/public/cms.js lists it. */
 type Field = {
   key: string;
   tag: string;
@@ -148,7 +148,7 @@ function PageEditor() {
     return true;
   }, []);
 
-  // Messages from website/cms.js running in the frame.
+  // Messages from website/public/cms.js running in the frame.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== window.location.origin || e.source !== frame.current?.contentWindow) return;

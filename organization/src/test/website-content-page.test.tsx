@@ -27,7 +27,7 @@ const WebsiteContent = (await import("@/pages/website/WebsiteContent")).default;
 
 const renderPage = () => render(<MemoryRouter><WebsiteContent /></MemoryRouter>);
 
-/** A message as website/cms.js sends it from the frame. */
+/** A message as website/public/cms.js sends it from the frame. */
 function fromFrame(data: Record<string, unknown>) {
   const frame = document.querySelector("iframe")!;
   act(() => {

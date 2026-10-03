@@ -1,6 +1,6 @@
 /**
  * Content of the public website, kept in `website_content` and laid over the
- * static pages by website/cms.js. See supabase/schema/website-content.sql.
+ * static pages by website/public/cms.js. See supabase/schema/website-content.sql.
  *
  * Three kinds of row:
  *   "settings"     site-wide details (contact, announcement bar)

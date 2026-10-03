@@ -6,7 +6,7 @@ vi.mock("@/lib/supabase/client", () => ({ supabase: {} }));
 
 const { mergeEdits, isLayoutKey } = await import("@/lib/supabase/websiteContent");
 
-const CMS = readFileSync(path.resolve(__dirname, "../../website/cms.js"), "utf8");
+const CMS = readFileSync(path.resolve(__dirname, "../../website/public/cms.js"), "utf8");
 
 type Cms = {
   keyOf: (el: Element) => string | null;
@@ -16,7 +16,7 @@ type Cms = {
   outline: () => { key: string; name: string; shared: boolean; fields: { key: string; label: string; text: string; rich: boolean; kind: string; href: string | null }[] }[];
 };
 
-/** Loads website/cms.js into the current document, as a page would. */
+/** Loads website/public/cms.js into the current document, as a page would. */
 function loadCms(): Cms {
   new Function(CMS)();
   return (window as unknown as { __cms: Cms }).__cms;
@@ -56,7 +56,7 @@ describe("mergeEdits", () => {
   });
 });
 
-describe("website/cms.js", () => {
+describe("website/public/cms.js", () => {
   let cms: Cms;
 
   beforeEach(() => {
