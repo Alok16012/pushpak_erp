@@ -108,12 +108,19 @@ export function StudentRoster({
   const [search, setSearch] = useState("");
   const [courseFilter, setCourseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   // Course options come from the roster itself rather than a fixed list, so a
   // branch only ever filters by courses it actually runs.
   const courseOptions = useMemo(() => Array.from(new Set(rows.map((s) => s.course))).sort(), [rows]);
+  // Likewise the branches. A branch account's roster holds only its own, so
+  // the filter appears only when there is more than one to choose between.
+  const branchOptions = useMemo(
+    () => Array.from(new Set(rows.map((s) => s.branch).filter(Boolean))).sort(),
+    [rows],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -121,6 +128,7 @@ export function StudentRoster({
     // stored text, so "9822041100" finds a student saved as "+91 98220 41100".
     const digits = q.replace(/\D/g, "");
     return rows.filter((s) => {
+      if (branchFilter && s.branch !== branchFilter) return false;
       if (courseFilter && s.course !== courseFilter) return false;
       if (statusFilter && s.status !== statusFilter) return false;
       if (!q) return true;
@@ -139,14 +147,14 @@ export function StudentRoster({
         .toLowerCase();
       return haystack.includes(q) || (digits.length >= 4 && haystack.includes(digits));
     });
-  }, [rows, search, courseFilter, statusFilter]);
+  }, [rows, search, branchFilter, courseFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   // Narrowing the filters can leave the user on a page that no longer exists.
-  useEffect(() => setPage(1), [search, courseFilter, statusFilter]);
+  useEffect(() => setPage(1), [search, branchFilter, courseFilter, statusFilter]);
 
   const allOnPageSelected = pageRows.length > 0 && pageRows.every((s) => selected.includes(s.id));
   const toggleAll = () =>
@@ -180,6 +188,22 @@ export function StudentRoster({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {branchOptions.length > 1 && (
+              <select
+                value={branchFilter}
+                onChange={(e) => setBranchFilter(e.target.value)}
+                className={selectClass}
+                aria-label="Filter by branch"
+              >
+                <option value="">All branches</option>
+                {branchOptions.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
+                  </option>
+                ))}
+              </select>
+            )}
+
             <select
               value={courseFilter}
               onChange={(e) => setCourseFilter(e.target.value)}
@@ -212,6 +236,7 @@ export function StudentRoster({
               className="h-10"
               onClick={() => {
                 setSearch("");
+                setBranchFilter("");
                 setCourseFilter("");
                 setStatusFilter("");
               }}

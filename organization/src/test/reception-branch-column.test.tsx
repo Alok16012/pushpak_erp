@@ -109,6 +109,20 @@ describe("Reception, seen from the organisation", () => {
     // Radix renders the closed select as its placeholder.
     expect(screen.getByText("All branches")).toBeInTheDocument();
   });
+
+  // The filter was offered but did nothing: picking a branch left every
+  // visitor on the list, because the list was not recomputed when it changed.
+  it("narrows the list to the branch picked", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    const trigger = screen.getByText("All branches").closest("button")!;
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "Kothrud Branch" }));
+
+    await waitFor(() => expect(within(log()).queryByText("Krishna Singh")).toBeNull());
+    expect(within(log()).getByText("Raj Shekhar")).toBeInTheDocument();
+    expect(within(log()).queryByText("Sita Devi")).toBeNull();
+  });
 });
 
 describe("Reception, seen from a branch", () => {

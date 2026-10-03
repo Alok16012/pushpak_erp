@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 
 import { StudentRoster } from "@/components/student/StudentRoster";
@@ -130,5 +130,29 @@ describe("StudentRoster money columns", () => {
     const row = screen.getByText("Raj Shekhar").closest("tr")!;
     expect(within(row).getByText("ADCA AI")).toBeInTheDocument();
     expect(within(row).queryByText("ADCA-AI")).toBeNull();
+  });
+});
+
+describe("StudentRoster branch filter", () => {
+  it("lists the branches and narrows the roster to the one picked", () => {
+    roster([
+      student({ id: "s1", name: "Durga Prasad", branch: "iDEAL Coaching Classes" }),
+      student({ id: "s2", name: "Krishna Singh", branch: "PNS COMPUTER ACADEMY" }),
+    ]);
+
+    const filter = screen.getByLabelText("Filter by branch");
+    fireEvent.change(filter, { target: { value: "PNS COMPUTER ACADEMY" } });
+
+    expect(screen.queryByText("Durga Prasad")).toBeNull();
+    expect(screen.getByText("Krishna Singh")).toBeInTheDocument();
+    expect(screen.getByText(/Showing/).textContent).toMatch(/1\s*student\b/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(screen.getByText("Durga Prasad")).toBeInTheDocument();
+  });
+
+  it("does not offer a choice of one, as on a branch's own roster", () => {
+    roster([student({ branch: "PNS COMPUTER ACADEMY" })]);
+    expect(screen.queryByLabelText("Filter by branch")).toBeNull();
   });
 });

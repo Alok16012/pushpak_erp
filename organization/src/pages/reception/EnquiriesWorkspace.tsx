@@ -264,6 +264,7 @@ export default function EnquiriesWorkspace() {
       owner,
       source,
       callType,
+      branchFilter,
       presence,
       followUpFilter,
       dateFrom,
@@ -277,6 +278,7 @@ export default function EnquiriesWorkspace() {
     owner,
     source,
     callType,
+    branchFilter,
     presence,
     followUpFilter,
   ].filter((v) => v !== "all").length + [dateFrom, dateTo].filter(Boolean).length;
