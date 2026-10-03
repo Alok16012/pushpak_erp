@@ -54,7 +54,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex h-[68px] items-center gap-3 border-b border-sidebar-border px-4">
-        <img src={`${import.meta.env.BASE_URL}idealdigiskills-logo.png`} alt="Idealdigiskills" className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5" />
+        <img src={`${import.meta.env.BASE_URL}idealdigiskills-logo.webp`} alt="Idealdigiskills" className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5" />
         {!collapsed && <div className="leading-tight"><p className="font-semibold tracking-tight">Idealdigiskills</p><p className="text-[11px] text-sidebar-foreground/50">{VIEWS[view].short} workspace</p></div>}
       </div>
       <SidebarContent className="py-3">

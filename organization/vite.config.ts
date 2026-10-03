@@ -87,8 +87,13 @@ function website(env: Record<string, string>): Plugin {
     buildStart() {
       fs.rmSync(distDir, { recursive: true, force: true });
     },
-    closeBundle() {
+    async closeBundle() {
       fs.cpSync(websiteDir, distDir, { recursive: true });
+      // Tailwind, icons and images, done once here instead of in every
+      // visitor's browser. See scripts/optimize-website.mjs.
+      const { optimizeWebsite } = await import("./scripts/optimize-website.mjs");
+      const report = await optimizeWebsite(distDir, { supabaseUrl: env.VITE_SUPABASE_URL });
+      this.info?.(`website optimised: ${JSON.stringify(report)}`);
       fs.writeFileSync(path.join(distDir, "cms-config.js"), cmsConfig(env));
       fs.writeFileSync(path.join(distDir, "cms-pages.json"), JSON.stringify(websitePages()));
       const pages = fs.readdirSync(websiteDir).filter((f) => f.endsWith(".html")).map((f) => f.slice(0, -5));
@@ -119,7 +124,6 @@ export default defineConfig(({ mode }) => ({
     rolldownOptions: {
       output: {
         codeSplitting: { groups: [
-          { name: "charts", test: /node_modules\/(recharts|d3-|victory-vendor)/ },
           { name: "ui", test: /node_modules\/@radix-ui/ },
           { name: "react", test: /node_modules\/(react|react-dom|react-router)/ },
           { name: "icons", test: /node_modules\/lucide-react/ },
