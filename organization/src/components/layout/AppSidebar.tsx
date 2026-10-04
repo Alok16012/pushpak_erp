@@ -12,7 +12,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { menuFor } from "@/lib/navigation";
+import { groupEntry, menuFor } from "@/lib/navigation";
 import { VIEWS } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -97,7 +97,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {groups.map((item) => {
                 const active = item.items.some((subItem) => isActive(subItem.url));
-                const entry = item.items.find((subItem) => /view|all|list|report|collection|transactions|enquiry/.test(subItem.url)) || item.items[0];
+                const entry = groupEntry(item);
                 const productionReady = PRODUCTION_READY.includes(item.title);
                 return <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>

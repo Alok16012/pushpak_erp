@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Bell, Search, User, Plus, X } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Bell, ChevronLeft, Search, User, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -13,13 +13,16 @@ import { getNotices } from "@/lib/supabase/data";
 
 export function AppHeader() {
   const { user, view, allowedPaths, logout } = useAuth();
-  const onDashboard = useLocation().pathname === VIEWS[view].home;
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const onDashboard = pathname === VIEWS[view].home;
   const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [notices, setNotices] = useState<Array<{ id: string; title: string; publishDate?: string }>>([]);
   // Search only ever offers pages this authorisation can actually open.
   const destinations = useMemo(() => menuFor(view, allowedPaths).flatMap(group => group.items.map(item => ({ ...item, group: group.title }))), [view, allowedPaths]);
+  const current = destinations.find(item => item.url === pathname);
   const results = query.trim() ? destinations.filter(item => `${item.title} ${item.group}`.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : destinations.slice(0, 6);
 
   // The bell used to be inert with a permanent unread dot; it now opens the
@@ -47,7 +50,24 @@ export function AppHeader() {
     <header className="sticky top-0 z-40 flex h-[64px] items-center justify-between bg-background/85 px-4 backdrop-blur-xl sm:h-[72px] sm:px-6 lg:px-8">
       <div className="flex min-w-0 shrink-0 items-center gap-3">
         <SidebarTrigger className="hidden h-10 w-10 rounded-xl bg-card shadow-card md:inline-flex" />
-        <Link to={VIEWS[view].home} className="flex items-center gap-2 md:hidden" aria-label="Home">
+        {/* On a phone an inner page gets the app's back arrow and its own title. */}
+        {!onDashboard && (
+          <div className="flex min-w-0 items-center gap-3 md:hidden">
+            <button
+              type="button"
+              aria-label="Back"
+              onClick={() => (window.history.length > 1 ? navigate(-1) : navigate(VIEWS[view].home))}
+              className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-card shadow-card"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <h2 className="truncate text-[17px] font-semibold leading-tight">{current?.title ?? "Back"}</h2>
+              {current && <p className="truncate text-xs text-muted-foreground">{current.group.replace(" Management", "")}</p>}
+            </div>
+          </div>
+        )}
+        <Link to={VIEWS[view].home} className={onDashboard ? "flex items-center gap-2 md:hidden" : "hidden"} aria-label="Home">
           <img src={`${import.meta.env.BASE_URL}idealdigiskills-logo.webp`} alt="" className="h-9 w-9 rounded-xl bg-white object-contain p-0.5 shadow-card" />
           <span className="leading-[1.05]"><span className="block text-[16px] font-extrabold tracking-[-0.01em]">Idealdigi<span className="bg-[linear-gradient(90deg,#4cc417_0%,#12b5ab_55%,#1b8cff_100%)] bg-clip-text text-transparent">skills</span></span><span className="block text-[8.5px] font-semibold uppercase tracking-[.14em] text-muted-foreground">{VIEWS[view].short} panel</span></span>
         </Link>
@@ -64,7 +84,7 @@ export function AppHeader() {
             offers it as its own primary action — outline so that when a page
             does have a filled button, there is still only one focal point. */}
         {!onDashboard && view !== "student" && <Button asChild size="sm" variant="outline" className="hidden sm:flex"><Link to="/student/admission-form"><Plus />New admission</Link></Button>}
-        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl bg-card text-muted-foreground shadow-card md:hidden" aria-label="Search" onClick={()=>setSearchOpen(true)}><Search/></Button>
+        <Button variant="ghost" size="icon" className={`h-10 w-10 rounded-xl bg-card text-muted-foreground shadow-card md:hidden ${onDashboard ? "" : "hidden"}`} aria-label="Search" onClick={()=>setSearchOpen(true)}><Search/></Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-xl bg-card text-muted-foreground shadow-card sm:h-[42px] sm:w-[42px]" aria-label={notices.length ? `Notifications, ${notices.length} unread` : "Notifications"}>
@@ -87,7 +107,7 @@ export function AppHeader() {
             {notices.length > 0 && <><DropdownMenuSeparator /><DropdownMenuItem asChild><Link to="/branch/notice-board">View all notices</Link></DropdownMenuItem></>}
           </DropdownMenuContent>
         </DropdownMenu>
-        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="h-auto gap-2.5 rounded-full p-0.5 hover:bg-transparent lg:pr-1"><Avatar className="h-10 w-10"><AvatarFallback className="bg-[linear-gradient(135deg,hsl(var(--gold)),#dd8f0d)] text-[13px] font-bold text-white">{user?.name.split(" ").map(p=>p[0]).join("").slice(0,2)||"ID"}</AvatarFallback></Avatar><span className="hidden text-left lg:block"><span className="block max-w-[10rem] truncate text-[13.5px] font-semibold">{user?.name}</span><span className="block text-[11.5px] font-normal capitalize text-muted-foreground">{user?.role.replaceAll("_"," ").toLowerCase()}</span></span></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel><span className="block">{user?.name}</span><span className="text-xs font-normal text-muted-foreground">{user?.role.replaceAll("_"," ")}</span></DropdownMenuLabel><DropdownMenuSeparator/>{view==="student"&&<DropdownMenuItem asChild><Link to="/me/profile"><User className="mr-2 h-4 w-4"/>My profile</Link></DropdownMenuItem>}{view==="admin"&&<DropdownMenuItem asChild><Link to="/settings/general"><User className="mr-2 h-4 w-4"/>Organisation settings</Link></DropdownMenuItem>}{view==="franchise"&&<DropdownMenuItem asChild><Link to="/branch/website-settings"><User className="mr-2 h-4 w-4"/>Branch settings</Link></DropdownMenuItem>}<DropdownMenuSeparator/><DropdownMenuItem className="text-destructive" onClick={()=>void logout()}>Log out</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className={`h-auto gap-2.5 rounded-full p-0.5 hover:bg-transparent lg:pr-1 ${onDashboard ? "" : "hidden md:inline-flex"}`}><Avatar className="h-10 w-10"><AvatarFallback className="bg-[linear-gradient(135deg,hsl(var(--gold)),#dd8f0d)] text-[13px] font-bold text-white">{user?.name.split(" ").map(p=>p[0]).join("").slice(0,2)||"ID"}</AvatarFallback></Avatar><span className="hidden text-left lg:block"><span className="block max-w-[10rem] truncate text-[13.5px] font-semibold">{user?.name}</span><span className="block text-[11.5px] font-normal capitalize text-muted-foreground">{user?.role.replaceAll("_"," ").toLowerCase()}</span></span></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuLabel><span className="block">{user?.name}</span><span className="text-xs font-normal text-muted-foreground">{user?.role.replaceAll("_"," ")}</span></DropdownMenuLabel><DropdownMenuSeparator/>{view==="student"&&<DropdownMenuItem asChild><Link to="/me/profile"><User className="mr-2 h-4 w-4"/>My profile</Link></DropdownMenuItem>}{view==="admin"&&<DropdownMenuItem asChild><Link to="/settings/general"><User className="mr-2 h-4 w-4"/>Organisation settings</Link></DropdownMenuItem>}{view==="franchise"&&<DropdownMenuItem asChild><Link to="/branch/website-settings"><User className="mr-2 h-4 w-4"/>Branch settings</Link></DropdownMenuItem>}<DropdownMenuSeparator/><DropdownMenuItem className="text-destructive" onClick={()=>void logout()}>Log out</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
       </div>
 
       {searchOpen && <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-3 pt-[7vh] backdrop-blur-sm sm:px-4 sm:pt-[12vh]" onMouseDown={() => setSearchOpen(false)}>

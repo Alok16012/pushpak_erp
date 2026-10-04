@@ -52,7 +52,7 @@ export function StatsCard({
 }: StatsCardProps) {
   const blue = variant === "primary";
   return (
-    <Card className={cn("press transition-all", variantStyles[variant], className)}>
+    <Card className={cn("stats-card press transition-all", variantStyles[variant], className)}>
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
@@ -74,7 +74,7 @@ export function StatsCard({
               <p className={cn("text-[11.5px] font-medium", blue ? "text-gold" : "text-muted-foreground")}>{subtitle}</p>
             )}
           </div>
-          <div className={cn("shrink-0 rounded-xl p-2.5", iconVariantStyles[variant])}>
+          <div className={cn("hidden shrink-0 rounded-xl p-2.5 min-[400px]:block", iconVariantStyles[variant])}>
             <Icon className="h-5 w-5" />
           </div>
         </div>

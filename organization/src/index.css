@@ -189,21 +189,19 @@
 @layer components {
   /* The reference's one genuinely portable device: a small gold label that
      names what a number is, so a card can be identified without reading it. */
+  /* DriveWay's small label over a title or a figure ("Pick your ride"). */
   .eyebrow {
-    @apply text-[11px] font-semibold uppercase leading-none;
-    letter-spacing: .13em;
-    color: hsl(var(--brand-ink));
+    @apply text-[12.5px] font-medium leading-tight text-muted-foreground;
   }
 
   .eyebrow-muted {
-    @apply text-[11px] font-semibold uppercase leading-none text-muted-foreground;
-    letter-spacing: .13em;
+    @apply text-[12.5px] font-medium leading-tight text-muted-foreground;
   }
 
-  /* Headline figures: tight, tabular, optically aligned across a KPI row. */
+  /* Headline figures, as DriveWay's stat cards set them. */
   .metric {
-    @apply text-[2rem] font-semibold leading-none sm:text-[2.25rem];
-    letter-spacing: -.04em;
+    @apply text-2xl font-extrabold leading-none;
+    letter-spacing: -.02em;
     font-variant-numeric: tabular-nums;
   }
 
@@ -258,6 +256,12 @@
   /* The navy sidebar, on desktop and in the phone drawer alike. */
   [data-sidebar="sidebar"] {
     background: linear-gradient(180deg, #04246b 0%, #020b24 100%);
+  }
+
+  /* Stat cards sit two to a row on a phone, as DriveWay's do, whatever
+     column count the page asked for on wider screens. */
+  @media (max-width: 767px) {
+    .grid:has(> .stats-card) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 
   /* Tap feedback, as a native app gives it. */

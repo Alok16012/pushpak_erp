@@ -21,7 +21,8 @@ export function PageHeader({ title, description, breadcrumbs, actions }: PageHea
   return (
     <div className="mb-5 space-y-1">
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="mb-3 flex items-center gap-1 overflow-hidden text-xs text-muted-foreground sm:text-sm">
+        // On a phone the top bar carries a back arrow instead, as an app does.
+        <nav className="mb-3 hidden items-center gap-1 overflow-hidden text-xs text-muted-foreground sm:text-sm md:flex">
           <Link to={VIEWS[view].home} className="hover:text-foreground transition-colors">
             <Home className="h-4 w-4" />
           </Link>

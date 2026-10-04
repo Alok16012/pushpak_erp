@@ -17,6 +17,7 @@ import { monthlyFees, weekActivity } from "@/lib/dashboardCharts";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { AppGreeting, HeroCard, ServicesGrid } from "@/components/home/AppHome";
 
 const quickActions = [
   { label: "New admission", hint: "Add a student", to: "/student/admission-form", icon: UserPlus },
@@ -35,9 +36,7 @@ const Index = () => { const {toast}=useToast();const navigate=useNavigate();cons
   const weekly=useMemo(()=>rows?weekActivity(rows.attendance,rows.payments,new Date()):[],[rows]);
   const marked=weekly.filter(d=>d.attendance!==null);
   const weekAverage=marked.length?Math.round(marked.reduce((sum,d)=>sum+(d.attendance as number),0)/marked.length*10)/10:null;
-  const fees=useMemo(()=>rows?monthlyFees(rows.payments,rows.invoices,new Date()).map(r=>({m:r.m,paid:r.collected,due:r.due})):[],[rows]); const money=(value:number)=>value>=100000?`₹${(value/100000).toFixed(1)}L`:`₹${Math.round(value/1000)}K`;
-  const now=new Date();
-  const greeting=now.getHours()<12?"Good morning":now.getHours()<17?"Good afternoon":"Good evening";
+  const fees=useMemo(()=>rows?monthlyFees(rows.payments,rows.invoices,new Date()).map(r=>({m:r.m,paid:r.collected,due:r.due})):[],[rows]); const money=(value:number)=>value>=100000?`₹${(value/100000).toFixed(1)}L`:value>=1000?`₹${Math.round(value/1000)}K`:`₹${Math.round(value)}`;
   // A KPI row is a comparison, so the four cards get identical treatment — the
   // delta pill carries the state instead of one card being visually louder.
   const stats=[
@@ -48,12 +47,23 @@ const Index = () => { const {toast}=useToast();const navigate=useNavigate();cons
   ];
   return (
   <AppLayout>
-    <section className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-      <div><p className="eyebrow-muted mb-2.5">{now.toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long"})}</p><h1 className="text-3xl font-semibold tracking-[-.045em] sm:text-4xl">{greeting}, Admin.</h1><p className="mt-1.5 text-sm text-muted-foreground">Here’s what needs your attention across the institution.</p></div>
-      <Button asChild className="w-fit"><Link to="/student/admission-form"><Plus/>New admission</Link></Button>
-    </section>
+    <AppGreeting name={user?.name?.split(" ")[0]||"Admin"} title="What needs you today?" right={<Button asChild><Link to="/student/admission-form"><Plus/>New admission</Link></Button>}/>
+    <HeroCard
+      badge="This month"
+      headline={metrics?`${money(metrics.feesCollected)} collected`:"Fees collected"}
+      accent={metrics?`${money(metrics.outstanding)} still due`:undefined}
+      note="Across every branch · live from fee records"
+      figures={[
+        {value:metrics?.students??"—",label:"Students",to:"/student/view"},
+        {value:metrics?`${metrics.attendancePercentage}%`:"—",label:"Attendance",to:"/attendance/report"},
+        {value:metrics?.enquiriesToday??"—",label:"Enquiries today",to:"/reception/enquiry"},
+      ]}
+      primary={{label:"Collect fee",to:"/fee/collection"}}
+      secondary={{label:"Due fees",to:"/fee/due-collection"}}
+    />
+    <ServicesGrid/>
 
-    <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
       {stats.map(stat=>
         <Card key={stat.label} className="group relative overflow-hidden transition-colors hover:border-brand/40">
           <CardContent className="p-4">

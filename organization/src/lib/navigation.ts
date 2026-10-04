@@ -48,7 +48,7 @@ import { VIEWS, type View } from "@/lib/roles";
 
 export interface MenuItem {
   title: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   items: {
     title: string;
     url: string;
@@ -456,4 +456,20 @@ export function canAccessWithRole(
   // the section they belong to, so granting a section's page carries them.
   const section = path.split("/")[1] ?? "";
   return [...granted].some((url) => url.split("/")[1] === section);
+}
+
+/** Where a module opens: its list or overview page, else its first page. */
+export function groupEntry(group: MenuItem) {
+  return group.items.find((item) => /view|all|list|report|collection|transactions|enquiry/.test(item.url)) || group.items[0];
+}
+
+/** A module's name short enough for a home-screen tile. */
+export function shortGroupTitle(title: string) {
+  return title
+    .replace(" Management", "")
+    .replace("Certificate & Marksheet", "Certificates")
+    .replace("Courses & Batches", "Courses")
+    .replace("System Settings", "Settings")
+    .replace("Main Website", "Website")
+    .replace("Session Year", "Session");
 }

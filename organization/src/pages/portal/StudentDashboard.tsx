@@ -1,3 +1,4 @@
+import { AppGreeting, HeroCard, ServicesGrid } from "@/components/home/AppHome";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, CalendarCheck, FileCheck, IndianRupee, Megaphone, Video } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -197,8 +198,6 @@ export default function StudentDashboard() {
     return bDate - aDate;
   }).slice(0, 4), [results]);
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   const join = (item: PortalClass) => {
     // Live classes would have a link in a real implementation
@@ -224,13 +223,23 @@ export default function StudentDashboard() {
 
   return (
     <AppLayout>
-      <section className="mb-5">
-        <p className="eyebrow-muted mb-2.5">{new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
-        <h1 className="text-3xl font-semibold tracking-[-.045em] sm:text-4xl">{greeting}, {profile?.name?.split(" ")[0] || "Student"}.</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">{profile?.course} · {profile?.batch} · {profile?.branch} · Enrolment {profile?.enrollmentNo} · <Link to="/me/courses" className="font-medium text-primary hover:underline">My courses, subjects &amp; syllabus</Link></p>
-      </section>
+      <AppGreeting name={profile?.name?.split(" ")[0] || "Student"} title="Ready to learn today?" />
+      <HeroCard
+        badge={profile?.course || "My course"}
+        headline={next ? `Next class: ${next.subject || "Class"}` : "No class scheduled"}
+        accent={next ? `${next.day} ${next.startTime || ""}`.trim() : fees.due > 0 ? `${rupees(fees.due)} fee due` : undefined}
+        note={[profile?.batch, profile?.branch, profile?.enrollmentNo && `Enrolment ${profile.enrollmentNo}`].filter(Boolean).join(" · ")}
+        figures={[
+          { value: presence.total ? `${presence.percentage}%` : "—", label: "Attendance", to: "/me/attendance" },
+          { value: `${scores.percentage}%`, label: "Avg score", to: "/me/results" },
+          { value: rupees(fees.due), label: "Fee due", to: "/me/fees" },
+        ]}
+        primary={{ label: "My courses", to: "/me/courses" }}
+        secondary={{ label: "Live classes", to: "/me/classes" }}
+      />
+      <ServicesGrid />
 
-      <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         {stats.map((stat) => (
           <Link key={stat.label} to={stat.to} className="group">
             <Card className="h-full transition-colors hover:border-brand/40">

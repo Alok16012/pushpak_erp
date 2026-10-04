@@ -13,6 +13,7 @@ import { admissionFunnel, belowAttendance, monthlyFees, todaysBatches } from "@/
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { AppGreeting, HeroCard, ServicesGrid } from "@/components/home/AppHome";
 
 /** Below this a branch cannot issue certificates or ID cards. */
 const WALLET_FLOOR = 25_000;
@@ -72,7 +73,7 @@ export default function FranchiseDashboard() {
     return () => { cancelled = true; };
   }, [branchId, user?.organizationId]);
 
-  const money = (value: number) => (value >= 100000 ? `₹${(value / 100000).toFixed(1)}L` : `₹${Math.round(value / 1000)}K`);
+  const money = (value: number) => (value >= 100000 ? `₹${(value / 100000).toFixed(1)}L` : value >= 1000 ? `₹${Math.round(value / 1000)}K` : `₹${Math.round(value)}`);
   const now = new Date();
   const collections = useMemo(() => (rows ? monthlyFees(rows.payments, rows.invoices, new Date()) : []), [rows]);
   const batchesToday = useMemo(
@@ -105,16 +106,23 @@ export default function FranchiseDashboard() {
 
   return (
     <AppLayout>
-      <section className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <p className="eyebrow-muted mb-2.5">{now.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
-          <h1 className="text-3xl font-semibold tracking-[-.045em] sm:text-4xl">{greeting}.</h1>
-          <p className="mt-1.5 text-sm text-muted-foreground">{branch} · everything below is scoped to this branch only.</p>
-        </div>
-        <Button asChild className="w-fit"><Link to="/student/admission-form"><Plus />New admission</Link></Button>
-      </section>
+      <AppGreeting name={user?.name?.split(" ")[0] || "there"} title={branch || "Your branch today"} right={<Button asChild><Link to="/student/admission-form"><Plus />New admission</Link></Button>} />
+      <HeroCard
+        badge="This month"
+        headline={metrics ? `${money(metrics.feesCollected)} collected` : "Fees collected"}
+        accent={metrics ? `${money(metrics.outstanding)} still due` : undefined}
+        note={`${branch} · this branch only`}
+        figures={[
+          { value: metrics?.students ?? "—", label: "Students", to: "/student/view" },
+          { value: metrics ? `${metrics.attendancePercentage}%` : "—", label: "Attendance", to: "/attendance/report" },
+          { value: wallet === null ? "—" : money(wallet), label: "Wallet", to: "/branch/wallet" },
+        ]}
+        primary={{ label: "Collect fee", to: "/fee/collection" }}
+        secondary={{ label: "New admission", to: "/student/admission-form" }}
+      />
+      <ServicesGrid />
 
-      <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
         {stats.map((stat) => (
           <Link key={stat.label} to={stat.to} className="group">
             <Card className="h-full transition-colors hover:border-brand/40">
