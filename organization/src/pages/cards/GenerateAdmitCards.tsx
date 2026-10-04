@@ -218,7 +218,7 @@ export default function GenerateAdmitCards() {
         title="Generate Admit Cards"
         description="Generate and print admit cards for examinations"
         breadcrumbs={[
-          { label: "ID & Admit Card", href: "/cards/id-template" },
+          { label: "Certificate & Marksheet", href: "/documents/designer" },
           { label: "Generate Admit Cards" },
         ]}
       />

@@ -152,16 +152,6 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: "ID & Admit Card",
-    icon: IdCard,
-    items: [
-      { title: "ID Card Template", url: "/cards/id-template", icon: LayoutTemplate },
-      { title: "Generate ID Cards", url: "/cards/generate-id", icon: Printer },
-      { title: "Admit Card Template", url: "/cards/admit-template", icon: LayoutTemplate },
-      { title: "Generate Admit Cards", url: "/cards/generate-admit", icon: Printer },
-    ],
-  },
-  {
     title: "Certificate & Marksheet",
     icon: Award,
     items: [
@@ -170,6 +160,10 @@ export const menuItems: MenuItem[] = [
       { title: "Marksheet Format", url: "/marksheet/template", icon: LayoutTemplate },
       { title: "Student Documents", url: "/certificate/generate", icon: Printer },
       { title: "Centre Certificate", url: "/certificate/centre", icon: Award },
+      // ID and admit card layouts are drawn in the Document Designer above, so
+      // they no longer need a module of their own; printing them lives here.
+      { title: "Generate ID Cards", url: "/cards/generate-id", icon: IdCard },
+      { title: "Generate Admit Cards", url: "/cards/generate-admit", icon: Printer },
     ],
   },
   {
@@ -282,8 +276,12 @@ const franchiseMenu: MenuItem[] = [
   ]),
   ...scope("Exam & Marks", ["/exam/marks-list"]),
   ...scope("Live Class", ["/live-class/view", "/tools/code-lab", "/tools/whiteboard"]),
-  ...scope("ID & Admit Card", ["/cards/generate-id", "/cards/generate-admit"]),
-  ...scope("Certificate & Marksheet", ["/certificate/generate", "/certificate/centre"]),
+  ...scope("Certificate & Marksheet", [
+    "/certificate/generate",
+    "/certificate/centre",
+    "/cards/generate-id",
+    "/cards/generate-admit",
+  ]),
   ...scope("Branch Management", [
     "/branch/wallet",
     "/branch/transactions",

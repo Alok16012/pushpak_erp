@@ -189,7 +189,7 @@ export default function AdmitCardTemplate() {
         title="Admit Card Template"
         description="Design admit card templates for examinations"
         breadcrumbs={[
-          { label: "ID & Admit Card", href: "/cards/id-template" },
+          { label: "Certificate & Marksheet", href: "/documents/designer" },
           { label: "Admit Card Template" },
         ]}
         actions={

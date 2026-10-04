@@ -212,7 +212,7 @@ export default function GenerateIDCards() {
         title="Generate ID Cards"
         description="Select students and generate ID cards in bulk"
         breadcrumbs={[
-          { label: "ID & Admit Card", href: "/cards/id-template" },
+          { label: "Certificate & Marksheet", href: "/documents/designer" },
           { label: "Generate ID Cards" },
         ]}
       />

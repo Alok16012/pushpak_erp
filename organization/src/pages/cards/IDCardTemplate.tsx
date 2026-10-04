@@ -174,7 +174,7 @@ export default function IDCardTemplate() {
         title="ID Card Template"
         description="Design and customize student ID card templates"
         breadcrumbs={[
-          { label: "ID & Admit Card", href: "/cards/id-template" },
+          { label: "Certificate & Marksheet", href: "/documents/designer" },
           { label: "ID Card Template" },
         ]}
         actions={
