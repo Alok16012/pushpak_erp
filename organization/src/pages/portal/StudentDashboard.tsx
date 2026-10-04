@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect, useMemo } from "react";
-import { getStudentProfile, getStudentAttendance, getStudentPortalInvoices, getStudentPortalResults, getStudentPortalClasses, getNotices } from "@/lib/supabase/data";
+import { getStudentProfile, getStudentPortalAttendance, getStudentPortalInvoices, getStudentPortalResults, getStudentPortalClasses, getNotices } from "@/lib/supabase/data";
 import { feeStanding, rupees } from "@/lib/fees";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -102,7 +102,7 @@ export default function StudentDashboard() {
       try {
         const [profileRes, attendanceRes, invoicesRes, resultsRes, classesRes, noticesRes] = await Promise.all([
           getStudentProfile(userId, branchId),
-          getStudentAttendance(userId, branchId),
+          getStudentPortalAttendance(userId, branchId),
           getStudentPortalInvoices(userId, branchId),
           getStudentPortalResults(userId, branchId),
           getStudentPortalClasses(userId, branchId),
@@ -206,7 +206,7 @@ export default function StudentDashboard() {
   };
 
   const stats = [
-    { label: "Attendance", value: `${presence.percentage}%`, note: `${presence.present + presence.late} of ${presence.total} sessions`, icon: CalendarCheck, to: "/me/attendance" },
+    { label: "Attendance", value: presence.total ? `${presence.percentage}%` : "—", note: presence.total ? `${presence.present + presence.late} of ${presence.total} sessions` : "No register taken yet", icon: CalendarCheck, to: "/me/attendance" },
     { label: "Fee balance", value: rupees(fees.due), note: fees.overdue ? `${rupees(fees.overdue)} overdue` : `${rupees(fees.paid)} paid of ${rupees(fees.total)}`, icon: IndianRupee, to: "/me/fees" },
     { label: "Average score", value: `${scores.percentage}%`, note: `${scores.exams.length} exams recorded`, icon: FileCheck, to: "/me/results" },
     { label: "Classes ahead", value: agenda.length, note: next ? `${next.day} ${next.startTime || ""}` : "nothing scheduled", icon: Video, to: "/me/classes" },
@@ -272,7 +272,7 @@ export default function StudentDashboard() {
           <Card>
             <CardHeader><CardTitle>Attendance this term</CardTitle></CardHeader>
             <CardContent>
-              <div className="mb-3 flex items-end gap-2.5"><span className="metric">{presence.percentage}%</span><span className={presence.percentage >= 75 ? "delta delta-up mb-1.5" : "delta delta-down mb-1.5"}>{presence.percentage >= 75 ? "Above requirement" : "Below 75%"}</span></div>
+              <div className="mb-3 flex items-end gap-2.5"><span className="metric">{presence.total ? `${presence.percentage}%` : "—"}</span>{presence.total ? <span className={presence.percentage >= 75 ? "delta delta-up mb-1.5" : "delta delta-down mb-1.5"}>{presence.percentage >= 75 ? "Above requirement" : "Below 75%"}</span> : <span className="mb-1.5 text-xs text-muted-foreground">No register taken yet</span>}</div>
               <Progress value={presence.percentage} className="h-2" />
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 {[{ label: "Present", value: presence.present }, { label: "Late", value: presence.late }, { label: "Absent", value: presence.absent }].map((cell) => (
@@ -286,7 +286,7 @@ export default function StudentDashboard() {
             <CardHeader className="flex-row items-center justify-between space-y-0"><CardTitle>Fees</CardTitle><Button size="sm" asChild><Link to="/me/fees">Pay now</Link></Button></CardHeader>
             <CardContent>
               <p className="metric">₹{fees.due.toFixed(2)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">outstanding of ₹{fees.billed.toFixed(2)} billed · ₹{fees.paid.toFixed(2)} received</p>
+              <p className="mt-1 text-xs text-muted-foreground">outstanding of ₹{fees.total.toFixed(2)} total fee · ₹{fees.paid.toFixed(2)} received</p>
               {fees.overdue > 0 && <p className="mt-3 rounded-xl border border-destructive/25 bg-destructive/10 p-2.5 text-xs text-destructive">₹{fees.overdue.toFixed(2)} is past its due date.</p>}
             </CardContent>
           </Card>

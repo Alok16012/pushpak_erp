@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { getPortalRequests, getStudentAttendance, submitPortalRequest } from "@/lib/supabase/data";
+import { getPortalRequests, getStudentPortalAttendance, submitPortalRequest } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
 import { attendanceSummary, type AttendanceDay } from "@/data/student-portal";
@@ -85,7 +85,7 @@ export default function MyAttendance() {
     // Both of these used to be REST calls against an API server that is not part
     // of this deployment, so the page never loaded anything.
     Promise.all([
-      getStudentAttendance(studentId, branchId),
+      getStudentPortalAttendance(userId, branchId),
       getPortalRequests(studentId, branchId),
     ])
       .then(([daysResult, requestsResult]) => {

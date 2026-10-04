@@ -2490,6 +2490,24 @@ export async function getStudentPortalClasses(userId: string, branchId: string) 
   return { success: true, data: (data || []).map((t: any) => ({ ...t, course: t.subject || t.teacherName || "—" })) };
 }
 
+/**
+ * The signed-in student's attendance. Registers are keyed by the student
+ * record's id, not the login's: the portal passed the login's id straight to
+ * getStudentAttendance, matched nothing, and showed every student 0 of 0
+ * sessions however many registers had been taken.
+ */
+export async function getStudentPortalAttendance(userId: string, branchId: string, month?: Date) {
+  const { data: student } = await supabase
+    .from("students")
+    .select("id")
+    .eq("userId", userId)
+    .eq("branchId", branchId)
+    .is("deletedAt", null)
+    .maybeSingle();
+  if (!student) return { success: true, data: [] as Record<string, unknown>[] };
+  return getStudentAttendance(String(student.id), branchId, month);
+}
+
 export async function getStudentPortalInvoices(userId: string, branchId: string) {
   const { data: student } = await supabase.from("students").select("id").eq("userId", userId).eq("branchId", branchId).single();
   if (!student) return { success: true, data: [] };
