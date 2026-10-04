@@ -151,7 +151,7 @@ function Dashboard() {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider><ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="theme">
+    <AuthProvider><ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="erp-theme">
       <TooltipProvider>
         <Toaster />
         <Sonner />

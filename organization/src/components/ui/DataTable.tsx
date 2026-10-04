@@ -222,7 +222,7 @@ export function DataTable<T extends { id: string | number }>({
       )}
 
       {showFilters && usingNamed && (
-        <div className="grid grid-cols-2 items-end gap-3 rounded-2xl border bg-card p-3 animate-slide-up sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 items-end gap-3 rounded-[18px] bg-card p-3 shadow-card animate-slide-up sm:grid-cols-3 lg:grid-cols-5">
           {named.map((filter) => (
             <div key={filter.label} className="min-w-0">
               <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -246,7 +246,7 @@ export function DataTable<T extends { id: string | number }>({
       )}
 
       {showFilters && filterColumn && filterOptions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-card p-3 animate-slide-up">
+        <div className="flex flex-wrap items-center gap-2 rounded-[18px] bg-card p-3 shadow-card animate-slide-up">
           <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{filterColumn.header}</span>
           {filterOptions.map(option => <Button key={option} variant={quickFilter === option ? "default" : "outline"} size="sm" onClick={() => { setQuickFilter(current => current === option ? "" : option); setCurrentPage(1); }}>{option}</Button>)}
           {quickFilter && <Button variant="ghost" size="sm" onClick={() => setQuickFilter("")}><X className="h-3.5 w-3.5"/>Clear</Button>}
@@ -254,7 +254,7 @@ export function DataTable<T extends { id: string | number }>({
       )}
 
       <div className="space-y-2 md:hidden">
-        {paginatedData.length === 0 ? <div className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">{emptyMessage}</div> : paginatedData.map(item => <article key={item.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+        {paginatedData.length === 0 ? <div className="rounded-[18px] bg-card p-10 text-center text-sm text-muted-foreground shadow-card">{emptyMessage}</div> : paginatedData.map(item => <article key={item.id} className="press rounded-[18px] bg-card p-4 shadow-card">
           <div className="flex items-start gap-3">
             {selectable && <Checkbox className="mt-1" checked={selectedIds.includes(item.id)} onCheckedChange={()=>toggleSelect(item.id)}/>}
             <div className="min-w-0 flex-1">
@@ -268,10 +268,10 @@ export function DataTable<T extends { id: string | number }>({
         </article>)}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border bg-card md:block">
+      <div className="hidden overflow-x-auto rounded-[18px] bg-card p-1 shadow-card md:block">
         <Table>
           <TableHeader>
-            <TableRow className="bg-muted/50">
+            <TableRow className="hover:bg-transparent">
               {selectable && (
                 <TableHead className="w-12">
                   <Checkbox checked={allSelected} onCheckedChange={toggleSelectAll} />

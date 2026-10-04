@@ -28,7 +28,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div className="flex min-w-0 flex-1 flex-col">
           <AppHeader />
           <WorkspaceBar />
-          <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-24 pt-4 sm:px-6 sm:py-5 md:pb-5 lg:px-8 animate-fade-in">
+          <main className="min-w-0 flex-1 overflow-x-hidden px-4 pb-28 pt-4 sm:px-6 sm:pt-5 md:pb-10 lg:px-7 animate-fade-in">
             <div className="mx-auto w-full max-w-[1600px]">{children}</div>
           </main>
           <MobileNav />

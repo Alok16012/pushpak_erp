@@ -76,7 +76,7 @@ export default function GeneralSettings() {
   };
   const resetAll = () => {
     persist(DEFAULTS);
-    setTheme("system");
+    setTheme("light");
     toast({ title: "Settings restored", description: "Every field is back to its default." });
   };
 
@@ -292,7 +292,7 @@ export default function GeneralSettings() {
               <div className="space-y-2">
                 <Label>Theme</Label>
                 <div className="flex gap-4">
-                  {(["light", "dark", "system"] as const).map((mode) => (
+                  {(["light", "dark"] as const).map((mode) => (
                     <Button
                       key={mode}
                       variant={theme === mode ? "default" : "outline"}

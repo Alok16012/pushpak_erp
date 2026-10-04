@@ -1,8 +1,9 @@
 import { useLocation, Link } from "react-router-dom";
-import { Building2, ChevronRight, LayoutDashboard } from "lucide-react";
+import { Building2, LayoutDashboard, LogOut } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -33,17 +34,19 @@ const PRODUCTION_READY = [
   "Account",
 ];
 
+// The DriveWay sidebar: rounded rows on navy, and the page you are on as a
+// solid gold pill with blue text -- the one gold thing on the screen.
 const LINK =
-  "relative flex items-center gap-3 px-4 py-2.5 transition-colors before:absolute before:left-0 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-sidebar-primary before:transition-opacity";
+  "flex h-auto items-center gap-[11px] rounded-xl px-3 py-2.5 text-[13.5px] transition-colors group-data-[collapsible=icon]:justify-center";
 const ACTIVE =
-  "bg-sidebar-accent font-semibold text-sidebar-accent-foreground before:opacity-100";
+  "bg-sidebar-primary font-bold text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground";
 const IDLE =
-  "text-sidebar-foreground/65 before:opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground";
+  "font-medium text-white/75 hover:bg-white/[.08] hover:text-white";
 
 export function AppSidebar() {
   const location = useLocation();
   const { state } = useSidebar();
-  const { view, allowedPaths } = useAuth();
+  const { view, allowedPaths, logout } = useAuth();
   const collapsed = state === "collapsed";
   // The signed-in authorisation decides the whole navigation surface: a menu a
   // view cannot open is never rendered, so there is no route to guess at.
@@ -52,14 +55,14 @@ export function AppSidebar() {
   const isActive = (url: string) => location.pathname === url;
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className="flex h-[68px] items-center gap-3 border-b border-sidebar-border px-4">
-        <img src={`${import.meta.env.BASE_URL}idealdigiskills-logo.webp`} alt="Idealdigiskills" className="h-10 w-10 shrink-0 rounded-xl bg-white object-contain p-0.5" />
-        {!collapsed && <div className="leading-tight"><p className="font-semibold tracking-tight">Idealdigiskills</p><p className="text-[11px] text-sidebar-foreground/50">{VIEWS[view].short} workspace</p></div>}
+    <Sidebar collapsible="icon" className="border-r-0 text-sidebar-foreground">
+      <div className="flex items-center gap-2.5 px-5 pb-2 pt-5 group-data-[collapsible=icon]:px-2">
+        <img src={`${import.meta.env.BASE_URL}idealdigiskills-logo.webp`} alt="Idealdigiskills" className="h-9 w-9 shrink-0 rounded-xl bg-white object-contain p-0.5" />
+        {!collapsed && <div className="leading-[1.05]"><p className="text-[17px] font-extrabold tracking-[-0.01em] text-white">Idealdigi<span className="bg-[linear-gradient(90deg,#7ee21f_0%,#1fd6c9_55%,#1b8cff_100%)] bg-clip-text text-transparent">skills</span></p><p className="mt-0.5 text-[8.5px] font-semibold uppercase tracking-[.14em] text-white/60">{VIEWS[view].short} panel</p></div>}
       </div>
-      <SidebarContent className="py-3">
+      <SidebarContent className="px-2 py-3">
         <SidebarGroup>
-          <SidebarGroupLabel className="px-4 py-3 text-[10px] font-semibold uppercase tracking-[.18em] text-sidebar-foreground/40">
+          <SidebarGroupLabel className="px-3 py-3 text-[10px] font-semibold uppercase tracking-[.18em] text-white/40">
             Workspace
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -74,10 +77,10 @@ export function AppSidebar() {
                       LINK,
                       isActive(home)
                         ? ACTIVE
-                        : "text-sidebar-foreground/70 before:opacity-0 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                        : IDLE,
                     )}
                   >
-                    {view === "student" ? <LayoutDashboard className="h-4 w-4" /> : <Building2 className="h-4 w-4" />}
+                    {view === "student" ? <LayoutDashboard className="h-[18px] w-[18px] shrink-0" /> : <Building2 className="h-[18px] w-[18px] shrink-0" />}
                     {!collapsed && <span>Dashboard</span>}
                   </Link>
                 </SidebarMenuButton>
@@ -87,7 +90,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="px-4 py-3 text-[10px] font-semibold uppercase tracking-[.18em] text-sidebar-foreground/40">
+          <SidebarGroupLabel className="px-3 py-3 text-[10px] font-semibold uppercase tracking-[.18em] text-white/40">
             {view === "admin" ? "All modules" : view === "franchise" ? "Branch modules" : "My account"}
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -99,8 +102,8 @@ export function AppSidebar() {
                 return <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <Link to={entry.url} className={cn(LINK, active ? ACTIVE : IDLE)}>
-                      <item.icon className="h-4 w-4" />
-                      {!collapsed && <><span className="min-w-0 flex-1 truncate text-sm">{item.title.replace(" Management", "")}</span>{!productionReady&&<span className="rounded bg-sidebar-accent px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-sidebar-foreground/40">Preview</span>}<ChevronRight className="h-3.5 w-3.5 opacity-40"/></>}
+                      <item.icon className="h-[18px] w-[18px] shrink-0" />
+                      {!collapsed && <><span className="min-w-0 flex-1 truncate">{item.title.replace(" Management", "")}</span>{!productionReady&&<span className={cn("rounded-full px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider", active ? "bg-sidebar-primary-foreground/15" : "bg-white/10 text-white/50")}>Preview</span>}</>}
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>;
@@ -109,6 +112,16 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter className="p-4 group-data-[collapsible=icon]:p-2">
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="flex items-center gap-2.5 rounded-xl bg-white/[.08] px-3 py-2.5 text-[13.5px] font-medium text-white transition-colors hover:bg-white/[.14] group-data-[collapsible=icon]:justify-center"
+        >
+          <LogOut className="h-[18px] w-[18px] shrink-0" />
+          {!collapsed && "Log out"}
+        </button>
+      </SidebarFooter>
     </Sidebar>
   );
 }

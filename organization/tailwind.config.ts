@@ -56,6 +56,10 @@ export default {
 				foreground: 'hsl(var(--brand-foreground))',
 				ink: 'hsl(var(--brand-ink))'
 			},
+			gold: {
+				DEFAULT: 'hsl(var(--gold))',
+				foreground: 'hsl(var(--gold-foreground))'
+			},
 			popover: {
 				DEFAULT: 'hsl(var(--popover))',
 				foreground: 'hsl(var(--popover-foreground))'
@@ -119,7 +123,9 @@ export default {
 			DEFAULT: 'var(--shadow)',
 			md: 'var(--shadow-md)',
 			lg: 'var(--shadow-lg)',
-			xl: 'var(--shadow-xl)'
+			xl: 'var(--shadow-xl)',
+			card: 'var(--shadow-card)',
+			blue: 'var(--shadow-blue)'
 		}
   	}
   },

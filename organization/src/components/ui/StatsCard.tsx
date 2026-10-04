@@ -15,20 +15,30 @@ interface StatsCardProps {
   className?: string;
 }
 
+// The DriveWay stat card: white with a soft shadow, or, for the one figure a
+// screen leads with, the blue gradient with white text.
 const variantStyles = {
   default: "bg-card",
-  primary: "bg-primary/5 border-primary/20",
-  success: "bg-success/5 border-success/20",
-  warning: "bg-warning/5 border-warning/20",
-  info: "bg-info/5 border-info/20",
+  primary: "border-transparent bg-[linear-gradient(150deg,hsl(var(--brand-ink)),hsl(var(--primary)))] text-white shadow-[0_10px_24px_rgba(11,92,255,0.25)]",
+  success: "bg-card",
+  warning: "bg-card",
+  info: "bg-card",
 };
 
 const iconVariantStyles = {
-  default: "bg-secondary text-foreground",
-  primary: "bg-primary/10 text-primary",
+  default: "bg-accent text-accent-foreground",
+  primary: "bg-white/15 text-white",
   success: "bg-success/10 text-success",
-  warning: "bg-warning/10 text-warning",
+  warning: "bg-gold/15 text-[hsl(37_91%_38%)]",
   info: "bg-info/10 text-info",
+};
+
+const valueVariantStyles = {
+  default: "",
+  primary: "text-white",
+  success: "text-success",
+  warning: "text-[hsl(37_91%_42%)]",
+  info: "",
 };
 
 export function StatsCard({
@@ -40,19 +50,20 @@ export function StatsCard({
   variant = "default",
   className,
 }: StatsCardProps) {
+  const blue = variant === "primary";
   return (
-    <Card className={cn("transition-all hover:shadow-md", variantStyles[variant], className)}>
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+    <Card className={cn("press transition-all", variantStyles[variant], className)}>
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <p className={cn("text-[12.5px] font-medium", blue ? "text-white/75" : "text-muted-foreground")}>{title}</p>
             <div className="flex items-baseline gap-2">
-              <h3 className="text-2xl font-bold tracking-tight">{value}</h3>
+              <h3 className={cn("text-2xl font-extrabold tracking-[-0.02em]", valueVariantStyles[variant])}>{value}</h3>
               {trend && (
                 <span
                   className={cn(
-                    "text-xs font-medium",
-                    trend.isPositive ? "text-success" : "text-destructive"
+                    "text-xs font-semibold",
+                    blue ? "text-gold" : trend.isPositive ? "text-success" : "text-destructive"
                   )}
                 >
                   {trend.isPositive ? "+" : ""}{trend.value}%
@@ -60,10 +71,10 @@ export function StatsCard({
               )}
             </div>
             {subtitle && (
-              <p className="text-xs text-muted-foreground">{subtitle}</p>
+              <p className={cn("text-[11.5px] font-medium", blue ? "text-gold" : "text-muted-foreground")}>{subtitle}</p>
             )}
           </div>
-          <div className={cn("rounded-lg p-3", iconVariantStyles[variant])}>
+          <div className={cn("shrink-0 rounded-xl p-2.5", iconVariantStyles[variant])}>
             <Icon className="h-5 w-5" />
           </div>
         </div>
