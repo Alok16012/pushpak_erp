@@ -227,7 +227,7 @@ export default function StudentDashboard() {
       <section className="mb-5">
         <p className="eyebrow-muted mb-2.5">{new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
         <h1 className="text-3xl font-semibold tracking-[-.045em] sm:text-4xl">{greeting}, {profile?.name?.split(" ")[0] || "Student"}.</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">{profile?.course} · {profile?.batch} · {profile?.branch} · Enrolment {profile?.enrollmentNo}</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">{profile?.course} · {profile?.batch} · {profile?.branch} · Enrolment {profile?.enrollmentNo} · <Link to="/me/courses" className="font-medium text-primary hover:underline">My courses, subjects &amp; syllabus</Link></p>
       </section>
 
       <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

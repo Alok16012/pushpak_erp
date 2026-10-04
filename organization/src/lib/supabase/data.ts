@@ -751,7 +751,7 @@ export async function deleteCourse(id: string) {
 }
 
 /** Added by `supabase/schema/add-batch-fee-fields.sql`; may not be deployed. */
-const BATCH_OPTIONAL_COLUMNS = ["feeDiscount", "remark", "instructor"];
+const BATCH_OPTIONAL_COLUMNS = ["feeDiscount", "remark", "instructor", "subjects"];
 
 /** The column is `maxSeats`; the screens say `maxStudents`. Expose both. */
 function mapBatch(row: Record<string, unknown>): Record<string, any> {
@@ -761,6 +761,8 @@ function mapBatch(row: Record<string, unknown>): Record<string, any> {
     feeDiscount: row.feeDiscount === undefined ? 0 : Number(row.feeDiscount) || 0,
     remark: (row.remark as string) ?? "",
     instructor: (row.instructor as string) ?? "",
+    // Absent until add-batch-subjects.sql has run; an empty list until then.
+    subjects: Array.isArray(row.subjects) ? (row.subjects as unknown[]).map(String).filter(Boolean) : [],
   };
 }
 
@@ -2506,6 +2508,134 @@ export async function getStudentPortalAttendance(userId: string, branchId: strin
     .maybeSingle();
   if (!student) return { success: true, data: [] as Record<string, unknown>[] };
   return getStudentAttendance(String(student.id), branchId, month);
+}
+
+/** One subject the student is taught, with who teaches it and when. */
+export interface PortalSubject {
+  name: string;
+  teachers: string[];
+  slots: Array<{ day: string; startTime: string; endTime: string; room: string }>;
+}
+
+/** One course the student is enrolled on, as their portal shows it. */
+export interface PortalCourse {
+  id: string;
+  name: string;
+  code: string;
+  category: string;
+  description: string;
+  duration: string;
+  fee: number;
+  eligibility: string;
+  certification: string;
+  /** The student's own batch, when it teaches this course. */
+  batch: { name: string; startDate: string; endDate: string; teachers: string[] } | null;
+  subjects: PortalSubject[];
+  syllabus: { modules: SyllabusModule[]; chapters: SyllabusChapter[]; ready: boolean };
+}
+
+const DAY_ORDER = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+
+/**
+ * Every course the signed-in student is enrolled on, with what goes with it:
+ * the course itself, their batch and its teachers, the subjects they are
+ * taught -- those set in Assign Course to Batch and those on the timetable --
+ * when each is taught, and the course's syllabus.
+ */
+export async function getStudentPortalCourses(userId: string, branchId: string) {
+  const { data: student, error } = await supabase
+    .from("students")
+    .select("id, courseId, courseIds, batchId")
+    .eq("userId", userId)
+    .eq("branchId", branchId)
+    .is("deletedAt", null)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!student) return { success: true as const, data: [] as PortalCourse[] };
+
+  const row = student as { courseId?: string | null; courseIds?: unknown; batchId?: string | null };
+  const courseIds = [...new Set([row.courseId, ...(Array.isArray(row.courseIds) ? row.courseIds : [])].map((id) => String(id ?? "")).filter(Boolean))];
+  if (!courseIds.length) return { success: true as const, data: [] as PortalCourse[] };
+
+  const [courseResult, batchResult, timingResult] = await Promise.all([
+    supabase.from("courses").select("*").in("id", courseIds),
+    row.batchId ? supabase.from("batches").select("*").eq("id", row.batchId).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    row.batchId
+      ? supabase.from("batch_timings").select("*").eq("batchId", row.batchId)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (courseResult.error) throw new Error(courseResult.error.message);
+
+  const batch = batchResult.data ? mapBatch(batchResult.data as Record<string, unknown>) : null;
+  const timings = (timingResult.data ?? []) as Array<Record<string, unknown>>;
+  const batchTeachers = String(batch?.instructor ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+
+  const syllabi = await Promise.all(
+    courseIds.map((id) => getCourseSyllabus(id).then((r) => r.data).catch(() => ({ modules: [], chapters: [], ready: true }))),
+  );
+
+  const courses = (courseResult.data ?? []) as Array<Record<string, unknown>>;
+  const data: PortalCourse[] = courseIds
+    .map((id, index) => {
+      const course = courses.find((c) => String(c.id) === id);
+      if (!course) return null;
+      const ownBatch = batch && String(batch.courseId ?? "") === id ? batch : batch && !batch.courseId && index === 0 ? batch : null;
+
+      // Subjects: those assigned to the batch, then any the timetable adds.
+      const subjects = new Map<string, PortalSubject>();
+      const subject = (name: string) => {
+        const key = name.trim();
+        if (!subjects.has(key)) subjects.set(key, { name: key, teachers: [], slots: [] });
+        return subjects.get(key)!;
+      };
+      if (ownBatch) {
+        for (const name of (ownBatch.subjects as string[]) ?? []) subject(name);
+        for (const t of timings) {
+          const name = String(t.subject ?? t.title ?? "").trim();
+          if (!name) continue;
+          const entry = subject(name);
+          const teacher = String(t.instructor ?? "").trim();
+          if (teacher && !entry.teachers.includes(teacher)) entry.teachers.push(teacher);
+          entry.slots.push({
+            day: String(t.day ?? ""),
+            startTime: String(t.startTime ?? "").slice(0, 5),
+            endTime: String(t.endTime ?? "").slice(0, 5),
+            room: String(t.roomNo ?? ""),
+          });
+        }
+        for (const entry of subjects.values()) {
+          if (!entry.teachers.length) entry.teachers = [...batchTeachers];
+          entry.slots.sort((a, b) => DAY_ORDER.indexOf(a.day.toUpperCase()) - DAY_ORDER.indexOf(b.day.toUpperCase()) || a.startTime.localeCompare(b.startTime));
+        }
+      }
+
+      const durationValue = Number(course.durationValue) || 0;
+      const unit = String(course.durationUnit ?? "").toLowerCase();
+      return {
+        id,
+        name: String(course.name ?? ""),
+        code: String(course.code ?? ""),
+        category: String(course.category ?? ""),
+        description: String(course.description ?? ""),
+        duration: durationValue ? `${durationValue} ${unit || "months"}` : "",
+        fee: Number(course.baseFee) || 0,
+        eligibility: String(course.eligibility ?? ""),
+        certification: String(course.certification ?? ""),
+        batch: ownBatch
+          ? {
+              name: String(ownBatch.name ?? ""),
+              startDate: String(ownBatch.startDate ?? ""),
+              endDate: String(ownBatch.endDate ?? ""),
+              teachers: batchTeachers,
+            }
+          : null,
+        subjects: [...subjects.values()],
+        syllabus: syllabi[index],
+      };
+    })
+    .filter((c): c is PortalCourse => c !== null);
+
+  return { success: true as const, data };
 }
 
 export async function getStudentPortalInvoices(userId: string, branchId: string) {

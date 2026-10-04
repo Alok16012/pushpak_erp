@@ -23,6 +23,7 @@ const MyAttendance = lazy(() => import("./pages/portal/MyAttendance"));
 const MyFees = lazy(() => import("./pages/portal/MyFees"));
 const MyResults = lazy(() => import("./pages/portal/MyResults"));
 const MyClasses = lazy(() => import("./pages/portal/MyClasses"));
+const MyCourses = lazy(() => import("./pages/portal/MyCourses"));
 const MyDocuments = lazy(() => import("./pages/portal/MyDocuments"));
 const MyProfile = lazy(() => import("./pages/portal/MyProfile"));
 
@@ -164,6 +165,7 @@ const App = () => (
 
           {/* Student portal */}
           <Route path="/me" element={<StudentDashboard />} />
+          <Route path="/me/courses" element={<MyCourses />} />
           <Route path="/me/classes" element={<MyClasses />} />
           <Route path="/me/attendance" element={<MyAttendance />} />
           <Route path="/me/fees" element={<MyFees />} />

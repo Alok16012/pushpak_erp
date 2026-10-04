@@ -302,6 +302,7 @@ const studentMenu: MenuItem[] = [
     title: "Learning",
     icon: GraduationCap,
     items: [
+      { title: "My Courses", url: "/me/courses", icon: BookOpen },
       { title: "Live Classes", url: "/me/classes", icon: Video },
       { title: "Code Lab", url: "/tools/code-lab", icon: Code2 },
       { title: "Whiteboard", url: "/tools/whiteboard", icon: PenTool },

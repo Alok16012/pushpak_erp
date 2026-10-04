@@ -34,7 +34,6 @@ import {
   setBranchCourseOffered,
   updateBatch,
 } from "@/lib/supabase/data";
-import { newId } from "@/hooks/use-local-collection";
 import { useDropdownOptions } from "@/lib/dropdownOptions";
 import { mergeNames } from "@/lib/instructors";
 import { ManageListDialog, type ManageListResult } from "@/components/ui/ManageListDialog";
@@ -69,7 +68,12 @@ interface Batch {
   /** `batches` stores the course as a foreign key, not a name. */
   courseId?: string | null;
   branchId?: string | null;
+  /** `batches.subjects`, once add-batch-subjects.sql has run. */
+  subjects?: string[];
 }
+
+const splitNames = (value?: string | null) =>
+  (value ?? "").split(",").map((name) => name.trim()).filter(Boolean);
 
 interface BranchOption {
   id: string;
@@ -210,8 +214,31 @@ export default function AssignCourseToBatch() {
                 code: row.code ? String(row.code) : undefined,
               })),
           );
-          setBatches(batchesRes.data as Batch[]);
+          const batchList = batchesRes.data as Batch[];
+          const courseList = coursesRes.data as Course[];
+          const branchList = branchesRes.data as Record<string, unknown>[];
+          setBatches(batchList);
           setTeacherUsage(teacherRes.data);
+          // An assignment is a batch with subjects on it: what is saved is
+          // what the list shows, so it survives a reload and reaches the
+          // students of that batch.
+          setAssignments(
+            batchList
+              .filter((batch) => batch.subjects?.length)
+              .map((batch) => {
+                const course = courseList.find((c) => c.id === batch.courseId);
+                return {
+                  id: batch.id,
+                  course: course?.name ?? "Course not set",
+                  courseCode: course?.code ?? "",
+                  branch: String(branchList.find((b) => b.id === batch.branchId)?.name ?? ""),
+                  batch: batch.name,
+                  subjects: batch.subjects ?? [],
+                  instructors: splitNames(batch.instructor),
+                  status: "assigned" as const,
+                };
+              }),
+          );
         }
       } catch (err) {
         if (!cancelled) {
@@ -247,13 +274,17 @@ export default function AssignCourseToBatch() {
 
   // Batches belong to a branch, so picking a branch decides which are on offer.
   // An administrator who has picked none sees them all.
-  const branchBatches = selectedBranch
+  // And a batch teaches one course: once a course is picked, only its batches
+  // (and any not yet tied to a course) are offered.
+  const branchBatches = (selectedBranch
     ? batches.filter((batch) => !batch.branchId || batch.branchId === selectedBranch)
-    : batches;
+    : batches
+  ).filter((batch) => !selectedCourse || !batch.courseId || batch.courseId === selectedCourse);
 
-  const addAssignment = useCallback((assignment: Omit<CourseAssignment, "id">) => {
-    const newItem: CourseAssignment = { ...assignment, id: newId("ca") };
-    setAssignments((prev) => [newItem, ...prev]);
+  /** Keyed by the batch's id: one batch carries one set of subjects. */
+  const addAssignment = useCallback((assignment: CourseAssignment) => {
+    const newItem: CourseAssignment = assignment;
+    setAssignments((prev) => [newItem, ...prev.filter((i) => i.id !== newItem.id)]);
     return newItem;
   }, []);
 
@@ -436,19 +467,27 @@ export default function AssignCourseToBatch() {
       toast({ title: "Select at least one teacher", variant: "destructive" });
       return;
     }
-    if (assignments.some((a) => a.courseCode === course.code && a.batch === batch.name)) {
+    if (batch.courseId && batch.courseId !== course.id) {
+      toast({
+        title: "This batch teaches another course",
+        description: `${batch.name} belongs to ${courses.find((c) => c.id === batch.courseId)?.name ?? "another course"}. Pick one of ${course.name}'s batches.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (assignments.some((a) => a.id === batch.id)) {
       toast({
         title: "Already assigned",
-        description: `${course.name} is already linked to ${batch.name}.`,
+        description: `${batch.name} already has its subjects. Use Edit Assignment to change them.`,
         variant: "destructive",
       });
       return;
     }
 
-    // Two parts of an assignment have somewhere to live: the branch keeps the
-    // course in `branch_courses`, which is what every branch-side course list
-    // reads, and the teacher goes on `batches.instructor`. Subjects have no
-    // table yet, so they stay in this session.
+    // An assignment is saved in two places: the branch keeps the course in
+    // `branch_courses`, which every branch-side course list reads, and the
+    // batch keeps its teacher and subjects (`batches.instructor`, `.subjects`),
+    // which is what the batch's students see on their portal.
     const teachers = [...selectedTeachers];
     try {
       const offered = await setBranchCourseOffered(selectedBranch, course.id);
@@ -471,9 +510,25 @@ export default function AssignCourseToBatch() {
       return;
     }
 
+    const subjects = [...selectedSubjects];
     try {
-      await updateBatch(batch.id, { instructor: teachers.join(", ") });
-      setBatches((prev) => prev.map((b) => (b.id === batch.id ? { ...b, instructor: teachers.join(", ") } : b)));
+      const saved = await updateBatch(batch.id, {
+        instructor: teachers.join(", "),
+        subjects,
+        // A batch not yet tied to a course is tied to this one.
+        ...(batch.courseId ? {} : { courseId: course.id }),
+      });
+      if (!(saved.data.subjects as string[] | undefined)?.length) {
+        toast({
+          title: "Subjects were not saved",
+          description: "The database has no place for them yet. Run supabase/schema/add-batch-subjects.sql in the Supabase SQL editor, then assign again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setBatches((prev) =>
+        prev.map((b) => (b.id === batch.id ? { ...b, instructor: teachers.join(", "), subjects, courseId: b.courseId || course.id } : b)),
+      );
     } catch (err) {
       toast({
         title: "Could not save the teacher on this batch",
@@ -485,11 +540,12 @@ export default function AssignCourseToBatch() {
 
     const branchName = branchOptions.find((b) => b.id === selectedBranch)?.name || "the branch";
     addAssignment({
+      id: batch.id,
       course: course.name,
       courseCode: course.code,
       branch: branchName,
       batch: batch.name,
-      subjects: [...selectedSubjects],
+      subjects,
       instructors: teachers,
       status: "assigned",
     });
@@ -500,20 +556,37 @@ export default function AssignCourseToBatch() {
     resetForm();
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editing) return;
     if (!editing.subjects.length) {
       toast({ title: "An assignment needs at least one subject", variant: "destructive" });
       return;
     }
+    try {
+      await updateBatch(editing.id, { subjects: editing.subjects, instructor: editing.instructors.join(", ") });
+    } catch (err) {
+      toast({ title: "Could not save", description: err instanceof Error ? err.message : undefined, variant: "destructive" });
+      return;
+    }
     updateAssignment(editing.id, editing);
+    setBatches((prev) =>
+      prev.map((b) => (b.id === editing.id ? { ...b, subjects: editing.subjects, instructor: editing.instructors.join(", ") } : b)),
+    );
     toast({ title: "Assignment saved", description: `${editing.course} · ${editing.batch}` });
     setEditing(null);
   };
 
-  const confirmRemove = () => {
+  const confirmRemove = async () => {
     if (!pendingRemove) return;
+    try {
+      // The teacher stays on the batch; only its subjects are taken off.
+      await updateBatch(pendingRemove.id, { subjects: [] });
+    } catch (err) {
+      toast({ title: "Could not remove", description: err instanceof Error ? err.message : undefined, variant: "destructive" });
+      return;
+    }
     removeAssignment(pendingRemove.id);
+    setBatches((prev) => prev.map((b) => (b.id === pendingRemove.id ? { ...b, subjects: [] } : b)));
     toast({ title: "Assignment removed", description: `${pendingRemove.course} · ${pendingRemove.batch}` });
     setPendingRemove(null);
   };
