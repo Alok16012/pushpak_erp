@@ -10,13 +10,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Save, RotateCcw, Video, Settings, Users, Bell, Link2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { getCourses, getBatches, getStudentPortalClasses } from "@/lib/supabase/data";
+import { createBatchTiming, getBatchTimings, getBatches, getBranches, getCourses } from "@/lib/supabase/data";
+import { useDropdownOptions } from "@/lib/dropdownOptions";
 
 interface FormData {
+  branch: string;
   title: string;
   subject: string;
   course: string;
@@ -44,6 +46,7 @@ interface FormData {
 }
 
 const BLANK: FormData = {
+  branch: "",
   title: "",
   subject: "",
   course: "",
@@ -71,23 +74,39 @@ const BLANK: FormData = {
 };
 
 const REQUIRED: Array<[keyof FormData, string]> = [
-  ["title", "Class Title"],
-  ["subject", "Subject"],
+  ["branch", "Branch"],
   ["course", "Course"],
   ["batch", "Batch"],
+  ["subject", "Subject"],
   ["instructor", "Instructor"],
+  ["title", "Class Title"],
   ["date", "Date"],
   ["time", "Start Time"],
   ["duration", "Duration"],
   ["platform", "Platform"],
 ];
 
-/** "14:30" -> "2:30 PM", the format the class list renders. */
-const to12Hour = (time: string) => {
-  const [hours, minutes] = time.split(":").map(Number);
-  const suffix = hours >= 12 ? "PM" : "AM";
-  return `${((hours + 11) % 12) + 1}:${String(minutes).padStart(2, "0")} ${suffix}`;
+const WEEKDAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+
+/** "06:15" + 60 -> "07:15". */
+const addMinutes = (time: string, minutes: number) => {
+  const [h, m] = time.split(":").map(Number);
+  const total = (h * 60 + m + minutes) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 };
+
+const splitNames = (value: unknown) =>
+  String(value ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+
+interface BatchOption {
+  id: string;
+  name: string;
+  courseId: string;
+  branchId: string;
+  instructor: string;
+  subjects: string[];
+  students: number;
+}
 
 const DURATIONS = [
   { value: "30", label: "30 minutes" },
@@ -106,61 +125,106 @@ const generateMeetingLink = (platform: string) => {
 };
 
 export default function LiveClassSetup() {
-  const { user } = useAuth();
+  const { user, view } = useAuth();
   const orgId = user?.organizationId || null;
-  const branchId = user?.branchId || null;
+  const ownBranchId = user?.branchId || null;
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [form, setForm] = useState<FormData>(BLANK);
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [courses, setCourses] = useState<string[]>([]);
-  const [batches, setBatches] = useState<Array<{ value: string; label: string }>>([]);
-  const [instructors, setInstructors] = useState<string[]>([]);
+  const [form, setForm] = useState<FormData>({ ...BLANK, branch: ownBranchId ?? "" });
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [courses, setCourses] = useState<Array<{ id: string; name: string }>>([]);
+  const [batches, setBatches] = useState<BatchOption[]>([]);
+  const [timings, setTimings] = useState<Array<Record<string, unknown>>>([]);
   const [loadingLookups, setLoadingLookups] = useState(true);
+  const [saving, setSaving] = useState(false);
+  // The organisation's own subject and teacher lists, as Assign Course keeps them.
+  const { options } = useDropdownOptions(orgId);
 
+  // Branches: an administrator picks one; a branch account is its own.
   useEffect(() => {
-    const fetchLookups = async () => {
-      try {
-        const [coursesRes, batchesRes] = await Promise.all([
-          getCourses(orgId, branchId),
-          getBatches(branchId),
-        ]);
-        // These helpers return the rows directly; there is no `.items` envelope.
-        setCourses(coursesRes.data.map((c) => String(c.name)));
-        setBatches(batchesRes.data.map((b) => ({
-          value: String(b.name),
-          label: `${b.name}${b._count?.students ? ` · ${b._count.students} students` : ""}`,
-        })));
-      } catch (error) {
+    let cancelled = false;
+    getBranches(orgId)
+      .then((result) => {
+        if (cancelled) return;
+        const list = (result.data as Array<Record<string, unknown>>)
+          .filter((b) => b.isActive !== false && (!ownBranchId || String(b.id) === ownBranchId))
+          .map((b) => ({ id: String(b.id), name: String(b.name ?? "") }));
+        setBranches(list);
+        if (list.length === 1) setForm((f) => (f.branch ? f : { ...f, branch: list[0].id }));
+      })
+      .catch(() => { if (!cancelled) setBranches([]); });
+    return () => { cancelled = true; };
+  }, [orgId, ownBranchId]);
+
+  // Courses the branch runs, its batches, and their timetable -- reloaded per branch.
+  useEffect(() => {
+    let cancelled = false;
+    if (!form.branch) {
+      setCourses([]);
+      setBatches([]);
+      setTimings([]);
+      setLoadingLookups(false);
+      return;
+    }
+    setLoadingLookups(true);
+    Promise.all([getCourses(orgId, form.branch), getBatches(form.branch), getBatchTimings(form.branch)])
+      .then(([coursesRes, batchesRes, timingsRes]) => {
+        if (cancelled) return;
+        setCourses((coursesRes.data as Array<Record<string, unknown>>).map((c) => ({ id: String(c.id), name: String(c.name ?? "") })));
+        setBatches(
+          (batchesRes.data as Array<Record<string, unknown>>).map((b) => ({
+            id: String(b.id),
+            name: String(b.name ?? ""),
+            courseId: String(b.courseId ?? ""),
+            branchId: String(b.branchId ?? ""),
+            instructor: String(b.instructor ?? ""),
+            subjects: Array.isArray(b.subjects) ? (b.subjects as unknown[]).map(String) : [],
+            students: Number(b.currentStudents) || 0,
+          })),
+        );
+        setTimings(timingsRes.data as Array<Record<string, unknown>>);
+      })
+      .catch((error) =>
         toast({
           title: "Could not load courses and batches",
           description: error instanceof Error ? error.message : undefined,
           variant: "destructive",
-        });
-      } finally {
-        setLoadingLookups(false);
-      }
-    };
-    fetchLookups();
-  }, [orgId, branchId, toast]);
+        }),
+      )
+      .finally(() => { if (!cancelled) setLoadingLookups(false); });
+    return () => { cancelled = true; };
+  }, [orgId, form.branch, toast]);
 
-  // Load subjects and instructors from the class list endpoint as a convenience.
-  useEffect(() => {
-    if (!user?.id || !branchId) return;
-    const fetchMeta = async () => {
-      try {
-        const body = await getStudentPortalClasses(user.id, branchId);
-        const subjSet = new Set<string>();
-        const instrSet = new Set<string>();
-        body.data.forEach((c: any) => { subjSet.add(c.subject); instrSet.add(c.instructor); });
-        if (subjSet.size > 0) setSubjects(Array.from(subjSet).sort());
-        if (instrSet.size > 0) setInstructors(Array.from(instrSet).sort());
-      } catch {
-        // keep defaults empty
+  // Each choice narrows the next: the course's batches, the batch's subjects
+  // and teachers.
+  const courseBatches = batches.filter((b) => !form.course || b.courseId === form.course);
+  const batch = batches.find((b) => b.id === form.batch);
+  const batchTimings = timings.filter((t) => String(t.batchId) === form.batch);
+  const subjects = useMemo(() => {
+    const own = [...(batch?.subjects ?? []), ...batchTimings.map((t) => String(t.subject ?? "").trim())].filter(Boolean);
+    // A batch with no subjects of its own yet offers the organisation's list.
+    return [...new Set(own.length ? own : options("subject"))].sort();
+  }, [batch, batchTimings, options]);
+  const instructors = useMemo(() => {
+    const forSubject = batchTimings
+      .filter((t) => !form.subject || String(t.subject ?? "") === form.subject)
+      .map((t) => String(t.instructor ?? "").trim());
+    return [...new Set([...forSubject, ...splitNames(batch?.instructor), ...options("teacher")].filter(Boolean))];
+  }, [batch, batchTimings, form.subject, options]);
+
+  /** Picking a step clears the ones after it, so no stale choice survives. */
+  const choose = (key: "branch" | "course" | "batch" | "subject", value: string) =>
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      if (key === "branch") Object.assign(next, { course: "", batch: "", subject: "", instructor: "" });
+      if (key === "course") Object.assign(next, { batch: "", subject: "", instructor: "" });
+      if (key === "batch") Object.assign(next, { subject: "", instructor: "" });
+      if (key === "subject") {
+        next.instructor = "";
+        if (!f.title.trim() || f.title === `${f.subject} class`) next.title = `${value} class`;
       }
-    };
-    fetchMeta();
-  }, [user?.id, branchId]);
+      return next;
+    });
 
   const set = <K extends keyof FormData>(key: K, value: FormData[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -179,7 +243,7 @@ export default function LiveClassSetup() {
     toast({ title: "Meeting link generated", description: link });
   };
 
-  const schedule = () => {
+  const schedule = async () => {
     const missing = REQUIRED.filter(([key]) => !String(form[key]).trim()).map(([, label]) => label);
     if (missing.length) {
       toast({ title: "Fill the required fields", description: missing.join(", "), variant: "destructive" });
@@ -195,47 +259,50 @@ export default function LiveClassSetup() {
       return;
     }
 
-    const duration = DURATIONS.find((option) => option.value === form.duration)?.label ?? "1 hour";
     const link = form.meetingLink.trim() || generateMeetingLink(form.platform);
+    const day = WEEKDAYS[startsAt.getDay()];
 
-    // No dedicated live-class API endpoint yet; persist to localStorage.
-    const storageKey = "erp-live-classes";
-    const existing = JSON.parse(localStorage.getItem(storageKey) || "[]");
-    const entry = {
-      id: crypto.randomUUID ? crypto.randomUUID() : `lc-${Date.now()}`,
-      title: form.title.trim(),
-      subject: form.subject,
-      instructor: form.instructor,
-      course: form.course,
-      batch: form.batch,
-      date: form.date,
-      time: to12Hour(form.time),
-      duration,
-      platform: form.platform,
-      meetingLink: link,
-      meetingId: form.meetingId.trim() || undefined,
-      description: form.description.trim() || undefined,
-      attendees: 0,
-      totalStudents: 30,
-      status: "scheduled" as const,
-      recorded: form.recording,
-    };
-    localStorage.setItem(storageKey, JSON.stringify([entry, ...existing]));
+    // A live class is a slot on the batch's timetable: that is what View Live
+    // Classes lists and what the batch's students see on their portal. It used
+    // to be written to this browser alone, where neither ever read it.
+    setSaving(true);
+    try {
+      await createBatchTiming({
+        batchId: form.batch,
+        day,
+        startTime: form.time,
+        endTime: addMinutes(form.time, Number(form.duration) || 60),
+        subject: form.subject,
+        instructor: form.instructor,
+        roomNo: "",
+        title: form.title.trim(),
+        platform: form.platform,
+        meetingLink: link,
+        meetingId: form.meetingId.trim() || null,
+        description: form.description.trim() || null,
+        status: "scheduled",
+        recorded: form.recording,
+      });
+    } catch (error) {
+      toast({
+        title: "Could not schedule the class",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+      return;
+    } finally {
+      setSaving(false);
+    }
 
-    const channels = [form.emailNotify && "email", form.smsNotify && "SMS", form.pushNotify && "push"]
-      .filter(Boolean)
-      .join(", ");
     toast({
       title: "Class scheduled",
-      description: channels
-        ? `${form.title.trim()} · invites going out by ${channels}.`
-        : `${form.title.trim()} was added to the schedule.`,
+      description: `${form.title.trim()} · every ${day.charAt(0)}${day.slice(1).toLowerCase()} at ${form.time} for ${batch?.name ?? "the batch"}.`,
     });
     navigate("/live-class/view");
   };
 
   const reset = () => {
-    setForm(BLANK);
+    setForm({ ...BLANK, branch: ownBranchId ?? (branches.length === 1 ? branches[0].id : "") });
     toast({ title: "Form reset", description: "All fields are back to their defaults." });
   };
 
@@ -274,66 +341,91 @@ export default function LiveClassSetup() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* In the order the choices depend on each other: branch, then its
+                  courses, the course's batches, the batch's subjects, who
+                  teaches it, and only then what the class is called. */}
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="title">Class Title *</Label>
-                  <Input
-                    id="title"
-                    placeholder="e.g., Introduction to Algorithms"
-                    value={form.title}
-                    onChange={(e) => set("title", e.target.value)}
-                  />
+                  <Label htmlFor="branch">1. Branch *</Label>
+                  <Select value={form.branch} onValueChange={(value) => choose("branch", value)} disabled={!!ownBranchId}>
+                    <SelectTrigger id="branch">
+                      <SelectValue placeholder={branches.length ? "Select branch" : "Loading..."} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="subject">Subject *</Label>
-                  <Select value={form.subject} onValueChange={(value) => set("subject", value)}>
+                  <Label htmlFor="course">2. Course *</Label>
+                  <Select value={form.course} onValueChange={(value) => choose("course", value)} disabled={!form.branch}>
+                    <SelectTrigger id="course">
+                      <SelectValue placeholder={!form.branch ? "Pick a branch first" : loadingLookups ? "Loading..." : "Select course"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {courses.map((course) => <SelectItem key={course.id} value={course.id}>{course.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {form.branch && !loadingLookups && !courses.length && (
+                    <p className="text-xs text-muted-foreground">This branch runs no course yet. Assign one in Course → Assign Course to Batch.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="batch">3. Batch *</Label>
+                  <Select value={form.batch} onValueChange={(value) => choose("batch", value)} disabled={!form.course}>
+                    <SelectTrigger id="batch">
+                      <SelectValue placeholder={!form.course ? "Pick a course first" : "Select batch"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {courseBatches.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}{b.students ? ` · ${b.students} students` : ""}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {form.course && !courseBatches.length && (
+                    <p className="text-xs text-muted-foreground">This course has no batch at this branch yet.</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subject">4. Subject *</Label>
+                  <Select value={form.subject} onValueChange={(value) => choose("subject", value)} disabled={!form.batch}>
                     <SelectTrigger id="subject">
-                      <SelectValue placeholder={loadingLookups ? "Loading..." : "Select subject"} />
+                      <SelectValue placeholder={!form.batch ? "Pick a batch first" : "Select subject"} />
                     </SelectTrigger>
                     <SelectContent>
                       {subjects.map((subject) => <SelectItem key={subject} value={subject}>{subject}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  {form.batch && !subjects.length && (
+                    <p className="text-xs text-muted-foreground">No subjects yet. Add them to this batch in Assign Course to Batch.</p>
+                  )}
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="course">Course *</Label>
-                  <Select value={form.course} onValueChange={(value) => set("course", value)}>
-                    <SelectTrigger id="course">
-                      <SelectValue placeholder={loadingLookups ? "Loading..." : "Select course"} />
+                  <Label htmlFor="instructor">5. Instructor *</Label>
+                  <Select value={form.instructor} onValueChange={(value) => set("instructor", value)} disabled={!form.subject}>
+                    <SelectTrigger id="instructor">
+                      <SelectValue placeholder={!form.subject ? "Pick a subject first" : "Select instructor"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {courses.map((course) => <SelectItem key={course} value={course}>{course}</SelectItem>)}
+                      {instructors.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="batch">Batch *</Label>
-                  <Select value={form.batch} onValueChange={(value) => set("batch", value)}>
-                    <SelectTrigger id="batch">
-                      <SelectValue placeholder={loadingLookups ? "Loading..." : "Select batch"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {batches.map((batch) => (
-                        <SelectItem key={batch.value} value={batch.value}>{batch.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="title">6. Class Title *</Label>
+                  <Input
+                    id="title"
+                    placeholder="e.g., Light and reflection"
+                    value={form.title}
+                    onChange={(e) => set("title", e.target.value)}
+                  />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="instructor">Instructor *</Label>
-                <Select value={form.instructor} onValueChange={(value) => set("instructor", value)}>
-                  <SelectTrigger id="instructor">
-                    <SelectValue placeholder={loadingLookups ? "Loading..." : "Select instructor"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {instructors.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
               </div>
 
               <div className="space-y-2">
@@ -489,31 +581,17 @@ export default function LiveClassSetup() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Recurring Class</CardTitle>
+              <CardTitle>Repeats</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="recurring">Make Recurring</Label>
-                <Switch id="recurring" checked={form.recurring} onCheckedChange={(checked) => set("recurring", checked)} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="repeat">Repeat</Label>
-                <Select
-                  value={form.repeat}
-                  onValueChange={(value) => set("repeat", value)}
-                  disabled={!form.recurring}
-                >
-                  <SelectTrigger id="repeat">
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="biweekly">Bi-weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <CardContent className="space-y-2 text-sm">
+              {/* A class is a slot on the batch's weekly timetable, so it comes
+                  round every week on the same day until it is cancelled. */}
+              <p className="font-medium">
+                {form.date
+                  ? `Every ${(() => { const d = WEEKDAYS[new Date(`${form.date}T00:00`).getDay()]; return d.charAt(0) + d.slice(1).toLowerCase(); })()}${form.time ? ` at ${form.time}` : ""}`
+                  : "Every week, on the day of the date you pick"}
+              </p>
+              <p className="text-muted-foreground">It joins the batch's timetable. Change or cancel it from View Live Classes.</p>
             </CardContent>
           </Card>
 
@@ -522,9 +600,9 @@ export default function LiveClassSetup() {
               <CardTitle>Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button className="w-full gap-2" onClick={schedule}>
+              <Button className="w-full gap-2" onClick={schedule} disabled={saving}>
                 <Save className="h-4 w-4" />
-                Schedule Class
+                {saving ? "Scheduling…" : "Schedule Class"}
               </Button>
               <Button variant="outline" className="w-full gap-2" onClick={reset}>
                 <RotateCcw className="h-4 w-4" />
