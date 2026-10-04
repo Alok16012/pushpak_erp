@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, IndianRupee, Users, Clock, Download, Bell } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -21,8 +21,10 @@ import {
   studentName,
   toNumber,
   formatDate,
+  studentCode,
   type InvoiceRow,
 } from "@/lib/supabase/studentFee";
+import { getBranches } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 
 interface Receipt {
@@ -36,6 +38,10 @@ interface Receipt {
 interface DueFee {
   id: string;
   studentId: string;
+  /** Admission or enrolment number, for people; studentId is the database key. */
+  studentCode: string;
+  branchId: string;
+  branch: string;
   name: string;
   course: string;
   batch: string;
@@ -107,7 +113,7 @@ const columns: Column<DueFee>[] = [
       <div>
         <p className="font-medium">{fee.name}</p>
         <p className="text-xs text-muted-foreground">
-          {fee.studentId || "—"}
+          {fee.studentCode}
           {fee.phone ? ` • ${fee.phone}` : ""}
         </p>
       </div>
@@ -192,6 +198,22 @@ export default function DueFeeCollection() {
   const [submitting, setSubmitting] = useState(false);
 
   const branchId = user?.branchId || null;
+  // An organisation account reads every branch's dues; it can narrow them to one.
+  const showBranch = !branchId;
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [branchFilter, setBranchFilter] = useState("all");
+  useEffect(() => {
+    if (!showBranch) return;
+    let cancelled = false;
+    getBranches(user?.organizationId ?? null)
+      .then((result) => {
+        if (!cancelled) {
+          setBranches((result.data as Array<Record<string, unknown>>).map((b) => ({ id: String(b.id), name: String(b.name ?? "") })));
+        }
+      })
+      .catch(() => { if (!cancelled) setBranches([]); });
+    return () => { cancelled = true; };
+  }, [showBranch, user?.organizationId]);
 
   const fetchFees = () => {
     setLoading(true);
@@ -207,6 +229,9 @@ export default function DueFeeCollection() {
           return {
             id: invoice.id,
             studentId,
+            studentCode: studentCode(invoice.student as Partial<Record<string, unknown>> | null),
+            branchId: String(invoice.branchId ?? ""),
+            branch: "",
             name:
               studentName(invoice.student, "") ||
               (studentId ? `Student #${studentId.slice(-6)}` : "Unlinked invoice"),
@@ -271,7 +296,8 @@ export default function DueFeeCollection() {
   };
 
   const bulkRemind = () => {
-    const pending = fees.filter((fee) => fee.status === "overdue" || fee.status === "due_today");
+    // Only the branch on screen: picking one branch and chasing every branch would surprise.
+    const pending = derivedFees.filter((fee) => fee.status === "overdue" || fee.status === "due_today");
     if (!pending.length) {
       toast({ title: "Nothing to chase", description: "No overdue or due-today balances right now." });
       return;
@@ -284,15 +310,16 @@ export default function DueFeeCollection() {
   };
 
   const exportReport = () => {
-    if (!fees.length) {
+    if (!derivedFees.length) {
       toast({ title: "Nothing to export", description: "There are no outstanding invoices." });
       return;
     }
     downloadCsv(
       `due-fees-${today()}.csv`,
-      fees.map((fee) => ({
+      derivedFees.map((fee) => ({
         "Invoice No": fee.invoice.invoiceNo || "",
-        "Student ID": fee.studentId,
+        "Student ID": fee.studentCode,
+        ...(showBranch ? { Branch: fee.branch } : {}),
         Name: fee.name,
         Description: fee.course,
         Phone: fee.phone,
@@ -303,7 +330,7 @@ export default function DueFeeCollection() {
         Status: STATUS_LABEL[fee.status],
       })),
     );
-    toast({ title: "Report exported", description: `${fees.length} rows written to CSV.` });
+    toast({ title: "Report exported", description: `${derivedFees.length} rows written to CSV.` });
   };
 
   const collect = async () => {
@@ -428,11 +455,25 @@ export default function DueFeeCollection() {
     { label: "Waive Late Fee", onClick: () => { void waive(fee); } },
   ];
 
-  const derivedFees = fees.map(derive);
+  const branchName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
+  // The branch picked narrows the cards as well as the list, so the totals
+  // always describe the rows on screen.
+  const derivedFees = fees
+    .map(derive)
+    .filter((f) => branchFilter === "all" || f.branchId === branchFilter)
+    .map((f) => ({ ...f, branch: branchName.get(f.branchId) ?? "" }));
   const totalDue = derivedFees.reduce((sum, f) => sum + f.totalDue, 0);
   const overdueCount = derivedFees.filter((f) => f.status === "overdue").length;
   const dueTodayCount = derivedFees.filter((f) => f.status === "due_today").length;
-  const pendingCount = derivedFees.filter((f) => f.totalDue > 0).length;
+  // Students, not invoices: one student with three open invoices is one.
+  const pendingCount = new Set(derivedFees.filter((f) => f.totalDue > 0).map((f) => f.studentId || f.id)).size;
+  const tableColumns: Column<DueFee>[] = showBranch
+    ? [
+        columns[0],
+        { key: "branch", header: "Branch", cell: (fee) => <span className="text-sm">{fee.branch || "—"}</span> },
+        ...columns.slice(1),
+      ]
+    : columns;
 
   return (
     <AppLayout>
@@ -444,7 +485,16 @@ export default function DueFeeCollection() {
           { label: "Due Fee Collection" },
         ]}
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {showBranch && (
+              <Select value={branchFilter} onValueChange={setBranchFilter}>
+                <SelectTrigger className="w-full sm:w-56" aria-label="Branch"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All branches</SelectItem>
+                  {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             <Button variant="outline" className="gap-2" onClick={bulkRemind}>
               <Bell className="h-4 w-4" />
               Send Bulk Reminder
@@ -471,8 +521,8 @@ export default function DueFeeCollection() {
           <div className="grid gap-4 md:grid-cols-4 mb-6">
             <StatsCard
               title="Total Due Amount"
-              value={`₹${(totalDue / 1000).toFixed(0)}K`}
-              subtitle="From all students"
+              value={`₹${totalDue.toLocaleString("en-IN")}`}
+              subtitle={branchFilter === "all" ? "From all students" : `${branchName.get(branchFilter) ?? "This branch"} only`}
               icon={IndianRupee}
             />
             <StatsCard
@@ -497,10 +547,10 @@ export default function DueFeeCollection() {
 
           <DataTable
             data={derivedFees}
-            columns={columns}
+            columns={tableColumns}
             searchPlaceholder="Search students with dues..."
             actions={handleActions}
-            emptyMessage="No outstanding invoices for this branch."
+            emptyMessage={branchFilter === "all" ? "No outstanding invoices." : "No outstanding invoices for this branch."}
             selectable
           />
         </>
