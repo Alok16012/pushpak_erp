@@ -61,7 +61,15 @@ export interface DocumentDesign {
   /** 0-1. A watermark is a watermark because it is faint. */
   backgroundOpacity: number;
   backgroundRotate: number;
+  /**
+   * Which way up the page is. Left out, a design keeps its type's own shape
+   * (a certificate landscape, a marksheet portrait), so every design saved
+   * before this existed opens exactly as it was.
+   */
+  orientation?: Orientation;
 }
+
+export type Orientation = "landscape" | "portrait";
 
 /**
  * The defaults reproduce what the background image used to do - centred, filling
@@ -393,6 +401,48 @@ export const KIND_ORDER = Object.keys(DOCUMENT_KINDS) as DocumentKind[];
 
 export const DESIGN_STORAGE_KEY = "document-designer";
 
+const naturalOrientation = (kind: DocumentKind): Orientation =>
+  DOCUMENT_KINDS[kind].width >= DOCUMENT_KINDS[kind].height ? "landscape" : "portrait";
+
+/** Which way up this design is printed. */
+export function designOrientation(kind: DocumentKind, design?: Pick<DocumentDesign, "orientation"> | null): Orientation {
+  return design?.orientation ?? naturalOrientation(kind);
+}
+
+/** The canvas this design is drawn on: the type's size, turned if the design is. */
+export function canvasSize(kind: DocumentKind, design?: Pick<DocumentDesign, "orientation"> | null) {
+  const { width, height } = DOCUMENT_KINDS[kind];
+  return designOrientation(kind, design) === naturalOrientation(kind) ? { width, height } : { width: height, height: width };
+}
+
+/**
+ * The same design on a page turned the other way. Every box keeps its place
+ * relative to the page -- a heading a third of the way down stays a third of
+ * the way down -- and text shrinks by the narrower side's ratio so it still
+ * fits its box. Nothing is lost: turning back restores the layout to within
+ * rounding.
+ */
+export function reorient(kind: DocumentKind, design: DocumentDesign, orientation: Orientation): DocumentDesign {
+  if (designOrientation(kind, design) === orientation) return design;
+  const from = canvasSize(kind, design);
+  const to = canvasSize(kind, { orientation });
+  const sx = to.width / from.width;
+  const sy = to.height / from.height;
+  const font = Math.min(sx, sy);
+  return {
+    ...design,
+    orientation,
+    elements: design.elements.map((el) => ({
+      ...el,
+      x: Math.round(el.x * sx),
+      y: Math.round(el.y * sy),
+      width: Math.max(1, Math.round(el.width * sx)),
+      height: Math.max(1, Math.round(el.height * sy)),
+      fontSize: Math.max(6, Math.round(el.fontSize * font)),
+    })),
+  };
+}
+
 export function starterDesign(kind: DocumentKind): DocumentDesign {
   return {
     elements: DOCUMENT_KINDS[kind].starter(),
@@ -494,7 +544,7 @@ export function designHtml(
   data: TokenData,
   qrByElement: Record<string, string> = {},
 ): string {
-  const { width, height } = DOCUMENT_KINDS[kind];
+  const { width, height } = canvasSize(kind, design);
   const escape = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const body = [...design.elements]

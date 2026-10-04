@@ -36,7 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { TemplateLibrary } from "@/components/documents/TemplateLibrary";
 import { photoOf, type StudentRecord } from "@/lib/studentTemplateDocument";
-import { printHtml } from "@/lib/export";
+import { printDesignPages } from "@/lib/export";
 import { getStudents, getCourses } from "@/lib/supabase/data";
 import {
   instituteName as readInstituteName,
@@ -55,13 +55,17 @@ import {
   SAMPLE_DATA,
   TOKEN_LABELS,
   type TokenData,
+  canvasSize,
   designHtml,
+  designOrientation,
   element,
   loadDesigns,
   replaceTokens,
   saveDesigns,
+  reorient,
   starterDesign,
   usedTokens,
+  type Orientation,
   watermarkStyle,
 } from "@/lib/documentDesigner";
 
@@ -155,6 +159,8 @@ export default function DocumentDesigner() {
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const meta = DOCUMENT_KINDS[kind];
+  const size = canvasSize(kind, design);
+  const orientation = designOrientation(kind, design);
   const selected = design.elements.find((e) => e.id === selectedId) ?? null;
 
   /** This kind's undo stack, seeded with the state before its first edit. */
@@ -513,14 +519,21 @@ export default function DocumentDesigner() {
     return () => clearTimeout(timer);
   }, [designs]);
 
+  // Turning the page is one undoable step, like any other edit.
+  const turn = (next: Orientation) => {
+    if (next !== orientation) commit(reorient(kind, design, next));
+  };
+
   const reset = () => {
-    const fresh = starterDesign(kind);
+    // The starter layout, on the page the way it is turned now.
+    const fresh = reorient(kind, starterDesign(kind), orientation);
     commit(fresh);
     setSelectedId(null);
   };
 
   const print = () => {
-    printHtml(meta.label, designHtml(kind, design, data, qrByElement));
+    // Its own sheet, turned to match: a portrait certificate on a portrait A4.
+    printDesignPages(meta.label, [designHtml(kind, design, data, qrByElement)], size.width, size.height);
   };
 
   // Text, colour, weight and alignment apply to every box that draws text, and
@@ -579,8 +592,28 @@ export default function DocumentDesigner() {
                   ))}
                 </SelectContent>
               </Select>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Orientation">
+                {(["landscape", "portrait"] as const).map((o) => (
+                  <Button
+                    key={o}
+                    type="button"
+                    role="radio"
+                    aria-checked={orientation === o}
+                    variant={orientation === o ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => turn(o)}
+                  >
+                    <span
+                      aria-hidden
+                      className="mr-2 inline-block rounded-[2px] border-2 border-current"
+                      style={o === "landscape" ? { width: 16, height: 11 } : { width: 11, height: 16 }}
+                    />
+                    {o === "landscape" ? "Landscape" : "Portrait"}
+                  </Button>
+                ))}
+              </div>
               <p className="text-xs text-muted-foreground">
-                Canvas {meta.width} × {meta.height} px
+                Canvas {size.width} × {size.height} px
               </p>
               <Button variant="outline" size="sm" className="w-full" onClick={reset}>
                 <RotateCcw className="mr-2 h-4 w-4" />
@@ -792,8 +825,8 @@ export default function DocumentDesigner() {
           <div className="overflow-auto rounded-2xl border bg-muted/40 p-6">
             <div
               style={{
-                width: meta.width * zoom,
-                height: meta.height * zoom,
+                width: size.width * zoom,
+                height: size.height * zoom,
                 margin: "0 auto",
               }}
             >
@@ -804,8 +837,8 @@ export default function DocumentDesigner() {
                 }}
                 style={{
                   position: "relative",
-                  width: meta.width,
-                  height: meta.height,
+                  width: size.width,
+                  height: size.height,
                   background: design.background,
                   transform: `scale(${zoom})`,
                   transformOrigin: "top left",

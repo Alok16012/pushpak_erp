@@ -1,5 +1,6 @@
 import {
   DOCUMENT_KINDS,
+  canvasSize,
   SAMPLE_DATA,
   designHtml,
   type DocumentDesign,
@@ -149,7 +150,10 @@ export async function printBranchDocuments<B extends BranchDetails>(
     printHtml(title, branches.map(fallback).join(""));
     return;
   }
-  const { width, height } = DOCUMENT_KINDS[kind];
+  // One sheet size for the run: the first designed page's, which is the
+  // organisation's template for this kind and so the same for every branch.
+  const first = branches.map((b) => assignedBranchDesign(kind, templates.data, assignments.data, String(b.id ?? ""))).find(Boolean);
+  const { width, height } = canvasSize(kind, first?.design);
   printDesignPages(
     title,
     designed.map((html, i) => html ?? fallback(branches[i])),
@@ -159,7 +163,7 @@ export async function printBranchDocuments<B extends BranchDetails>(
 }
 
 /** Prints one already-drawn branch document, a sheet to itself. */
-export function printBranchDocument(kind: BranchDocumentKind, title: string, html: string) {
-  const { width, height } = DOCUMENT_KINDS[kind];
+export function printBranchDocument(kind: BranchDocumentKind, title: string, html: string, design?: DocumentDesign) {
+  const { width, height } = canvasSize(kind, design);
   printDesignPages(title, [html], width, height);
 }

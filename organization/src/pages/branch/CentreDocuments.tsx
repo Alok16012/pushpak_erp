@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { DOCUMENT_KINDS } from "@/lib/documentDesigner";
+import { DOCUMENT_KINDS, canvasSize, type DocumentDesign } from "@/lib/documentDesigner";
 import { loadInstituteName } from "@/lib/instituteName";
 import {
   branchDocumentHtml,
@@ -30,12 +30,13 @@ import { getBranchDetails, getBranches } from "@/lib/supabase/data";
 interface Ready {
   kind: BranchDocumentKind;
   name: string;
+  design: DocumentDesign;
   html: string;
 }
 
 /** The designed page, shrunk to the width of its card. */
-function Preview({ kind, html }: { kind: BranchDocumentKind; html: string }) {
-  const { width, height } = DOCUMENT_KINDS[kind];
+function Preview({ kind, html, design }: { kind: BranchDocumentKind; html: string; design: DocumentDesign }) {
+  const { width, height } = canvasSize(kind, design);
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.5);
 
@@ -111,6 +112,7 @@ export default function CentreDocuments() {
         assigned.map(async ({ kind, template, design }) => ({
           kind,
           name: template.name,
+          design,
           html: await branchDocumentHtml(kind, design, data),
         })),
       );
@@ -133,7 +135,7 @@ export default function CentreDocuments() {
     };
   }, [branchId, organizationId, toast]);
 
-  const download = (doc: Ready) => printBranchDocument(doc.kind, `${doc.name} — ${branchName}`, doc.html);
+  const download = (doc: Ready) => printBranchDocument(doc.kind, `${doc.name} — ${branchName}`, doc.html, doc.design);
 
   return (
     <AppLayout>
@@ -199,7 +201,7 @@ export default function CentreDocuments() {
                   </Button>
                 </CardHeader>
                 <CardContent>
-                  <Preview kind={doc.kind} html={doc.html} />
+                  <Preview kind={doc.kind} html={doc.html} design={doc.design} />
                 </CardContent>
               </Card>
             ))}
