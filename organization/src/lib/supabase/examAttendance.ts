@@ -24,6 +24,7 @@
  * the `{ success, data }` envelope used by data.ts.
  */
 import { supabase } from "./client";
+import { newId } from "../id";
 
 export interface ExamRow {
   id: string;
@@ -291,8 +292,12 @@ export async function saveAttendance(
   branchId: string | null | undefined,
   date: string,
   records: Array<{ studentId: string; status: string; remarks?: string | null; batchId?: string | null }>,
+  /** Who took the register. `attendance_records.markedById` is NOT NULL. */
+  markedById?: string | null,
 ): Promise<{ inserted: number; updated: number }> {
   if (!date) fail("A date is required to save attendance.");
+  if (!markedById) fail("Sign in again before saving attendance: the register needs to record who took it.");
+  const now = new Date().toISOString();
   if (!records.length) return { inserted: 0, updated: 0 };
 
   const studentIds = records.map((record) => record.studentId);
@@ -312,18 +317,23 @@ export async function saveAttendance(
     if (id) {
       const { error } = await supabase
         .from("attendance_records")
-        .update({ status: record.status, remarks: record.remarks ?? null })
+        .update({ status: record.status, remarks: record.remarks ?? null, markedById, updatedAt: now })
         .eq("id", id);
       if (error) fail(error.message);
       updated += 1;
     } else {
+      // The table came from Prisma, which filled id and updatedAt itself;
+      // PostgREST does not, so they are supplied here with markedById.
       toInsert.push({
+        id: newId("att"),
         studentId: record.studentId,
         date,
         status: record.status,
         remarks: record.remarks ?? null,
         branchId: branchId || null,
         batchId: record.batchId || null,
+        markedById,
+        updatedAt: now,
       });
     }
   }

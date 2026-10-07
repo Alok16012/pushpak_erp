@@ -130,6 +130,7 @@ export default function Attendance() {
           status: marks[s.id] || "PRESENT",
           batchId: s.batchId,
         })),
+        user?.id,
       );
       toast({
         title: "Attendance saved",

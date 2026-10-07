@@ -26,6 +26,7 @@ import {
 } from "@/lib/documents";
 import { Award, Download, FileCheck2, GraduationCap, Save, type LucideIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { newId } from "@/lib/id";
 import {
   getExams,
   createExam,
@@ -155,13 +156,18 @@ export default function AssessmentsWorkspace() {
   const handleCreateExam = async () => {
     setCreating(true);
     try {
+      // The columns `exams` actually has. This sent examType, totalMarks and
+      // passingMarks, none of which exist, and left out the required course.
       await createExam(branchId, {
+          id: newId("exam"),
           name: draft.name,
-          examType: "UNIT_TEST",
           subject: draft.subject,
-          totalMarks: Number(draft.maxMarks),
-          passingMarks: Number(draft.passMarks),
+          courseId: draft.courseId,
+          maxMarks: Number(draft.maxMarks),
+          passMarks: Number(draft.passMarks),
           examDate: draft.examDate,
+          status: "SCHEDULED",
+          updatedAt: new Date().toISOString(),
           ...(draft.batchId ? { batchId: draft.batchId } : {}),
         });
       toast({
