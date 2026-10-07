@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { AppHeader } from "./AppHeader";
@@ -12,7 +13,8 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
-  const { user } = useAuth();
+  const { user, actingAs, actAsCentre } = useAuth();
+  const navigate = useNavigate();
 
   // The PDF builders are synchronous and cannot fetch, so the branch's mark is
   // pulled into its localStorage mirror here — once per session, on whatever
@@ -26,6 +28,15 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex min-h-screen w-full bg-background">
         <AppSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* Always in sight while an admin works as a centre, with the way back. */}
+          {actingAs && (
+            <div className="sticky top-0 z-50 flex items-center justify-center gap-3 bg-gold px-4 py-1.5 text-[12.5px] font-semibold text-gold-foreground">
+              <span className="truncate">Viewing as {actingAs.name}</span>
+              <button type="button" onClick={() => { actAsCentre(null); navigate("/"); }} className="shrink-0 rounded-full bg-white/80 px-3 py-0.5 text-xs font-bold hover:bg-white">
+                Back to admin
+              </button>
+            </div>
+          )}
           <AppHeader />
           <WorkspaceBar />
           <main className="min-w-0 flex-1 overflow-x-hidden px-4 pb-28 pt-4 sm:px-6 sm:pt-5 md:pb-10 lg:px-7 animate-fade-in">

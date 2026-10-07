@@ -1,5 +1,5 @@
 import { useLocation, Link } from "react-router-dom";
-import { Building2, LayoutDashboard, LogOut } from "lucide-react";
+import { Building2, LayoutDashboard } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -16,6 +16,7 @@ import { groupEntry, menuFor } from "@/lib/navigation";
 import { VIEWS } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { CentreSwitcher } from "./CentreSwitcher";
 
 /** Groups whose screens are wired end to end; the rest carry a "Preview" chip. */
 const PRODUCTION_READY = [
@@ -46,7 +47,7 @@ const IDLE =
 export function AppSidebar() {
   const location = useLocation();
   const { state } = useSidebar();
-  const { view, allowedPaths, logout } = useAuth();
+  const { view, allowedPaths } = useAuth();
   const collapsed = state === "collapsed";
   // The signed-in authorisation decides the whole navigation surface: a menu a
   // view cannot open is never rendered, so there is no route to guess at.
@@ -113,14 +114,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="p-4 group-data-[collapsible=icon]:p-2">
-        <button
-          type="button"
-          onClick={() => void logout()}
-          className="flex items-center gap-2.5 rounded-xl bg-white/[.08] px-3 py-2.5 text-[13.5px] font-medium text-white transition-colors hover:bg-white/[.14] group-data-[collapsible=icon]:justify-center"
-        >
-          <LogOut className="h-[18px] w-[18px] shrink-0" />
-          {!collapsed && "Log out"}
-        </button>
+        <CentreSwitcher collapsed={collapsed} />
       </SidebarFooter>
     </Sidebar>
   );

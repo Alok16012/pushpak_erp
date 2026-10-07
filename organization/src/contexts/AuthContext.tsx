@@ -12,9 +12,27 @@ type Auth = {
   view: "admin" | "franchise" | "student";
   /** Pages this person's role grants. Empty means everything their view allows. */
   allowedPaths: string[];
+  /** The centre an organisation admin is working as ("Login as center"), if any. */
+  actingAs: ActingAs | null;
+  /** Work as a centre, or pass null to return to the organisation's own view. */
+  actAsCentre: (centre: ActingAs | null) => void;
+  /** The view the signed-in account itself has, whoever it is acting as. */
+  realView: "admin" | "franchise" | "student";
   login: (identifier: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
+};
+
+export type ActingAs = { branchId: string; name: string };
+
+const ACTING_KEY = "erp-acting-as";
+const readActing = (): ActingAs | null => {
+  try {
+    const raw = sessionStorage.getItem(ACTING_KEY);
+    return raw ? (JSON.parse(raw) as ActingAs) : null;
+  } catch {
+    return null;
+  }
 };
 
 const Context = createContext<Auth | null>(null);
@@ -23,7 +41,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [allowedPaths, setAllowedPaths] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const view = viewForRole(user?.role);
+  const realView = viewForRole(user?.role);
+  /*
+   * "Login as center": an organisation admin opens a centre's own panel
+   * without its password. It stays the admin's session. The branch is narrowed
+   * on the client and the view becomes the franchise one, and the admin's own
+   * row-level access already covers every centre in the organisation. Kept
+   * for this tab only.
+   */
+  const [acting, setActing] = useState<ActingAs | null>(readActing);
+  const actingAs = realView === "admin" ? acting : null;
+  const view = actingAs ? "franchise" : realView;
+  const actAsCentre = (centre: ActingAs | null) => {
+    try {
+      if (centre) sessionStorage.setItem(ACTING_KEY, JSON.stringify(centre));
+      else sessionStorage.removeItem(ACTING_KEY);
+    } catch {
+      /* storage blocked: the switch still holds until reload */
+    }
+    setActing(centre);
+  };
+  const effectiveUser = user && actingAs ? { ...user, branchId: actingAs.branchId } : user;
 
   useEffect(() => {
     // Restore the last known account so a reload paints the app immediately
@@ -101,6 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
+    actAsCentre(null);
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(error.message);
   };
@@ -108,11 +147,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <Context.Provider
       value={{
-        user,
-        branchId: user?.branchId || null,
+        user: effectiveUser,
+        branchId: effectiveUser?.branchId || null,
         organizationId: user?.organizationId || null,
         view,
-        allowedPaths,
+        realView,
+        actingAs,
+        actAsCentre,
+        // A centre is shown its whole franchise menu, not the admin role's pages.
+        allowedPaths: actingAs ? [] : allowedPaths,
         login,
         logout,
         loading,

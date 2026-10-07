@@ -50,6 +50,7 @@ import {
   LEAD_STAGES,
   createAdmissionLead,
   getAdmissionLeads,
+  getBranchDirectory,
   getLeadActivities,
   logLeadActivity,
   updateAdmissionLead,
@@ -99,11 +100,29 @@ const blankLead = {
 const initials = (name: string) =>
   name.split(" ").filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase() || "?";
 
+type LeadRow = AdmissionLead & { branch: string; district: string };
+
 export default function AdmissionLeads() {
   const { user } = useAuth();
   const { toast } = useToast();
   const branchId = user?.branchId || null;
   const orgId = user?.organizationId || null;
+  // An organisation account sees every centre's leads, so it picks the
+  // district and centre a lead belongs to and can read and filter by them.
+  const showBranch = !branchId;
+  const [directory, setDirectory] = useState<Array<{ id: string; name: string; district: string }>>([]);
+  const [leadDistrict, setLeadDistrict] = useState("");
+  const [leadBranchId, setLeadBranchId] = useState("");
+  useEffect(() => {
+    if (!showBranch) return;
+    let cancelled = false;
+    getBranchDirectory(orgId)
+      .then((r) => { if (!cancelled) setDirectory(r.data); })
+      .catch(() => { if (!cancelled) setDirectory([]); });
+    return () => { cancelled = true; };
+  }, [showBranch, orgId]);
+  const districts = useMemo(() => [...new Set(directory.map((b) => b.district).filter(Boolean))].sort(), [directory]);
+  const centresInDistrict = directory.filter((b) => !leadDistrict || b.district === leadDistrict);
 
   const [leads, setLeads] = useState<AdmissionLead[]>([]);
   const [ready, setReady] = useState(true);
@@ -160,7 +179,7 @@ export default function AdmissionLeads() {
   };
 
   const saveLead = async () => {
-    const problem = leadProblem(draft);
+    const problem = leadProblem(draft) ?? (showBranch && !leadBranchId ? "Choose the centre this enquiry is for." : null);
     if (problem) {
       toast({ title: "Check the enquiry", description: problem, variant: "destructive" });
       return;
@@ -170,12 +189,14 @@ export default function AdmissionLeads() {
       await createAdmissionLead({
         ...draft,
         organizationId: orgId,
-        branchId,
+        branchId: branchId || leadBranchId || null,
         expectedAdmissionAt: draft.expectedAdmissionAt || null,
       });
       toast({ title: "Enquiry saved", description: draft.studentName });
       setAddOpen(false);
       setDraft({ ...blankLead });
+      setLeadDistrict("");
+      setLeadBranchId("");
       await load();
     } catch (error) {
       toast({
@@ -284,7 +305,13 @@ export default function AdmissionLeads() {
     toast({ title: "Leads exported", description: `${leads.length} rows written to CSV.` });
   };
 
-  const columns: Column<AdmissionLead>[] = [
+  const centreOf = useMemo(() => new Map(directory.map((b) => [b.id, b])), [directory]);
+  const rows: LeadRow[] = useMemo(
+    () => leads.map((l) => ({ ...l, branch: centreOf.get(l.branchId)?.name ?? "", district: centreOf.get(l.branchId)?.district ?? "" })),
+    [leads, centreOf],
+  );
+
+  const columns: Column<LeadRow>[] = [
     {
       key: "studentName",
       header: "Student",
@@ -313,7 +340,31 @@ export default function AdmissionLeads() {
       sortable: true,
       cell: (lead) => <Badge variant="outline">{lead.source || "Not recorded"}</Badge>,
     },
-    { key: "counsellor", header: "Counsellor", sortable: true, cell: (l) => l.counsellor || "—" },
+    {
+      key: "counsellor",
+      header: "Counsellor",
+      sortable: true,
+      // Which centre the counsellor is following this lead up for.
+      cell: (l) => (
+        <div>
+          <p>{l.counsellor || "—"}</p>
+          {showBranch && l.branch && <p className="text-xs text-muted-foreground">{l.branch}</p>}
+        </div>
+      ),
+    },
+    ...(showBranch
+      ? [{
+          key: "branch" as const,
+          header: "Branch",
+          sortable: true,
+          cell: (l: LeadRow) => (
+            <div>
+              <p className="whitespace-nowrap">{l.branch || "—"}</p>
+              {l.district && <p className="text-xs text-muted-foreground">{l.district}</p>}
+            </div>
+          ),
+        }]
+      : []),
     {
       key: "status",
       header: "Status",
@@ -342,7 +393,13 @@ export default function AdmissionLeads() {
     },
   ];
 
-  const filters: TableFilter<AdmissionLead>[] = [
+  const filters: TableFilter<LeadRow>[] = [
+    ...(showBranch
+      ? [
+          { label: "District", key: "district" as const, options: districts },
+          { label: "Branch", key: "branch" as const, options: directory.map((b) => b.name) },
+        ]
+      : []),
     { label: "Status", key: "status", options: [...ALL_STAGES] },
     { label: "Course", key: "courseInterested" },
     { label: "Source", key: "source" },
@@ -555,7 +612,7 @@ export default function AdmissionLeads() {
         </CardHeader>
         <CardContent>
           <DataTable
-            data={leads}
+            data={rows}
             columns={columns}
             filters={filters}
             searchPlaceholder="Search student, mobile, course…"
@@ -576,6 +633,39 @@ export default function AdmissionLeads() {
             <DialogDescription>Create an admission lead.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {showBranch && (
+              <>
+                <div className="space-y-2">
+                  <Label>District</Label>
+                  <Select
+                    value={leadDistrict || "all"}
+                    onValueChange={(v) => {
+                      setLeadDistrict(v === "all" ? "" : v);
+                      // A centre outside the new district would not belong to it.
+                      setLeadBranchId((id) => (v === "all" || directory.find((b) => b.id === id)?.district === v ? id : ""));
+                    }}
+                  >
+                    <SelectTrigger aria-label="District"><SelectValue placeholder="Select district" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All districts</SelectItem>
+                      {districts.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Branch *</Label>
+                  <Select value={leadBranchId} onValueChange={setLeadBranchId}>
+                    <SelectTrigger aria-label="Branch"><SelectValue placeholder="Select branch" /></SelectTrigger>
+                    <SelectContent>
+                      {centresInDistrict.map((b) => (
+                        <SelectItem key={b.id} value={b.id}>{b.district && !leadDistrict ? `${b.name} · ${b.district}` : b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="hidden lg:block" />
+              </>
+            )}
             <div className="space-y-2">
               <Label>Student name *</Label>
               <Input value={draft.studentName} onChange={(e) => setDraft((d) => ({ ...d, studentName: e.target.value }))} />

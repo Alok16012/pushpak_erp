@@ -2074,6 +2074,26 @@ export async function createBranch(organizationId: string, input: Record<string,
  * The branch list is assembled from four tables: the branch row itself, its
  * address, its licence expiry and the counts the register shows per branch.
  */
+/**
+ * Every branch with the district it stands in, for the pickers that let an
+ * organisation narrow a list by district and then by centre. Lighter than
+ * getBranchesWithStats: no students, fees or wallets.
+ */
+export async function getBranchDirectory(organizationId: string | null) {
+  const { data: branches } = await getBranches(organizationId);
+  const rows = branches as Record<string, unknown>[];
+  const ids = rows.map((b) => b.id as string);
+  const districtFor = new Map<string, string>();
+  if (ids.length) {
+    const { data } = await supabase.from("branch_addresses").select("branchId, district").in("branchId", ids);
+    for (const row of data || []) districtFor.set(row.branchId as string, String(row.district ?? "").trim());
+  }
+  return {
+    success: true as const,
+    data: rows.map((b) => ({ id: String(b.id), name: String(b.name ?? ""), district: districtFor.get(String(b.id)) || "" })),
+  };
+}
+
 export async function getBranchesWithStats(organizationId: string | null) {
   const { data: branches } = await getBranches(organizationId);
   const ids = (branches as Record<string, unknown>[]).map((b) => b.id as string);
