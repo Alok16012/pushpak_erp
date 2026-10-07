@@ -11,6 +11,7 @@ import { lazy, Suspense } from "react";
 
 // Pages
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 const Index = lazy(() => import("./pages/Index"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -159,6 +160,7 @@ const App = () => (
           <Suspense fallback={<LoadingFallback />}>
           <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route element={<ProtectedRoute />}>
           {/* Dashboard */}
           <Route path="/" element={<Dashboard />} />
