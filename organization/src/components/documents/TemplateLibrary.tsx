@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Check, Loader2, Plus, Save, Star, Trash2 } from "lucide-react";
+import { Building2, Check, Loader2, Plus, Save, Search, Star, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,6 +70,8 @@ export function TemplateLibrary({
   const [name, setName] = useState("");
   const [assigningTo, setAssigningTo] = useState<DocumentTemplate | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
+  const [branchQuery, setBranchQuery] = useState("");
+  const visibleBranches = branches.filter((b) => b.name.toLowerCase().includes(branchQuery.trim().toLowerCase()));
 
   const ofKind = templates.filter((template) => template.kind === kind);
   const current = ofKind.find((template) => template.id === openId) ?? null;
@@ -197,6 +199,7 @@ export function TemplateLibrary({
         .map((branch) => branch.id),
     );
     setAssigningTo(template);
+    setBranchQuery("");
   };
 
   const saveAssignments = async () => {
@@ -380,11 +383,27 @@ export function TemplateLibrary({
               template. A branch with none printed against it uses the default.
             </DialogDescription>
           </DialogHeader>
+          {branches.length > 0 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={branchQuery}
+                onChange={(e) => setBranchQuery(e.target.value)}
+                placeholder="Search centre…"
+                aria-label="Search centre"
+                className="pl-9"
+              />
+            </div>
+          )}
           <div className="max-h-72 space-y-1 overflow-y-auto">
             {branches.length === 0 && (
               <p className="text-sm text-muted-foreground">No branches on this organisation yet.</p>
             )}
-            {branches.map((branch) => {
+            {branches.length > 0 && !visibleBranches.length && (
+              <p className="p-2 text-sm text-muted-foreground">No centre matches "{branchQuery}".</p>
+            )}
+            {/* The search only hides rows: a ticked centre stays ticked while it is out of view. */}
+            {visibleBranches.map((branch) => {
               const other = assignments[branch.id]?.[kind];
               const onAnother = other && other !== assigningTo?.id;
               return (

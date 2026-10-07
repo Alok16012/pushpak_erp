@@ -219,7 +219,7 @@ export default function UserRoles() {
         actions={
           mayEdit && (
             <div className="flex gap-2">
-              <Button variant="outline" className="gap-2" onClick={() => navigate("/user/access")}>
+              <Button variant="outline" className="gap-2" onClick={() => navigate("/user/access-control")}>
                 <SlidersHorizontal className="h-4 w-4" />
                 Access control
               </Button>
@@ -303,7 +303,7 @@ export default function UserRoles() {
                       variant="outline"
                       size="sm"
                       className="gap-1.5"
-                      onClick={() => navigate(`/user/access?role=${role.id}`)}
+                      onClick={() => navigate(`/user/access-control?role=${role.id}`)}
                     >
                       <SlidersHorizontal className="h-3.5 w-3.5" />
                       Permissions
