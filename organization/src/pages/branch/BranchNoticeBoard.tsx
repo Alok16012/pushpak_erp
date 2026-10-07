@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, DateTimePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,7 +14,7 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getNotices, createNotice, updateNotice, deleteNotice, getBranches, getBatches } from "@/lib/supabase/data";
+import { getNotices, createNotice, updateNotice, deleteNotice, getBranches, getBatches, getCourses } from "@/lib/supabase/data";
 
 type NoticeType = "BRANCH" | "BATCH";
 type NoticePriority = "LOW" | "MEDIUM" | "HIGH";
@@ -103,7 +103,9 @@ export default function BranchNoticeBoard() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [draft, setDraft] = useState<Notice>(() => blankDraft(""));
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [batches, setBatches] = useState<{ id: string; name: string }[]>([]);
+  const [batches, setBatches] = useState<{ id: string; name: string; courseId: string }[]>([]);
+  // Batch names repeat across courses ("Morning"), so each is shown with its course.
+  const [courseNames, setCourseNames] = useState<Map<string, string>>(new Map());
   const [metaLoading, setMetaLoading] = useState(true);
 
   useEffect(() => {
@@ -115,10 +117,14 @@ export default function BranchNoticeBoard() {
           user?.branchId ? getBatches(user.branchId) : Promise.resolve({ success: true, data: [] }),
         ]);
         setBranches((branchRes.data || []) as Branch[]);
+        getCourses(orgId, null)
+          .then((r) => setCourseNames(new Map((r.data as Array<{ id: string; name: string }>).map((c) => [String(c.id), c.name]))))
+          .catch(() => setCourseNames(new Map()));
         setBatches(
           (batchRes.data || []).map((b: any) => ({
             id: b.id as string,
             name: (b.name || b.title || `Batch ${b.id}`) as string,
+            courseId: String(b.courseId ?? ""),
           }))
         );
       } catch (error) {
@@ -410,6 +416,7 @@ export default function BranchNoticeBoard() {
                             (res.data || []).map((b: any) => ({
                               id: b.id as string,
                               name: (b.name || b.title || `Batch ${b.id}`) as string,
+                              courseId: String(b.courseId ?? ""),
                             }))
                           );
                         } catch (error) {
@@ -436,7 +443,9 @@ export default function BranchNoticeBoard() {
                       </SelectTrigger>
                       <SelectContent>
                         {batches.map((batch) => (
-                          <SelectItem key={batch.id} value={batch.name}>{batch.name}</SelectItem>
+                          <SelectItem key={batch.id} value={batch.name}>
+                            {courseNames.get(batch.courseId) ? `${batch.name} · ${courseNames.get(batch.courseId)}` : batch.name}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -474,11 +483,10 @@ export default function BranchNoticeBoard() {
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="meetingTime">Meeting Time</Label>
-                <Input
+                <DateTimePicker
                   id="meetingTime"
-                  type="datetime-local"
                   value={draft.meetingTime || ""}
-                  onChange={(e) => set("meetingTime", e.target.value)}
+                  onChange={(v) => set("meetingTime", v)}
                 />
                 <p className="text-xs text-muted-foreground">Optional — leave blank if there is no meeting.</p>
               </div>

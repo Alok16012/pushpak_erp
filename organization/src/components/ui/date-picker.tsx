@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CalendarDays } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -55,7 +56,7 @@ export interface DatePickerProps {
   id?: string;
   disabled?: boolean;
   className?: string;
-  /** Narrows the year dropdown. Defaults to a range a school actually uses. */
+  /** Narrows the year dropdown. Defaults run from 1950 to 2100. */
   fromYear?: number;
   toYear?: number;
   /** `yyyy-mm-dd`, as the native input's own min/max were: days outside the
@@ -78,7 +79,9 @@ export function DatePicker({
   name,
   defaultValue = "",
   fromYear = 1950,
-  toYear = new Date().getFullYear() + 10,
+  // Ten years ahead stopped the dropdown at 2036, and a licence, a validity
+  // or a renewal often runs past that. Nothing an institute dates is beyond 2100.
+  toYear = 2100,
   min,
   max,
   invalid,
@@ -171,5 +174,45 @@ export function DatePicker({
       </PopoverContent>
       {name && <input type="hidden" name={name} value={current} />}
     </Popover>
+  );
+}
+
+/**
+ * A date and a time together, for what used to be `<input type="datetime-local">`.
+ * That control is the phone's own dialog, with no year to jump to. The day
+ * comes from the calendar above and the time from a time field. The value keeps
+ * the input's `yyyy-mm-ddThh:mm`, so the forms that held one hold this as it is.
+ */
+export function DateTimePicker({
+  value,
+  onChange,
+  id,
+  disabled,
+  min,
+  max,
+  defaultTime = "09:00",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  id?: string;
+  disabled?: boolean;
+  min?: string;
+  max?: string;
+  /** The time a freshly picked day starts at, until one is chosen. */
+  defaultTime?: string;
+}) {
+  const [day = "", time = ""] = (value || "").split("T");
+  const join = (nextDay: string, nextTime: string) => onChange(nextDay ? `${nextDay}T${nextTime || defaultTime}` : "");
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-2">
+      <DatePicker id={id} value={day} onChange={(d) => join(d, time.slice(0, 5))} disabled={disabled} min={min?.slice(0, 10)} max={max?.slice(0, 10)} />
+      <Input
+        type="time"
+        aria-label="Time"
+        value={time.slice(0, 5)}
+        disabled={disabled || !day}
+        onChange={(e) => join(day, e.target.value)}
+      />
+    </div>
   );
 }

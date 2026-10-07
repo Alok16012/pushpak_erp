@@ -1,3 +1,4 @@
+import { DateTimePicker } from "@/components/ui/date-picker";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -271,11 +272,11 @@ export default function CreateOnlineExam() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="startDate">Start Date & Time *</Label>
-                  <Input id="startDate" type="datetime-local" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} />
+                  <DateTimePicker id="startDate" value={form.startDate} onChange={(v) => set("startDate", v)} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="endDate">End Date & Time *</Label>
-                  <Input id="endDate" type="datetime-local" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} />
+                  <DateTimePicker id="endDate" value={form.endDate} onChange={(v) => set("endDate", v)} min={form.startDate} defaultTime="17:00" />
                 </div>
               </div>
 

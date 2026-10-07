@@ -4,7 +4,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, DateTimePicker } from "@/components/ui/date-picker";
+import { telHref, whatsappHref } from "@/lib/phone";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,7 @@ import {
   UserRoundCheck,
   Users,
   X,
+  MessageCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -821,10 +823,8 @@ export default function EnquiriesWorkspace() {
                             {branchName(r.branchIdRef)}
                           </td>
                         )}
-                        <td className="px-4 py-3">{r.phone}</td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {r.whatsappNumber || "—"}
-                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap"><ContactLink kind="tel" number={r.phone} /></td>
+                        <td className="px-4 py-3 whitespace-nowrap"><ContactLink kind="whatsapp" number={r.whatsappNumber || r.phone} /></td>
                         <td className="px-4 py-3">{r.purpose}</td>
                         <td className="px-4 py-3 text-muted-foreground">
                           {r.owner}
@@ -922,11 +922,11 @@ export default function EnquiriesWorkspace() {
                 {filtered.map((r) => (
                   <div key={r.id} className="p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0"><p className="font-semibold">{r.name}</p><p className="mt-0.5 text-xs text-muted-foreground">{r.phone} · {r.purpose}</p></div>
+                      <div className="min-w-0"><p className="font-semibold">{r.name}</p><p className="mt-0.5 text-xs text-muted-foreground"><ContactLink kind="tel" number={r.phone} /> · {r.purpose}</p></div>
                       <span className={statusBadge(r.status)}>{ENQUIRY_STATUS_LABEL[r.status] || r.status}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-muted/40 p-3 text-xs">
-                      <div><p className="text-muted-foreground">WhatsApp</p><p className="mt-1 font-medium">{r.whatsappNumber || "—"}</p></div>
+                      <div><p className="text-muted-foreground">WhatsApp</p><p className="mt-1 font-medium"><ContactLink kind="whatsapp" number={r.whatsappNumber || r.phone} /></p></div>
                       <div><p className="text-muted-foreground">Meeting</p><p className="mt-1 font-medium">{r.owner}</p></div>
                       <div><p className="text-muted-foreground">Source</p><p className="mt-1 font-medium">{r.source || "—"}</p></div>
                       <div><p className="text-muted-foreground">Time</p><p className="mt-1 font-medium">{r.date}</p></div>
@@ -1407,12 +1407,7 @@ export default function EnquiriesWorkspace() {
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="check-out-at">Out time</Label>
-            <Input
-              id="check-out-at"
-              type="datetime-local"
-              value={checkOutAt}
-              onChange={(e) => setCheckOutAt(e.target.value)}
-            />
+            <DateTimePicker id="check-out-at" value={checkOutAt} onChange={setCheckOutAt} />
             {checkingOut?.date && (
               <p className="text-xs text-muted-foreground">Checked in {checkingOut.date}.</p>
             )}
@@ -1472,5 +1467,26 @@ function Field({
       </Label>
       {children}
     </div>
+  );
+}
+
+/**
+ * A number you can act on: a call link, or a chat on WhatsApp (which falls
+ * back to the mobile number, as most visitors use one for both).
+ */
+function ContactLink({ kind, number }: { kind: "tel" | "whatsapp"; number?: string | null }) {
+  const href = kind === "tel" ? telHref(number) : whatsappHref(number);
+  if (!number || !href) return <span className="text-muted-foreground">—</span>;
+  return (
+    <a
+      href={href}
+      target={kind === "whatsapp" ? "_blank" : undefined}
+      rel={kind === "whatsapp" ? "noopener noreferrer" : undefined}
+      onClick={(e) => e.stopPropagation()}
+      className={kind === "whatsapp" ? "inline-flex items-center gap-1 font-medium text-[#128c4a] hover:underline" : "font-medium text-primary hover:underline"}
+    >
+      {kind === "whatsapp" && <MessageCircle className="h-3.5 w-3.5" />}
+      {number}
+    </a>
   );
 }

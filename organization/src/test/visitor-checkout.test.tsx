@@ -150,16 +150,20 @@ describe("checking a visitor out", () => {
     await rowMenu();
     fireEvent.click(await screen.findByText("Check out now"));
 
-    // The dialog opens on now, which is the answer most of the time.
-    const field = (await screen.findByLabelText(/out time/i)) as HTMLInputElement;
-    expect(field.value).not.toBe("");
-    fireEvent.change(field, { target: { value: "2026-09-16T15:30" } });
+    // The dialog opens on now, which is the answer most of the time: the
+    // calendar shows today's date and the time field is filled.
+    const day = await screen.findByLabelText(/out time/i);
+    expect(day).not.toHaveTextContent(/select date/i);
+    const time = screen.getByLabelText("Time") as HTMLInputElement;
+    expect(time.value).not.toBe("");
+    fireEvent.change(time, { target: { value: "15:30" } });
     fireEvent.click(screen.getByRole("button", { name: /save out time/i }));
 
     await waitFor(() => expect(updateEnquiry).toHaveBeenCalled());
     const [, , payload] = updateEnquiry.mock.calls[0] as [string, string, Record<string, unknown>];
     // snake_case, as the live schema spells it, and a visit that is over.
-    expect(payload.check_out).toBe(new Date("2026-09-16T15:30").toISOString());
+    const stamped = new Date(String(payload.check_out));
+    expect([stamped.getHours(), stamped.getMinutes()]).toEqual([15, 30]);
     expect(payload.status).toBe("CLOSED");
   });
 

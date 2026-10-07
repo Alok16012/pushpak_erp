@@ -41,7 +41,7 @@
            <div className="grid gap-4 md:grid-cols-3">
              <div className="space-y-2">
                <Label htmlFor="registrationDate">Registration Date *</Label>
-               <Input id="registrationDate" name="registrationDate" type="month" />
+               <DatePicker id="registrationDate" name="registrationDate" />
              </div>
              <div className="space-y-2">
                <Label htmlFor="validDate">Valid From</Label>
