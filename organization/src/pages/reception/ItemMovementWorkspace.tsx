@@ -644,7 +644,8 @@ export default function ItemMovementWorkspace() {
               )}
             </div>
           </CardContent>
-          <div className="sticky bottom-0 flex items-center justify-between border-t bg-card/95 p-4">
+          {/* Sticky on a desktop only: on a phone the floating bottom bar would cover it. */}
+          <div className="flex items-center justify-between border-t bg-card p-4 md:sticky md:bottom-0 md:bg-card/95">
             <Button variant="ghost" onClick={save}><Save />Save draft</Button>
             <div className="flex gap-2">
               {stage > 0 && <Button variant="outline" onClick={() => setStage((s) => s - 1)}><ArrowLeft />Back</Button>}

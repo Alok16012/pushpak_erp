@@ -1306,12 +1306,15 @@ export default function EnquiriesWorkspace() {
               )}
             </div>
           </CardContent>
-          <div className="sticky bottom-[65px] flex flex-col-reverse gap-2 border-t bg-card/95 p-3 backdrop-blur sm:bottom-0 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+          {/* Pinned to the foot of the screen on a desktop only. On a phone it
+              sat over the last fields (Address, Remarks) and against the
+              floating bottom bar, so there it follows the form instead. */}
+          <div className="flex flex-col-reverse gap-2 border-t bg-card p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4 md:sticky md:bottom-0 md:bg-card/95 md:backdrop-blur">
             <Button variant="ghost" className="w-full sm:w-auto" onClick={save}>
               <Save />
               Save draft
             </Button>
-            <div className="grid grid-cols-2 gap-2 sm:flex">
+            <div className={`grid gap-2 sm:flex ${stage > 0 ? "grid-cols-2" : "grid-cols-1"}`}>
               {stage > 0 && (
                 <Button
                   variant="outline"
