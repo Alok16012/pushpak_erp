@@ -1,3 +1,4 @@
+import { Switch } from "@/components/ui/switch";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -94,6 +95,8 @@ interface StudentRosterProps {
   onExport: (rows: StudentRosterRow[]) => void;
   /** Omitted for a caller who may not issue portal logins. */
   onSetLogin?: (student: StudentRosterRow) => void;
+  /** Turns a student's profile on or off; omitted where that is not allowed. */
+  onToggleActive?: (student: StudentRosterRow, active: boolean) => void;
 }
 
 export function StudentRoster({
@@ -104,6 +107,7 @@ export function StudentRoster({
   onDelete,
   onExport,
   onSetLogin,
+  onToggleActive,
 }: StudentRosterProps) {
   const [search, setSearch] = useState("");
   const [courseFilter, setCourseFilter] = useState("");
@@ -433,14 +437,23 @@ export function StudentRoster({
                 </td>
 
                 <td className="px-4 py-3.5">
-                  <span
-                    className={`inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                      STATUS_STYLES[student.status]
-                    }`}
-                  >
-                    <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
-                    {student.status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {onToggleActive && (
+                      <Switch
+                        checked={student.status !== "Inactive"}
+                        onCheckedChange={(on) => onToggleActive(student, on)}
+                        aria-label={student.status === "Inactive" ? `Activate ${student.name}` : `Deactivate ${student.name}`}
+                      />
+                    )}
+                    <span
+                      className={`inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        STATUS_STYLES[student.status]
+                      }`}
+                    >
+                      <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current" />
+                      {student.status}
+                    </span>
+                  </div>
                 </td>
 
                 <td className="px-4 py-3.5">

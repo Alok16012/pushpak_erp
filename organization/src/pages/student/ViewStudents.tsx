@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Switch } from "@/components/ui/switch";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import {
   getCourses,
   getStudentInvoices,
   deleteStudent,
+  updateStudent,
   type StudentInvoice,
   type StudentRosterRow,
 } from "@/lib/supabase/data";
@@ -87,9 +89,9 @@ export default function ViewStudents() {
   // enforces this too -- here it only decides whether to offer the action.
   const mayIssueLogin = canIssueStudentLogin(user?.role);
 
-  useEffect(() => {
+  const loadRoster = useCallback(() => {
     setLoading(true);
-    getStudentRoster(branchId)
+    return getStudentRoster(branchId)
       .then((result) => setStudents(result.data))
       .catch((error) =>
         toast({
@@ -100,6 +102,29 @@ export default function ViewStudents() {
       )
       .finally(() => setLoading(false));
   }, [branchId, toast]);
+  useEffect(() => {
+    void loadRoster();
+  }, [loadRoster]);
+
+  /**
+   * Turns a student's profile on or off (students.isActive). An inactive
+   * student stays on record but drops out of the active counts. Both the
+   * organisation and the student's branch may do it.
+   */
+  const setActive = async (student: StudentRosterRow, active: boolean) => {
+    try {
+      await updateStudent(student.id, branchId, { isActive: active, updatedAt: new Date().toISOString() });
+      toast({ title: active ? "Student activated" : "Student deactivated", description: student.name });
+      setDetails((d) => (d && d.id === student.id ? { ...d, status: active ? "Active" : "Inactive" } : d));
+      await loadRoster();
+    } catch (error) {
+      toast({
+        title: "Could not change the student's status",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    }
+  };
 
   /** Exports whatever the roster is currently showing, not the whole branch. */
   const exportCsv = (rows: StudentRosterRow[]) => {
@@ -234,6 +259,7 @@ export default function ViewStudents() {
         onDelete={setPendingDelete}
         onExport={exportCsv}
         onSetLogin={mayIssueLogin ? setLoginFor : undefined}
+        onToggleActive={setActive}
       />
 
       <StudentLoginDialog
@@ -254,6 +280,21 @@ export default function ViewStudents() {
               {details?.admissionNo} · {details?.course}
             </DialogDescription>
           </DialogHeader>
+          {details && (
+            <label className="flex items-center justify-between gap-3 rounded-[14px] bg-card p-3 shadow-card">
+              <span>
+                <span className="block text-sm font-semibold">Profile {details.status === "Inactive" ? "inactive" : "active"}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {details.status === "Inactive" ? "Switch on to bring the student back." : "Switch off to set the student aside without deleting the record."}
+                </span>
+              </span>
+              <Switch
+                checked={details.status !== "Inactive"}
+                onCheckedChange={(on) => void setActive(details, on)}
+                aria-label="Profile active"
+              />
+            </label>
+          )}
 
           {!detail && !detailError && <p className="text-sm text-muted-foreground">Loading student record…</p>}
           {detailError && (
