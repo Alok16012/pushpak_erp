@@ -34,6 +34,7 @@ import {
   getStudents,
   getCourses,
   getBatches,
+  getBranches,
   getStudentDocument,
 } from "@/lib/supabase/data";
 type Exam = {
@@ -60,6 +61,7 @@ type Course = { id: string; name: string; code: string };
 type Batch = { id: string; name: string; code: string; courseId: string };
 
 const blankExam = {
+  branchId: "",
   courseId: "",
   batchId: "",
   name: "",
@@ -110,6 +112,36 @@ export default function AssessmentsWorkspace() {
   const [marksExamId, setMarksExamId] = useState("");
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+
+  /*
+   * An organisation account belongs to no branch, and an exam must: the
+   * branch is chosen first, and the courses and batches offered are that
+   * branch's own. A branch account files the exam under its own branch.
+   */
+  const pickBranch = !branchId;
+  const [branchOptions, setBranchOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [branchCourses, setBranchCourses] = useState<Course[]>([]);
+  const [branchBatches, setBranchBatches] = useState<Batch[]>([]);
+  useEffect(() => {
+    if (!pickBranch) return;
+    getBranches(orgId)
+      .then((r) => setBranchOptions((r.data as Array<{ id: string; name: string }>).map((b) => ({ id: String(b.id), name: String(b.name ?? "") }))))
+      .catch(() => setBranchOptions([]));
+  }, [pickBranch, orgId]);
+  const chooseExamBranch = (id: string) => {
+    setDraft((d) => ({ ...d, branchId: id, courseId: "", batchId: "" }));
+    setBranchCourses([]);
+    setBranchBatches([]);
+    Promise.all([getCourses(orgId, id), getBatches(id)])
+      .then(([c, b]) => {
+        setBranchCourses(c.data as Course[]);
+        setBranchBatches(b.data as Batch[]);
+      })
+      .catch((e) => toast({ title: "Could not load that branch's courses", description: e instanceof Error ? e.message : undefined, variant: "destructive" }));
+  };
+  const examBranch = branchId || draft.branchId;
+  const examCourses = pickBranch ? branchCourses : courses;
+  const examBatches = pickBranch ? branchBatches : batches;
   const load = useCallback(
     () =>
       Promise.all([
@@ -158,7 +190,7 @@ export default function AssessmentsWorkspace() {
     try {
       // The columns `exams` actually has. This sent examType, totalMarks and
       // passingMarks, none of which exist, and left out the required course.
-      await createExam(branchId, {
+      await createExam(examBranch, {
           id: newId("exam"),
           name: draft.name,
           subject: draft.subject,
@@ -174,7 +206,8 @@ export default function AssessmentsWorkspace() {
         title: "Exam scheduled",
         description: `${draft.name} was created successfully.`,
       });
-      setDraft(blankExam);
+      // The branch stays chosen: the next exam is usually for the same one.
+      setDraft({ ...blankExam, branchId: draft.branchId });
       await load();
     } catch (e) {
       toast({
@@ -359,20 +392,38 @@ export default function AssessmentsWorkspace() {
             </CardHeader>
             <CardContent>
               <div className="max-w-2xl space-y-4">
+                {pickBranch && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Branch *</Label>
+                      <Select value={draft.branchId} onValueChange={chooseExamBranch}>
+                        <SelectTrigger aria-label="Branch">
+                          <SelectValue placeholder="Select branch" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {branchOptions.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Course *</Label>
                     <Select
+                      disabled={pickBranch && !draft.branchId}
                       value={draft.courseId}
                       onValueChange={(courseId) =>
                         setDraft((d) => ({ ...d, courseId, batchId: "" }))
                       }
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select course" />
+                      <SelectTrigger aria-label="Course">
+                        <SelectValue placeholder={pickBranch && !draft.branchId ? "Select a branch first" : "Select course"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {courses.map((c) => (
+                        {examCourses.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name} · {c.code}
                           </SelectItem>
@@ -392,7 +443,7 @@ export default function AssessmentsWorkspace() {
                         <SelectValue placeholder="Optional" />
                       </SelectTrigger>
                       <SelectContent>
-                        {batches
+                        {examBatches
                           .filter((b) => b.courseId === draft.courseId)
                           .map((b) => (
                             <SelectItem key={b.id} value={b.id}>
@@ -461,6 +512,7 @@ export default function AssessmentsWorkspace() {
                   className="gap-2"
                   disabled={
                     creating ||
+                    !examBranch ||
                     !draft.courseId ||
                     draft.name.trim().length < 2 ||
                     draft.subject.trim().length < 2 ||

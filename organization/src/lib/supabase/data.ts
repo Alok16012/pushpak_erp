@@ -1230,19 +1230,71 @@ export async function getAttendance(branchId: string | null, date?: string) {
   return { success: true, data: withAttendance };
 }
 
-export async function markAttendance(branchId: string, date: string, records: Array<{ studentId: string; status: string; remarks?: string }>) {
+export async function markAttendance(
+  branchId: string,
+  date: string,
+  records: Array<{ studentId: string; status: string; remarks?: string }>,
+  markedById?: string | null,
+) {
+  if (!records.length) return { success: true, data: [] };
+
+  let markerId = markedById;
+  if (!markerId) {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      markerId = authData?.user?.id || "system";
+    } catch {
+      markerId = "system";
+    }
+  }
+
+  const studentIds = records.map((r) => r.studentId);
+  const { data: existingRows, error: readError } = await supabase
+    .from("attendance_records")
+    .select("id,studentId")
+    .eq("date", date)
+    .in("studentId", studentIds);
+
+  if (readError) throw new Error(readError.message);
+
+  const byStudent = new Map((existingRows || []).map((row: any) => [row.studentId as string, row.id as string]));
   const results = [];
+  const now = new Date().toISOString();
+
   for (const record of records) {
-    const { data, error } = await supabase
-      .from("attendance_records")
-      .upsert(
-        { studentId: record.studentId, date, status: record.status, remarks: record.remarks || null },
-        { onConflict: "studentId_date" }
-      )
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
-    results.push(data);
+    const existingId = byStudent.get(record.studentId);
+    if (existingId) {
+      const { data, error } = await supabase
+        .from("attendance_records")
+        .update({
+          status: record.status,
+          remarks: record.remarks || null,
+          markedById: markerId,
+          updatedAt: now,
+        })
+        .eq("id", existingId)
+        .select("*")
+        .single();
+      if (error) throw new Error(error.message);
+      results.push(data);
+    } else {
+      const { data, error } = await supabase
+        .from("attendance_records")
+        .insert({
+          id: newId("att"),
+          studentId: record.studentId,
+          date,
+          status: record.status,
+          remarks: record.remarks || null,
+          branchId: branchId || null,
+          markedById: markerId,
+          updatedAt: now,
+        })
+        .select("*")
+        .single();
+      if (error) throw new Error(error.message);
+      results.push(data);
+    }
   }
   return { success: true, data: results };
 }
@@ -1539,40 +1591,83 @@ export async function getExams(branchId: string | null) {
  * exam still works.
  */
 const EXAM_OPTIONAL_COLUMNS = [
+  "examType", "totalMarks", "passingMarks", "startDate",
   "description", "endDate", "duration", "totalQuestions", "negativeMarking",
   "shuffleQuestions", "shuffleOptions", "preventTabSwitch", "fullScreen",
   "webcam", "showResult", "showAnswers", "allowReview", "autoSubmit",
 ];
 
-const isMissingExamColumn = (error: { code?: string; message?: string } | null) =>
-  error?.code === "PGRST204" && EXAM_OPTIONAL_COLUMNS.some((c) => error?.message?.includes(c));
-
-const withoutOptionalExamColumns = (payload: Record<string, unknown>) =>
-  Object.fromEntries(Object.entries(payload).filter(([key]) => !EXAM_OPTIONAL_COLUMNS.includes(key)));
+function extractMissingExamColumn(error: { code?: string; message?: string } | null): string | null {
+  if (!error?.message) return null;
+  const match =
+    error.message.match(/Could not find the '([^']+)' column/i) ||
+    error.message.match(/column "([^"]+)" of relation "exams" does not exist/i) ||
+    error.message.match(/column "([^"]+)" does not exist/i);
+  return match ? match[1] : null;
+}
 
 export async function createExam(branchId: string | null, input: Record<string, unknown>) {
   if (!branchId) throw new Error("Branch ID required to create exam");
-  const attempt = (body: Record<string, unknown>) =>
-    supabase.from("exams").insert(body).select("*").single();
 
-  let { data, error } = await attempt({ ...input, branchId });
-  if (isMissingExamColumn(error)) {
-    ({ data, error } = await attempt({ ...withoutOptionalExamColumns(input), branchId }));
+  let currentPayload: Record<string, unknown> = { ...input, branchId };
+
+  for (let i = 0; i < 6; i++) {
+    const { data, error } = await supabase.from("exams").insert(currentPayload).select("*").single();
+    if (!error) return { success: true, data };
+
+    const missingCol = extractMissingExamColumn(error);
+    if (missingCol && missingCol in currentPayload) {
+      const next = { ...currentPayload };
+      delete next[missingCol];
+      currentPayload = next;
+      continue;
+    }
+
+    if (error.code === "PGRST204" || EXAM_OPTIONAL_COLUMNS.some((c) => error.message?.includes(c))) {
+      const stripped = Object.fromEntries(
+        Object.entries(currentPayload).filter(([key]) => !EXAM_OPTIONAL_COLUMNS.includes(key))
+      );
+      if (Object.keys(stripped).length !== Object.keys(currentPayload).length) {
+        currentPayload = stripped;
+        continue;
+      }
+    }
+
+    throw new Error(error.message);
   }
-  if (error) throw new Error(error.message);
-  return { success: true, data };
+
+  throw new Error("Failed to create exam: unexpected database schema error");
 }
 
 export async function updateExam(id: string, branchId: string, input: Record<string, unknown>) {
-  const attempt = (body: Record<string, unknown>) =>
-    supabase.from("exams").update(body).eq("id", id).eq("branchId", branchId).select("*").single();
+  let currentPayload: Record<string, unknown> = { ...input };
 
-  let { data, error } = await attempt(input);
-  if (isMissingExamColumn(error)) {
-    ({ data, error } = await attempt(withoutOptionalExamColumns(input)));
+  for (let i = 0; i < 6; i++) {
+    const { data, error } = await supabase.from("exams").update(currentPayload).eq("id", id).eq("branchId", branchId).select("*").single();
+    if (!error) return { success: true, data };
+
+    const missingCol = extractMissingExamColumn(error);
+    if (missingCol && missingCol in currentPayload) {
+      const next = { ...currentPayload };
+      delete next[missingCol];
+      currentPayload = next;
+      continue;
+    }
+
+    if (error.code === "PGRST204" || EXAM_OPTIONAL_COLUMNS.some((c) => error.message?.includes(c))) {
+      const stripped = Object.fromEntries(
+        Object.entries(currentPayload).filter(([key]) => !EXAM_OPTIONAL_COLUMNS.includes(key))
+      );
+      if (Object.keys(stripped).length !== Object.keys(currentPayload).length) {
+        currentPayload = stripped;
+        continue;
+      }
+    }
+
+    throw new Error(error.message);
   }
-  if (error) throw new Error(error.message);
-  return { success: true, data };
+
+  throw new Error("Failed to update exam: unexpected database schema error");
 }
 
 /**
@@ -1580,27 +1675,52 @@ export async function updateExam(id: string, branchId: string, input: Record<str
  * so every attempt to save exam marks failed with 42703 - the feature has never
  * worked. `onConflict` also has to name the columns, not the constraint.
  */
-export async function submitExamResults(examId: string, branchId: string, results: Array<{ studentId: string; marks: number; remarks?: string }>, publish = false) {
+export async function submitExamResults(examId: string, branchId: string | null, results: Array<{ studentId: string; marks: number; remarks?: string }>, publish = false) {
   const exam = await getExamById(examId, branchId);
   if (!exam) throw new Error("Exam not found");
 
-  const upserts = results.map(r => ({
-    examId,
-    studentId: r.studentId,
-    marks: r.marks,
-    remarks: r.remarks || null,
-  }));
+  // exam_results came from Prisma: id and updatedAt are NOT NULL with no
+  // database default, and there is no unique (examId, studentId) to upsert
+  // on. A student already marked is updated; a new one is inserted whole.
+  const now = new Date().toISOString();
+  const { data: existing, error: readError } = await supabase
+    .from("exam_results")
+    .select("id,studentId")
+    .eq("examId", examId)
+    .in("studentId", results.map((r) => r.studentId));
+  if (readError) throw new Error(readError.message);
+  const idFor = new Map((existing || []).map((row) => [String(row.studentId), String(row.id)]));
 
-  const { data, error } = await supabase.from("exam_results").upsert(upserts, { onConflict: "examId,studentId" }).select("*");
-  if (error) throw new Error(error.message);
+  const saved: Record<string, unknown>[] = [];
+  const fresh: Record<string, unknown>[] = [];
+  for (const r of results) {
+    const row = { examId, studentId: r.studentId, marks: r.marks, remarks: r.remarks || null, updatedAt: now };
+    const id = idFor.get(r.studentId);
+    if (id) {
+      const { data: updated, error } = await supabase.from("exam_results").update(row).eq("id", id).select("*").single();
+      if (error) throw new Error(error.message);
+      saved.push(updated as Record<string, unknown>);
+    } else {
+      fresh.push({ id: newId("res"), ...row });
+    }
+  }
+  let data: Record<string, unknown>[] = saved;
+  if (fresh.length) {
+    const { data: inserted, error } = await supabase.from("exam_results").insert(fresh).select("*");
+    if (error) throw new Error(error.message);
+    data = [...saved, ...((inserted || []) as Record<string, unknown>[])];
+  }
 
   if (publish) await supabase.from("exams").update({ status: "PUBLISHED" }).eq("id", examId);
 
   return { success: true, data: data || [] };
 }
 
-async function getExamById(id: string, branchId: string) {
-  const { data } = await supabase.from("exams").select("*").eq("id", id).eq("branchId", branchId).single();
+/** A branch account only reaches its own exams; an organisation account (no branch) reaches any. */
+async function getExamById(id: string, branchId: string | null) {
+  let query = supabase.from("exams").select("*").eq("id", id);
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data } = await query.maybeSingle();
   return data;
 }
 
