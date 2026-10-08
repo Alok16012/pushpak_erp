@@ -628,7 +628,7 @@ export default function FeeCollection() {
               </div>
             </div>
           )}
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex-wrap gap-2">
             <Button variant="outline" onClick={() => setIsCollectDialogOpen(false)}>
               {collected ? "Close" : "Cancel"}
             </Button>
