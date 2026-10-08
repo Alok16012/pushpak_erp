@@ -4626,6 +4626,27 @@ export async function setUserPassword(userId: string, password: string) {
   return { success: true as const };
 }
 
+/**
+ * Change the email another user signs in with, through the same function as
+ * the password (it holds the service-role key; the browser does not). The
+ * address is confirmed straight away, and the app's users row follows.
+ */
+export async function setUserEmail(userId: string, email: string) {
+  const address = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error("That is not a valid email address.");
+  await requireLiveSession();
+  const { data, error } = await supabase.functions.invoke("set-user-password", {
+    body: { userId, email: address },
+  });
+  if (error) await throwFunctionError("set-user-password", error);
+  // The version deployed before email changes existed asks for a password.
+  if (typeof data?.error === "string" && /password must be at least/i.test(data.error)) {
+    throw new Error("The set-user-password function on Supabase is an older version. Deploy it again to change emails.");
+  }
+  if (data?.error) throw new Error(data.error);
+  return { success: true as const };
+}
+
 /* ============================
    ROLES (an institute's own)
    ============================ */

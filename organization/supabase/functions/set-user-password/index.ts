@@ -1,10 +1,11 @@
 /**
- * Sets a new password on someone else's login.
+ * Sets a new password, a new sign-in email, or both, on someone else's login.
  *
  * Kept apart from create-staff-user on purpose. That function creates or
  * replaces a whole account — role, branch, organisation — and calling it just
  * to change a password would re-write all of those from whatever the edit
- * dialog happened to send. This one changes the password and nothing else.
+ * dialog happened to send. This one changes the password and the sign-in
+ * email, and nothing else.
  *
  * The old password is never read or returned. Supabase Auth keeps only a hash,
  * so there is nothing to show: "editing" a password means setting a new one.
@@ -57,10 +58,17 @@ Deno.serve(async (req) => {
   // 2. The request.
   const body = await req.json().catch(() => ({}));
   const userId = String(body.userId ?? "").trim();
-  const password = String(body.password ?? "");
+  const password = body.password === undefined ? undefined : String(body.password);
+  const email = body.email === undefined ? undefined : String(body.email).trim().toLowerCase();
   if (!userId) return json({ error: "userId is required" }, 400);
-  if (password.length < MIN_PASSWORD_LENGTH) {
+  if (password === undefined && email === undefined) {
+    return json({ error: "Send a new password or a new email." }, 400);
+  }
+  if (password !== undefined && password.length < MIN_PASSWORD_LENGTH) {
     return json({ error: `The password must be at least ${MIN_PASSWORD_LENGTH} characters.` }, 400);
+  }
+  if (email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return json({ error: "That is not a valid email address." }, 400);
   }
 
   // 3. Whose login is it? The target's standing comes from their own
@@ -76,9 +84,19 @@ Deno.serve(async (req) => {
   );
   if (refusal) return json({ error: refusal }, 403);
 
-  // 4. The password, and only the password.
-  const { error: updateError } = await admin.auth.admin.updateUserById(userId, { password });
+  // 4. The password and/or the sign-in email, and nothing else. An email set
+  //    by an admin is confirmed at once: the person signs in with it next.
+  const { error: updateError } = await admin.auth.admin.updateUserById(userId, {
+    ...(password !== undefined ? { password } : {}),
+    ...(email !== undefined ? { email, email_confirm: true } : {}),
+  });
   if (updateError) return json({ error: updateError.message }, 400);
+
+  // The app's own copy of the address, which the user lists read.
+  if (email !== undefined) {
+    const { error: rowError } = await admin.from("users").update({ email }).eq("id", userId);
+    if (rowError) return json({ error: `Sign-in email changed, but the user record was not: ${rowError.message}` }, 500);
+  }
 
   return json({ userId, updated: true });
 });

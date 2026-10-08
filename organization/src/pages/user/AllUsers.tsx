@@ -49,6 +49,7 @@ import {
   getRoles,
   setUserRole,
   setUserPassword,
+  setUserEmail,
   grantableRoles,
   canManageUsers,
   SYSTEM_ROLES,
@@ -90,7 +91,7 @@ const AllUsers = () => {
 
   const [viewing, setViewing] = useState<SystemUserRow | null>(null);
   const [editing, setEditing] = useState<SystemUserRow | null>(null);
-  const [form, setForm] = useState({ name: "", phone: "", role: "", roleId: "", isActive: true });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", role: "", roleId: "", isActive: true });
   /* Off until asked for, so a routine edit to a name cannot also reset a
      password, and so it reads as "set a new one" — the current one cannot be
      shown, because Supabase Auth keeps only its hash. */
@@ -245,6 +246,7 @@ const AllUsers = () => {
     setForm({
       name: row.name,
       phone: row.phone,
+      email: row.email || "",
       role: row.role,
       // "none" rather than "": Radix rejects an empty item value, and holding
       // no role of the institute's own is a real answer here.
@@ -283,6 +285,22 @@ const AllUsers = () => {
       // Last, and reported on its own: the details are already saved by here,
       // and a refusal (another branch, a higher rank) must say that only the
       // password did not change, not that nothing did.
+      // The sign-in email, like the password, changes on the Auth account
+      // and is reported on its own if refused.
+      const emailChanged = form.email.trim().toLowerCase() !== (editing.email || "").toLowerCase();
+      if (emailChanged) {
+        try {
+          await setUserEmail(editing.id, form.email);
+        } catch (error) {
+          toast({
+            title: "Details saved, email not changed",
+            description: error instanceof Error ? error.message : "Please try again.",
+            variant: "destructive",
+          });
+          await load();
+          return;
+        }
+      }
       if (changePassword) {
         try {
           await setUserPassword(editing.id, newPassword);
@@ -876,17 +894,18 @@ const AllUsers = () => {
                 <Separator />
 
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold uppercase text-muted-foreground">Email</Label>
-                  <p className="text-sm">{editing.email || "—"}</p>
-                  {/* The email is the credential the account signs in with, and
-                      changing it means changing the Supabase Auth account —
-                      which needs the service-role key the browser does not hold. */}
+                  <Label htmlFor="edit-email" className="text-xs font-semibold uppercase text-muted-foreground">Email</Label>
+                  <Input
+                    id="edit-email"
+                    type="email"
+                    autoComplete="off"
+                    value={form.email}
+                    onChange={(event) => setForm({ ...form, email: event.target.value })}
+                  />
+                  {/* The email is the credential the account signs in with, so it
+                      is changed on the Auth account, through the server. */}
                   <p className="text-xs text-muted-foreground">
-                    The sign-in email is changed by resetting the login from the{" "}
-                    <Link to="/branch/view" className="underline">
-                      branch page
-                    </Link>
-                    , not here.
+                    This is the email they sign in with. A new one works straight away and is confirmed for them.
                   </p>
                 </div>
 
