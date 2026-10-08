@@ -167,16 +167,6 @@ export const menuItems: MenuItem[] = [
     ],
   },
   {
-    title: "System Settings",
-    icon: Settings,
-    items: [
-      { title: "General Settings", url: "/settings/general", icon: Settings },
-      { title: "Payment Gateway", url: "/settings/payment-gateway", icon: CreditCard },
-      { title: "Payment QR Code", url: "/settings/payment-qr", icon: FileText },
-      { title: "Batch Payment QR", url: "/settings/batch-qr", icon: FileText },
-    ],
-  },
-  {
     title: "Partner Management",
     icon: Handshake,
     items: [
@@ -228,6 +218,16 @@ export const menuItems: MenuItem[] = [
     title: "Main Website",
     icon: Globe,
     items: [{ title: "Website Content", url: "/website/content", icon: LayoutTemplate }],
+  },
+  {
+    title: "System Settings",
+    icon: Settings,
+    items: [
+      { title: "General Settings", url: "/settings/general", icon: Settings },
+      { title: "Payment Gateway", url: "/settings/payment-gateway", icon: CreditCard },
+      { title: "Payment QR Code", url: "/settings/payment-qr", icon: FileText },
+      { title: "Batch Payment QR", url: "/settings/batch-qr", icon: FileText },
+    ],
   },
 ];
 

@@ -100,7 +100,7 @@ const blankLead = {
 const initials = (name: string) =>
   name.split(" ").filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase() || "?";
 
-type LeadRow = AdmissionLead & { branch: string; district: string };
+type LeadRow = AdmissionLead & { branch: string; state: string; district: string };
 
 export default function AdmissionLeads() {
   const { user } = useAuth();
@@ -110,8 +110,11 @@ export default function AdmissionLeads() {
   // An organisation account sees every centre's leads, so it picks the
   // district and centre a lead belongs to and can read and filter by them.
   const showBranch = !branchId;
-  const [directory, setDirectory] = useState<Array<{ id: string; name: string; district: string }>>([]);
+  const [directory, setDirectory] = useState<Array<{ id: string; name: string; state: string; district: string; block: string }>>([]);
+  // State, then district, then block, then the centre: each narrows the next.
+  const [leadState, setLeadState] = useState("");
   const [leadDistrict, setLeadDistrict] = useState("");
+  const [leadBlock, setLeadBlock] = useState("");
   const [leadBranchId, setLeadBranchId] = useState("");
   useEffect(() => {
     if (!showBranch) return;
@@ -121,8 +124,14 @@ export default function AdmissionLeads() {
       .catch(() => { if (!cancelled) setDirectory([]); });
     return () => { cancelled = true; };
   }, [showBranch, orgId]);
-  const districts = useMemo(() => [...new Set(directory.map((b) => b.district).filter(Boolean))].sort(), [directory]);
-  const centresInDistrict = directory.filter((b) => !leadDistrict || b.district === leadDistrict);
+  const distinct = (values: string[]) => [...new Set(values.filter(Boolean))].sort();
+  const states = useMemo(() => distinct(directory.map((b) => b.state)), [directory]);
+  const districts = useMemo(() => distinct(directory.map((b) => b.district)), [directory]);
+  const inState = directory.filter((b) => !leadState || b.state === leadState);
+  const inDistrict = inState.filter((b) => !leadDistrict || b.district === leadDistrict);
+  const inBlock = inDistrict.filter((b) => !leadBlock || b.block === leadBlock);
+  const formDistricts = distinct(inState.map((b) => b.district));
+  const formBlocks = distinct(inDistrict.map((b) => b.block));
 
   const [leads, setLeads] = useState<AdmissionLead[]>([]);
   const [ready, setReady] = useState(true);
@@ -195,7 +204,9 @@ export default function AdmissionLeads() {
       toast({ title: "Enquiry saved", description: draft.studentName });
       setAddOpen(false);
       setDraft({ ...blankLead });
+      setLeadState("");
       setLeadDistrict("");
+      setLeadBlock("");
       setLeadBranchId("");
       await load();
     } catch (error) {
@@ -307,7 +318,13 @@ export default function AdmissionLeads() {
 
   const centreOf = useMemo(() => new Map(directory.map((b) => [b.id, b])), [directory]);
   const rows: LeadRow[] = useMemo(
-    () => leads.map((l) => ({ ...l, branch: centreOf.get(l.branchId)?.name ?? "", district: centreOf.get(l.branchId)?.district ?? "" })),
+    () =>
+      leads.map((l) => ({
+        ...l,
+        branch: centreOf.get(l.branchId)?.name ?? "",
+        state: centreOf.get(l.branchId)?.state ?? "",
+        district: centreOf.get(l.branchId)?.district ?? "",
+      })),
     [leads, centreOf],
   );
 
@@ -396,6 +413,7 @@ export default function AdmissionLeads() {
   const filters: TableFilter<LeadRow>[] = [
     ...(showBranch
       ? [
+          { label: "State", key: "state" as const, options: states },
           { label: "District", key: "district" as const, options: districts },
           { label: "Branch", key: "branch" as const, options: directory.map((b) => b.name) },
         ]
@@ -635,35 +653,36 @@ export default function AdmissionLeads() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {showBranch && (
               <>
-                <div className="space-y-2">
-                  <Label>District</Label>
-                  <Select
-                    value={leadDistrict || "all"}
-                    onValueChange={(v) => {
-                      setLeadDistrict(v === "all" ? "" : v);
-                      // A centre outside the new district would not belong to it.
-                      setLeadBranchId((id) => (v === "all" || directory.find((b) => b.id === id)?.district === v ? id : ""));
-                    }}
-                  >
-                    <SelectTrigger aria-label="District"><SelectValue placeholder="Select district" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All districts</SelectItem>
-                      {districts.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <PlacePicker
+                  label="State"
+                  value={leadState}
+                  options={states}
+                  onChange={(v) => { setLeadState(v); setLeadDistrict(""); setLeadBlock(""); setLeadBranchId(""); }}
+                />
+                <PlacePicker
+                  label="District"
+                  value={leadDistrict}
+                  options={formDistricts}
+                  onChange={(v) => { setLeadDistrict(v); setLeadBlock(""); setLeadBranchId(""); }}
+                />
+                <PlacePicker
+                  label="Block"
+                  value={leadBlock}
+                  options={formBlocks}
+                  onChange={(v) => { setLeadBlock(v); setLeadBranchId(""); }}
+                />
                 <div className="space-y-2">
                   <Label>Branch *</Label>
                   <Select value={leadBranchId} onValueChange={setLeadBranchId}>
                     <SelectTrigger aria-label="Branch"><SelectValue placeholder="Select branch" /></SelectTrigger>
                     <SelectContent>
-                      {centresInDistrict.map((b) => (
+                      {inBlock.map((b) => (
                         <SelectItem key={b.id} value={b.id}>{b.district && !leadDistrict ? `${b.name} · ${b.district}` : b.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="hidden lg:block" />
+                <div className="hidden sm:block lg:col-span-2" />
               </>
             )}
             <div className="space-y-2">
@@ -903,5 +922,21 @@ export default function AdmissionLeads() {
         </DialogContent>
       </Dialog>
     </AppLayout>
+  );
+}
+
+/** One step of the State → District → Block picker; "All" leaves the step open. */
+function PlacePicker({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Select value={value || "all"} onValueChange={(v) => onChange(v === "all" ? "" : v)}>
+        <SelectTrigger aria-label={label}><SelectValue placeholder={`Select ${label.toLowerCase()}`} /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All {label === "State" ? "states" : label === "District" ? "districts" : "blocks"}</SelectItem>
+          {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
   );
 }

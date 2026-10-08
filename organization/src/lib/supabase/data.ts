@@ -2195,22 +2195,31 @@ export async function createBranch(organizationId: string, input: Record<string,
  * address, its licence expiry and the counts the register shows per branch.
  */
 /**
- * Every branch with the district it stands in, for the pickers that let an
- * organisation narrow a list by district and then by centre. Lighter than
+ * Every branch with the state, district and block it stands in, for the
+ * pickers that narrow a list place by place down to a centre. Lighter than
  * getBranchesWithStats: no students, fees or wallets.
  */
 export async function getBranchDirectory(organizationId: string | null) {
   const { data: branches } = await getBranches(organizationId);
   const rows = branches as Record<string, unknown>[];
   const ids = rows.map((b) => b.id as string);
-  const districtFor = new Map<string, string>();
+  const placeFor = new Map<string, { state: string; district: string; block: string }>();
   if (ids.length) {
-    const { data } = await supabase.from("branch_addresses").select("branchId, district").in("branchId", ids);
-    for (const row of data || []) districtFor.set(row.branchId as string, String(row.district ?? "").trim());
+    const { data } = await supabase.from("branch_addresses").select("branchId, state, district, block").in("branchId", ids);
+    const clean = (v: unknown) => String(v ?? "").trim();
+    for (const row of data || []) {
+      placeFor.set(row.branchId as string, { state: clean(row.state), district: clean(row.district), block: clean(row.block) });
+    }
   }
   return {
     success: true as const,
-    data: rows.map((b) => ({ id: String(b.id), name: String(b.name ?? ""), district: districtFor.get(String(b.id)) || "" })),
+    data: rows.map((b) => ({
+      id: String(b.id),
+      name: String(b.name ?? ""),
+      state: placeFor.get(String(b.id))?.state || "",
+      district: placeFor.get(String(b.id))?.district || "",
+      block: placeFor.get(String(b.id))?.block || "",
+    })),
   };
 }
 
