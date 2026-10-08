@@ -31,9 +31,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           {/* Always in sight while an admin works as a centre, with the way back. */}
           {actingAs && (
             <div className="sticky top-0 z-50 flex items-center justify-center gap-3 bg-gold px-4 py-1.5 text-[12.5px] font-semibold text-gold-foreground">
-              <span className="truncate">Viewing as {actingAs.name}</span>
-              <button type="button" onClick={() => { actAsCentre(null); navigate("/"); }} className="shrink-0 rounded-full bg-white/80 px-3 py-0.5 text-xs font-bold hover:bg-white">
-                Back to admin
+              <span className="truncate">Viewing as {actingAs.name}{actingAs.studentId ? " (student portal)" : ""}</span>
+              <button type="button" onClick={() => { const student = !!actingAs.studentId; actAsCentre(null); navigate(student ? "/student/view" : "/"); }} className="shrink-0 rounded-full bg-white/80 px-3 py-0.5 text-xs font-bold hover:bg-white">
+                {actingAs.studentId ? "Back to students" : "Back to admin"}
               </button>
             </div>
           )}

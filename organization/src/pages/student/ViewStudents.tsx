@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Upload } from "lucide-react";
+import { Plus, Upload, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { StudentRoster, formatAdmissionDate } from "@/components/student/StudentRoster";
 import { StudentLoginDialog } from "@/components/student/StudentLoginDialog";
@@ -48,6 +48,7 @@ import { useToast } from "@/hooks/use-toast";
 /** Shape of the student detail response the profile / fee dialogs read. */
 interface StudentDetail {
   id: string;
+  branchId?: string;
   firstName: string;
   middleName?: string;
   lastName: string;
@@ -76,7 +77,7 @@ interface StudentDetail {
 export default function ViewStudents() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, actAsCentre } = useAuth();
   const branchId = user?.branchId;
   const organizationId = user?.organizationId;
 
@@ -294,6 +295,26 @@ export default function ViewStudents() {
                 aria-label="Profile active"
               />
             </label>
+          )}
+          {details && (
+            // The student's whole portal -- courses, attendance, fees,
+            // results, documents -- as they see it, the same way "Login as
+            // center" opens a centre. A gold bar leads back.
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={!(detail?.branchId || branchId)}
+              onClick={() => {
+                const home = detail?.branchId || branchId;
+                if (!home) return;
+                actAsCentre({ branchId: home, name: details.name, studentId: details.id });
+                setDetails(null);
+                navigate("/me");
+              }}
+            >
+              <UserRound className="h-4 w-4" />
+              View full profile as student
+            </Button>
           )}
 
           {!detail && !detailError && <p className="text-sm text-muted-foreground">Loading student record…</p>}

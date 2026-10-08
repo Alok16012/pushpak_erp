@@ -56,4 +56,16 @@ describe("login as center", () => {
     expect(auth.actingAs).toBeNull();
     expect(auth.user?.branchId).not.toBe("b9");
   });
+
+  it("lets a branch account view one of its students' portal, and come back", async () => {
+    role = "BRANCH_ADMIN";
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await waitFor(() => expect(auth.realView).toBe("franchise"));
+    act(() => auth.actAsCentre({ branchId: "b1", name: "Rohit Sharma", studentId: "s1" }));
+    expect(auth.view).toBe("student");
+    expect(auth.user).toMatchObject({ id: "s1", role: "STUDENT", branchId: "b1", name: "Rohit Sharma" });
+    act(() => auth.actAsCentre(null));
+    expect(auth.view).toBe("franchise");
+    expect(auth.user?.id).toBe("u1");
+  });
 });

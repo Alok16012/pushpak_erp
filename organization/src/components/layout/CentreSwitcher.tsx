@@ -29,7 +29,7 @@ export function CentreSwitcher({ collapsed }: { collapsed: boolean }) {
     return () => { cancelled = true; };
   }, [open, organizationId]);
 
-  if (realView !== "admin") return null;
+  if (realView !== "admin" || actingAs?.studentId) return null;
 
   if (actingAs) {
     return (

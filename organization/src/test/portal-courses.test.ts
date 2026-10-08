@@ -10,11 +10,25 @@ const rows: Record<string, Record<string, unknown>[]> = {};
 
 function builder(table: string) {
   const filters: Record<string, unknown> = {};
-  const list = () => (rows[table] ?? []).filter((r) => Object.entries(filters).every(([k, v]) => (Array.isArray(v) ? v.includes(r[k]) : r[k] === v)));
+  // PostgREST's `or`: "a.eq.x,b.eq.y" keeps rows matching either.
+  let either: Array<[string, string]> = [];
+  const list = () =>
+    (rows[table] ?? []).filter(
+      (r) =>
+        Object.entries(filters).every(([k, v]) => (Array.isArray(v) ? v.includes(r[k]) : r[k] === v)) &&
+        (!either.length || either.some(([k, v]) => String(r[k]) === v)),
+    );
   const chain: Record<string, unknown> = {
     select: () => chain,
     order: () => chain,
     is: () => chain,
+    or: (expr: string) => {
+      either = expr.split(",").map((part) => {
+        const [k, , v] = part.split(".");
+        return [k, v] as [string, string];
+      });
+      return chain;
+    },
     eq: (column: string, value: unknown) => {
       filters[column] = value;
       return chain;
@@ -80,6 +94,11 @@ describe("getStudentPortalCourses", () => {
     const { data } = await getStudentPortalCourses("login-1", "b1");
     expect(data[0].syllabus.modules.map((m) => m.name)).toEqual(["Physics"]);
     expect(data[0].syllabus.chapters.map((c) => c.name)).toEqual(["Light"]);
+  });
+
+  it("finds the student by record id too, for an office account viewing their portal", async () => {
+    const { data } = await getStudentPortalCourses("s1", "b1");
+    expect(data.map((c) => c.name)).toEqual(["10th Bihar Board", "Spoken English"]);
   });
 
   it("returns nothing for a login with no student record", async () => {

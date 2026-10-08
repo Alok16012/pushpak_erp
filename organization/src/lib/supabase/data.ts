@@ -2585,6 +2585,14 @@ export async function deleteBranch(id: string) {
  * `courses` carries the whole enrolment where `course` carries only the primary
  * one, so a student on three courses no longer sees one of them.
  */
+/**
+ * Which students row a portal page is for. A student's own login matches on
+ * `userId`; an office account viewing a student's portal ("View as student")
+ * passes the record's own id instead, which also covers a student who has no
+ * login yet. Ids are uuids or cuid-style strings, safe inside the filter.
+ */
+const portalStudentMatch = (key: string) => `userId.eq.${key},id.eq.${key}`;
+
 export async function getStudentProfile(userId: string, branchId: string) {
   const { data, error } = await supabase
     .from("students")
@@ -2592,7 +2600,7 @@ export async function getStudentProfile(userId: string, branchId: string) {
     // course costs, which is the only figure they have before an invoice is
     // raised against them.
     .select("*, course:courses(name, code, baseFee), batch:batches(name), branch:branches(name)")
-    .eq("userId", userId)
+    .or(portalStudentMatch(userId))
     .eq("branchId", branchId)
     .is("deletedAt", null)
     .maybeSingle();
@@ -2628,7 +2636,7 @@ export async function getStudentProfile(userId: string, branchId: string) {
 }
 
 export async function getStudentPortalClasses(userId: string, branchId: string) {
-  const { data: student } = await supabase.from("students").select("batchId").eq("userId", userId).eq("branchId", branchId).single();
+  const { data: student } = await supabase.from("students").select("batchId").or(portalStudentMatch(userId)).eq("branchId", branchId).single();
   if (!student?.batchId) return { success: true, data: [] };
 
   const { data, error } = await supabase
@@ -2651,7 +2659,7 @@ export async function getStudentPortalAttendance(userId: string, branchId: strin
   const { data: student } = await supabase
     .from("students")
     .select("id")
-    .eq("userId", userId)
+    .or(portalStudentMatch(userId))
     .eq("branchId", branchId)
     .is("deletedAt", null)
     .maybeSingle();
@@ -2695,7 +2703,7 @@ export async function getStudentPortalCourses(userId: string, branchId: string) 
   const { data: student, error } = await supabase
     .from("students")
     .select("id, courseId, courseIds, batchId")
-    .eq("userId", userId)
+    .or(portalStudentMatch(userId))
     .eq("branchId", branchId)
     .is("deletedAt", null)
     .maybeSingle();
@@ -2788,13 +2796,13 @@ export async function getStudentPortalCourses(userId: string, branchId: string) 
 }
 
 export async function getStudentPortalInvoices(userId: string, branchId: string) {
-  const { data: student } = await supabase.from("students").select("id").eq("userId", userId).eq("branchId", branchId).single();
+  const { data: student } = await supabase.from("students").select("id").or(portalStudentMatch(userId)).eq("branchId", branchId).single();
   if (!student) return { success: true, data: [] };
   return getStudentInvoices(student.id, branchId);
 }
 
 export async function getStudentPortalResults(userId: string, branchId: string, examId?: string) {
-  const { data: student } = await supabase.from("students").select("id").eq("userId", userId).eq("branchId", branchId).single();
+  const { data: student } = await supabase.from("students").select("id").or(portalStudentMatch(userId)).eq("branchId", branchId).single();
   if (!student) return { success: true, data: [] };
   return getStudentResults(student.id, branchId, examId);
 }

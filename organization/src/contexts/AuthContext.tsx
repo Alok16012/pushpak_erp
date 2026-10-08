@@ -23,7 +23,12 @@ type Auth = {
   loading: boolean;
 };
 
-export type ActingAs = { branchId: string; name: string };
+/**
+ * Whom an office account is viewing the app as. A centre (organisation admin
+ * only) gives the franchise view of that branch. A student (`studentId`, set
+ * by an organisation or branch account) gives that student's own portal.
+ */
+export type ActingAs = { branchId: string; name: string; studentId?: string };
 
 const ACTING_KEY = "erp-acting-as";
 const readActing = (): ActingAs | null => {
@@ -50,8 +55,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * for this tab only.
    */
   const [acting, setActing] = useState<ActingAs | null>(readActing);
-  const actingAs = realView === "admin" ? acting : null;
-  const view = actingAs ? "franchise" : realView;
+  const actingAs =
+    acting && (realView === "admin" || (realView === "franchise" && acting.studentId)) ? acting : null;
+  const view = actingAs ? (actingAs.studentId ? "student" : "franchise") : realView;
   const actAsCentre = (centre: ActingAs | null) => {
     try {
       if (centre) sessionStorage.setItem(ACTING_KEY, JSON.stringify(centre));
@@ -61,7 +67,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setActing(centre);
   };
-  const effectiveUser = user && actingAs ? { ...user, branchId: actingAs.branchId } : user;
+  // As a student, `id` becomes the student record's id: every portal query
+  // resolves its student by login id or by record id.
+  const effectiveUser =
+    user && actingAs
+      ? actingAs.studentId
+        ? { ...user, id: actingAs.studentId, name: actingAs.name, role: "STUDENT", branchId: actingAs.branchId }
+        : { ...user, branchId: actingAs.branchId }
+      : user;
 
   useEffect(() => {
     // Restore the last known account so a reload paints the app immediately

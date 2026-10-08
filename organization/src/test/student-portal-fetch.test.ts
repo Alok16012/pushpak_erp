@@ -18,6 +18,7 @@ function builder(table: string) {
       return chain;
     },
     eq: () => chain,
+    or: () => chain,
     is: () => chain,
     maybeSingle: () => Promise.resolve({ data: (rows[table] ?? [])[0] ?? null, error: null }),
     single: () => Promise.resolve({ data: (rows[table] ?? [])[0] ?? null, error: null }),
