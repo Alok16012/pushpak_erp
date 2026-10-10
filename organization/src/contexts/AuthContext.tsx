@@ -136,14 +136,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     let live = true;
-    getUserModules(user.id)
-      .then((result) => live && setAllowedPaths(result.data))
-      // A database without roles.sql grants the view's whole menu, as before.
-      .catch(() => live && setAllowedPaths([]));
+    const refresh = () =>
+      getUserModules(user.id, { role: user.role, organizationId: user.organizationId ?? null })
+        .then((result) => live && setAllowedPaths(result.data))
+        // A database without roles.sql grants the view's whole menu, as before.
+        .catch(() => live && setAllowedPaths([]));
+    refresh();
+    // An administrator can change the role while this person is signed in, so
+    // the menu is re-read when the tab comes back and once a minute, rather
+    // than only at sign-in.
+    const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = window.setInterval(refresh, 60_000);
     return () => {
       live = false;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(timer);
     };
-  }, [user?.id]);
+  }, [user?.id, user?.role, user?.organizationId]);
 
   const login = async (identifier: string, password: string) => {
     const email = identifier.includes("@") ? identifier : `${identifier}@pushpak.local`;

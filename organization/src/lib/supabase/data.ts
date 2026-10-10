@@ -4839,20 +4839,30 @@ export async function setUserRole(userId: string, roleId: string | null) {
  * Returns an empty list for anyone whose role has none -- which every account
  * had before roles existed -- and that reads as "everything this view allows".
  */
-export async function getUserModules(userId: string | null) {
+export async function getUserModules(
+  userId: string | null,
+  fallback?: { role?: string | null; organizationId?: string | null },
+) {
   if (!userId) return { success: true as const, data: [] as string[] };
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("users")
     .select('"roleId", role, "organizationId"')
     .eq("id", userId)
     .maybeSingle();
-  if (error || !data) return { success: true as const, data: [] as string[] };
-  const row = data as { roleId?: string; role?: string; organizationId?: string };
+  // An unreadable row (no `public.users` mirror, or a policy that hides it)
+  // still has the account's own role and institute to go on, so it gets that
+  // role's menu rather than silently the whole view.
+  const row = {
+    roleId: (data as { roleId?: string } | null)?.roleId ?? null,
+    role: (data as { role?: string } | null)?.role || fallback?.role || "",
+    organizationId: (data as { organizationId?: string } | null)?.organizationId || fallback?.organizationId || null,
+  };
 
   // The role the login was actually given.
   if (row.roleId) {
     const role = await getRole(row.roleId).catch(() => null);
-    return { success: true as const, data: role?.data?.modules ?? [] };
+    if (role?.data) return { success: true as const, data: role.data.modules };
+    // The role itself could not be read: fall through to the built-in one.
   }
 
   /*

@@ -111,7 +111,7 @@ export default function AccessControl() {
         description:
           modules.length === 0
             ? `${role.name} gets every page for its level.`
-            : `${role.name} gets ${modules.length} page(s). Anyone signed in sees the change on their next page load.`,
+            : `${role.name} gets ${modules.length} page(s). Anyone signed in sees the change within a minute.`,
       });
     } catch (error) {
       toast({

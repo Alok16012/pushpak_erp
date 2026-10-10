@@ -36,6 +36,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
 import { formatPhone } from "@/lib/phone";
+import { INDIAN_STATES, canonicalState, districtsFor } from "@/data/indianStates";
+import { blocksFor } from "@/data/indianCities";
 import {
   followUpBucket,
   followUpQueue,
@@ -127,11 +129,18 @@ export default function AdmissionLeads() {
   const distinct = (values: string[]) => [...new Set(values.filter(Boolean))].sort();
   const states = useMemo(() => distinct(directory.map((b) => b.state)), [directory]);
   const districts = useMemo(() => distinct(directory.map((b) => b.district)), [directory]);
-  const inState = directory.filter((b) => !leadState || b.state === leadState);
-  const inDistrict = inState.filter((b) => !leadDistrict || b.district === leadDistrict);
-  const inBlock = inDistrict.filter((b) => !leadBlock || b.block === leadBlock);
-  const formDistricts = distinct(inState.map((b) => b.district));
-  const formBlocks = distinct(inDistrict.map((b) => b.block));
+  // The form offers every state, that state's districts and that district's
+  // blocks from the reference lists, plus any place a centre is recorded under.
+  const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const inState = directory.filter((b) => !leadState || canonicalState(b.state) === leadState);
+  const inDistrict = inState.filter((b) => !leadDistrict || sameText(b.district, leadDistrict));
+  const inBlock = inDistrict.filter((b) => !leadBlock || sameText(b.block, leadBlock));
+  const formStates = useMemo(
+    () => distinct([...INDIAN_STATES, ...directory.map((b) => canonicalState(b.state))]),
+    [directory],
+  );
+  const formDistricts = leadState ? distinct([...districtsFor(leadState), ...inState.map((b) => b.district)]) : [];
+  const formBlocks = leadDistrict ? distinct([...blocksFor(leadDistrict), ...inDistrict.map((b) => b.block)]) : [];
 
   const [leads, setLeads] = useState<AdmissionLead[]>([]);
   const [ready, setReady] = useState(true);
@@ -656,19 +665,21 @@ export default function AdmissionLeads() {
                 <PlacePicker
                   label="State"
                   value={leadState}
-                  options={states}
+                  options={formStates}
                   onChange={(v) => { setLeadState(v); setLeadDistrict(""); setLeadBlock(""); setLeadBranchId(""); }}
                 />
                 <PlacePicker
                   label="District"
                   value={leadDistrict}
                   options={formDistricts}
+                  disabled={!leadState}
                   onChange={(v) => { setLeadDistrict(v); setLeadBlock(""); setLeadBranchId(""); }}
                 />
                 <PlacePicker
                   label="Block"
                   value={leadBlock}
                   options={formBlocks}
+                  disabled={!leadDistrict}
                   onChange={(v) => { setLeadBlock(v); setLeadBranchId(""); }}
                 />
                 <div className="space-y-2">
@@ -925,15 +936,14 @@ export default function AdmissionLeads() {
   );
 }
 
-/** One step of the State → District → Block picker; "All" leaves the step open. */
-function PlacePicker({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+/** One step of the State → District → Block picker; each step waits for the one before it. */
+function PlacePicker({ label, value, options, disabled, onChange }: { label: string; value: string; options: string[]; disabled?: boolean; onChange: (v: string) => void }) {
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
-      <Select value={value || "all"} onValueChange={(v) => onChange(v === "all" ? "" : v)}>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger aria-label={label}><SelectValue placeholder={`Select ${label.toLowerCase()}`} /></SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All {label === "State" ? "states" : label === "District" ? "districts" : "blocks"}</SelectItem>
           {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
         </SelectContent>
       </Select>
