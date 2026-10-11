@@ -7,6 +7,8 @@
  * needed the same list: a student's city should come from the same place a
  * branch's does, or the two screens disagree about what a district contains.
  */
+import { BIHAR_BLOCKS } from "./biharBlocks";
+
 export const PLACES_BY_DISTRICT: Record<string, { blocks: string[]; cities: string[] }> = {
   // --- Uttar Pradesh ---
   "Agra": { blocks: ["Agra", "Bah", "Etmadpur", "Fatehabad", "Khanpur", "Kheragarh"], cities: ["Agra", "Dayalbagh", "Fatehpur Sikri", "Kuberpur", "Tajganj"] },
@@ -24,15 +26,15 @@ export const PLACES_BY_DISTRICT: Record<string, { blocks: string[]; cities: stri
   "Moradabad": { blocks: ["Bilari", "Dilari", "Kanth", "Machhrehri", "Thakurdwara"], cities: ["Amroha", "Bilari", "Kanth", "Moradabad", "Sambhal"] },
   "Muzaffarnagar": { blocks: ["Budhana", "Charthawal", "Jansath", "Kandhla", "Khatauli", "Shamli"], cities: ["Budhana", "Jansath", "Khatauli", "Muzaffarnagar", "Shamli"] },
   "Varanasi": { blocks: ["Araja", "Araziline", "Chiraigaon", "Harahua", "Kashi Vidyapeeth", "Pindra"], cities: ["Chiraigaon", "Pindra", "Ramnagar", "Sarnath", "Varanasi"] },
-  "Patna": { blocks: ["Bikram", "Bikramganj", "Danapur", "Dumraon", "Fatwah", "Hathidah", "Khusrupur", "Maner", "Masaurhi", "Naubatpur", "Nur Nagar", "Paliganj", "Patna Sadar", "Phulwarisharif", "Sampatchak"], cities: ["Bikram", "Danapur", "Fatwah", "Khusrupur", "Maner", "Masaurhi", "Nur Nagar", "Paliganj", "Patna", "Phulwarisharif"] },
-  "Bhagalpur": { blocks: ["Bihpur", "Gopalpur", "Ismailpur", "Kahalgaon", "Kharik", "Narayanpur", "Nathnagar", "Naugachhia", "Pirpainti", "Sabour", "Sanhaula", "Sultanganj"], cities: ["Bhagalpur", "Gopalpur", "Kahalgaon", "Kharik", "Naugachhia", "Pirpainti", "Sultanganj"] },
-  "Gaya": { blocks: ["Amas", "Banke Bazar", "Bodh Gaya", "Dobhi", "Dumaria", "Fatehpur", "Gaya Town", "Ghelhu", "Goriyakothi", "Gurua", "Imamganj", "Kaler", "Kochas", "Konch", "Manpur", "Mohanpur", "Nauhatta", "Nawada", "Neemchak Bathani", "Pakri Barawan", "Paraiya", "Rajpur", "Roh", "Shahpur", "Sherghati", "Sikandra", "Tikari", "Wazirganj"], cities: ["Amas", "Banke Bazar", "Bodh Gaya", "Dobhi", "Dumaria", "Fatehpur", "Gaya", "Gurua", "Kaler", "Kochas", "Konch", "Manpur", "Mohanpur", "Nawada", "Neemchak Bathani", "Paraiya", "Rajpur", "Roh", "Shahpur", "Sherghati", "Sikandra", "Tekari", "Tikari", "Wazirganj"] },
-  "Muzaffarpur": { blocks: ["Aurai", "Baruraj", "Bochahan", "Desri", "Gaighat", "Gayghat", "Hajipur", "Jandaha", "Kanti", "Kurhani", "Lalganj", "Mahnar", "Mahua", "Marhaura", "Minapur", "Patedhi Belsar", "Patepur", "Raghopur", "Rajapakar", "Sahdei Buzurg", "Sakra", "Saraiya", "Vaishali"], cities: ["Aurai", "Baruraj", "Bochahan", "Desri", "Gaighat", "Gayghat", "Hajipur", "Jandaha", "Kanti", "Kurhani", "Lalganj", "Mahnar", "Mahua", "Marhaura", "Minapur", "Motihari", "Muzaffarpur", "Patedhi Belsar", "Patepur", "Raghopur", "Rajapakar", "Sahdei Buzurg", "Sakra", "Saraiya", "Sheohar", "Sitamarhi", "Vaishali"] },
-  "Darbhanga": { blocks: ["Alinagar", "Andhrathadi", "Babhangama", "Bahadurpur", "Basauli", "Benipatti", "Benipur", "Biraul", "Ghanshyampur", "Ghoghardiha", "Hanuman Nagar", "Jhanjharpur", "Kaluahi", "Keoti", "Khadauwan", "Kusheshwar Asthan", "Ladania", "Lakhnaur", "Madhubani", "Madhwapur", "Manigachhi", "Pandaul", "Phulparas", "Rajnagar", "Singhwara", "Thakurganj"], cities: ["Andhrathadi", "Babhangama", "Basauli", "Benipatti", "Benipur", "Darbhanga", "Ghoghardiha", "Jhanjharpur", "Kaluahi", "Khadauwan", "Lakhnaur", "Madhubani", "Madhwapur", "Pandaul", "Phulparas", "Rajnagar", "Samastipur", "Thakurganj"] },
-  "Nawada": { blocks: ["Akbarpur", "Bihariganj", "Kashi Chak", "Meskaur", "Nardiganj", "Pakri Barawan", "Rajoli", "Roh", "Sirdala", "Theka"], cities: ["Hisua", "Meskaur", "Nardiganj", "Nawada", "Warisaliganj"] },
-  "Saran": { blocks: ["Amnour", "Baniapur", "Chapra", "Dariapur", "Daudnagar", "Dighwara", "Garkha", "Ishupur", "Jalalpur", "Lakshmipur", "Manjhi", "Marhaura", "Nagra", "Nayagaon", "Panapur", "Parsa", "Patna", "Revelganj", "Sonepur", "Taraiya"], cities: ["Amnour", "Baniapur", "Chhapra", "Dariapur", "Daudnagar", "Garkha", "Ishupur", "Jalalpur", "Lakshmipur", "Marhaura", "Nagra", "Panapur", "Parsa", "Revelganj", "Sonepur", "Taraiya"] },
-  "Vaishali": { blocks: ["Bhagwanpur", "Bidupur", "Chehra Kalan", "Desri", "Goraul", "Hajipur", "Jandaha", "Lalganj", "Mahnar", "Mahua", "Patedhi Belsar", "Patepur", "Raghopur", "Raja Pakar", "Sahdei Buzurg", "Vaishali"], cities: ["Desri", "Hajipur", "Lalganj", "Mahua", "Raghopur"] },
-  "Madhubani": { blocks: ["Andhrathadi", "Babhangama", "Basauli", "Benipatti", "Ghoghardiha", "Jhanjarpur", "Kaluahi", "Khutauna", "Ladaniya", "Lakhnaur", "Madhwapur", "Pandaul", "Phulparas", "Rajnagar", "Saharsa", "Thakurganj"], cities: ["Benipatti", "Jhanjarpur", "Kaluahi", "Madhubani", "Phulparas"] },
+  "Patna": { blocks: BIHAR_BLOCKS["Patna"], cities: ["Bikram", "Danapur", "Fatwah", "Khusrupur", "Maner", "Masaurhi", "Nur Nagar", "Paliganj", "Patna", "Phulwarisharif"] },
+  "Bhagalpur": { blocks: BIHAR_BLOCKS["Bhagalpur"], cities: ["Bhagalpur", "Gopalpur", "Kahalgaon", "Kharik", "Naugachhia", "Pirpainti", "Sultanganj"] },
+  "Gaya": { blocks: BIHAR_BLOCKS["Gaya"], cities: ["Amas", "Banke Bazar", "Bodh Gaya", "Dobhi", "Dumaria", "Fatehpur", "Gaya", "Gurua", "Kaler", "Kochas", "Konch", "Manpur", "Mohanpur", "Nawada", "Neemchak Bathani", "Paraiya", "Rajpur", "Roh", "Shahpur", "Sherghati", "Sikandra", "Tekari", "Tikari", "Wazirganj"] },
+  "Muzaffarpur": { blocks: BIHAR_BLOCKS["Muzaffarpur"], cities: ["Aurai", "Baruraj", "Bochahan", "Desri", "Gaighat", "Gayghat", "Hajipur", "Jandaha", "Kanti", "Kurhani", "Lalganj", "Mahnar", "Mahua", "Marhaura", "Minapur", "Motihari", "Muzaffarpur", "Patedhi Belsar", "Patepur", "Raghopur", "Rajapakar", "Sahdei Buzurg", "Sakra", "Saraiya", "Sheohar", "Sitamarhi", "Vaishali"] },
+  "Darbhanga": { blocks: BIHAR_BLOCKS["Darbhanga"], cities: ["Andhrathadi", "Babhangama", "Basauli", "Benipatti", "Benipur", "Darbhanga", "Ghoghardiha", "Jhanjharpur", "Kaluahi", "Khadauwan", "Lakhnaur", "Madhubani", "Madhwapur", "Pandaul", "Phulparas", "Rajnagar", "Samastipur", "Thakurganj"] },
+  "Nawada": { blocks: BIHAR_BLOCKS["Nawada"], cities: ["Hisua", "Meskaur", "Nardiganj", "Nawada", "Warisaliganj"] },
+  "Saran": { blocks: BIHAR_BLOCKS["Saran"], cities: ["Amnour", "Baniapur", "Chhapra", "Dariapur", "Daudnagar", "Garkha", "Ishupur", "Jalalpur", "Lakshmipur", "Marhaura", "Nagra", "Panapur", "Parsa", "Revelganj", "Sonepur", "Taraiya"] },
+  "Vaishali": { blocks: BIHAR_BLOCKS["Vaishali"], cities: ["Desri", "Hajipur", "Lalganj", "Mahua", "Raghopur"] },
+  "Madhubani": { blocks: BIHAR_BLOCKS["Madhubani"], cities: ["Benipatti", "Jhanjarpur", "Kaluahi", "Madhubani", "Phulparas"] },
   // --- Maharashtra ---
   "Mumbai City": { blocks: ["Antop Hill", "Byculla", "Chinchpokli", "Colaba", "Cotton Green", "Dadar", "Dharavi", "Fort", "Girgaon", "Grant Road", "Lower Parel", "Malabar Hill", "Marine Lines", "Matunga", "Mazagaon", "Parel", "Sewri", "Sion", "Wadala", "Worli"], cities: ["Colaba", "Fort", "Malabar Hill", "Marine Lines", "Mumbai South"] },
   "Mumbai Suburban": { blocks: ["Andheri", "Bandra", "Borivali", "Chembur", "Dadar", "Dahisar", "Ghatkopar", "Goregaon", "Jogeshwari", "Juhu", "Kandivali", "Khar", "Kurla", "Mahim", "Malad", "Parel", "Powai", "Santacruz", "Vile Parle", "Worli"], cities: ["Andheri", "Bandra", "Borivali", "Chembur", "Goregaon", "Juhu", "Kurla", "Malad", "Powai", "Vile Parle"] },
@@ -73,8 +75,8 @@ export const PLACES_BY_DISTRICT: Record<string, { blocks: string[]; cities: stri
   "Hooghly": { blocks: ["Arambagh", "Balagarh", "Chanditala I", "Chanditala II", "Chinsurah-Magra", "Dhaniakhali", "Goghat I", "Goghat II", "Haripal", "Jagatballavpur", "Khanakul I", "Khanakul II", "Mogra", "Pandua", "Polba-Dadpur", "Pursurah", "Serampore Uttarpara", "Singur", "Tarakeswar"], cities: ["Arambagh", "Bally", "Bandel", "Chandannagar", "Chinsurah", "Dankuni", "Dhaniakhali", "Haripal", "Hooghly", "Pandua", "Polba", "Pursurah", "Rishra", "Serampore", "Singur", "Tarakeswar"] },
   "Nadia": { blocks: ["Chakdaha", "Chapra", "Hanskhali", "Haringhata", "Kaliganj", "Karimpur I", "Karimpur II", "Krishnaganj", "Krishnapur", "Nabadwip", "Nakashipara", "Plassey", "Ranaghat I", "Ranaghat II", "Sabad Krishnapur", "Santipur", "Tehatta I", "Tehatta II"], cities: ["Chakdaha", "Haringhata", "Kalyani", "Karimpur", "Krishnaganj", "Krishnanagar", "Nabadwip", "Nakashipara", "Plassey", "Ranaghat", "Santipur", "Tehatta"] },
   // --- Bihar ---
-  "West Champaran": { blocks: ["Bagaha", "Bettiah", "Bodh Gaya", "Chanpatia", "Dhaka", "Gaunaha", "Harsidhi", "Jogapatti", "Lauriya", "Lauriya Nandangarh", "Madhuban", "Mainatand", "Narkatiaganj", "Nautan", "Nawabganj", "Pawai", "Ramnagar", "Sidhaw", "Sikta", "Sugauli", "Tetaria", "Valmiki Nagar"], cities: ["Bagaha", "Bettiah", "Bodh Gaya", "Chanpatia", "Dhaka", "Gaunaha", "Harsidhi", "Jogapatti", "Lauriya", "Lauriya Nandangarh", "Madhuban", "Mainatand", "Narkatiaganj", "Nautan", "Nawabganj", "Pawai", "Ramnagar", "Sidhaw", "Sikta", "Sugauli", "Tetaria", "Valmiki Nagar"] },
-  "East Champaran": { blocks: ["Adapur", "Areraj", "Banjaria", "Bankatwa", "Chakia", "Chiraia", "Dhaka", "Kesaria", "Kotwa", "Madhuban", "Mehsi", "Motihari", "Nagra", "Paharpur", "Pipra", "Purba Champaran", "Raxaul", "Sangrampur", "Sikta", "Sugauli", "Tetaria", "Turkaulia"], cities: ["Adapur", "Areraj", "Banjar", "Bankatwa", "Chakia", "Chiraia", "Dhaka", "Kesaria", "Kotwa", "Madhuban", "Mehsi", "Motihari", "Nagra", "Paharpur", "Pipra", "Purba Champaran", "Raxaul", "Sangrampur", "Sikta", "Sugauli", "Tetaria", "Turkaulia"] },
+  "West Champaran": { blocks: BIHAR_BLOCKS["West Champaran"], cities: ["Bagaha", "Bettiah", "Bodh Gaya", "Chanpatia", "Dhaka", "Gaunaha", "Harsidhi", "Jogapatti", "Lauriya", "Lauriya Nandangarh", "Madhuban", "Mainatand", "Narkatiaganj", "Nautan", "Nawabganj", "Pawai", "Ramnagar", "Sidhaw", "Sikta", "Sugauli", "Tetaria", "Valmiki Nagar"] },
+  "East Champaran": { blocks: BIHAR_BLOCKS["East Champaran"], cities: ["Adapur", "Areraj", "Banjar", "Bankatwa", "Chakia", "Chiraia", "Dhaka", "Kesaria", "Kotwa", "Madhuban", "Mehsi", "Motihari", "Nagra", "Paharpur", "Pipra", "Purba Champaran", "Raxaul", "Sangrampur", "Sikta", "Sugauli", "Tetaria", "Turkaulia"] },
   // --- Rajasthan ---
   "Jaipur": { blocks: ["Amber", "Bassi", "Chaksu", "Chomu", "Dudu", "Jaipur", "Jamwa Ramgarh", "Kotputli", "Phagi", "Sanganer", "Shahpura", "Viratnagar"], cities: ["Amber", "Bassi", "Chomu", "Dudu", "Jaipur", "Jamwa Ramgarh", "Kotputli", "Phagi", "Sanganer", "Shahpura", "Viratnagar"] },
   "Jodhpur": { blocks: ["Balesar", "Bhopalgarh", "Bilara", "Jodhpur", "Luni", "Osian", "Phalodi", "Shergarh"], cities: ["Balesar", "Bhopalgarh", "Bilara", "Jodhpur", "Luni", "Osian", "Pali", "Phalodi", "Shergarh"] },
@@ -109,9 +111,16 @@ export const PLACES_BY_DISTRICT: Record<string, { blocks: string[]; cities: stri
   "Raigad": { blocks: ["Alibag", "Karjat", "Khalapur", "Mahad", "Mangaon", "Mhasala", "Murud", "Panvel", "Pen", "Poladpur", "Roha", "Sangameshwar", "Shrivardhan", "Sudhagad", "Tala", "Talasari", "Uran"], cities: ["Alibag", "Karjat", "Khalapur", "Mahad", "Mangaon", "Mhasala", "Murud", "Panvel", "Pen", "Poladpur", "Roha", "Sangameshwar", "Shrivardhan", "Sudhagad", "Tala", "Uran"] },
 };
 
-/** Blocks in a district, empty where the district is not mapped. */
-export const blocksFor = (district: string) =>
-  PLACES_BY_DISTRICT[(district || "").trim()]?.blocks ?? [];
+/**
+ * Blocks in a district, empty where the district is not mapped. Pass the state
+ * where it is known: Bihar's list is complete, and its Aurangabad is not
+ * Maharashtra's.
+ */
+export const blocksFor = (district: string, state?: string) => {
+  const key = (district || "").trim();
+  if ((state || "").trim() === "Bihar" && BIHAR_BLOCKS[key]) return BIHAR_BLOCKS[key];
+  return PLACES_BY_DISTRICT[key]?.blocks ?? [];
+};
 
 /** Towns and cities in a district, empty where the district is not mapped. */
 export const citiesFor = (district: string) =>

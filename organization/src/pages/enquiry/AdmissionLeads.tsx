@@ -19,7 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   CalendarClock,
   CheckCircle2,
@@ -135,12 +135,16 @@ export default function AdmissionLeads() {
   const inState = directory.filter((b) => !leadState || canonicalState(b.state) === leadState);
   const inDistrict = inState.filter((b) => !leadDistrict || sameText(b.district, leadDistrict));
   const inBlock = inDistrict.filter((b) => !leadBlock || sameText(b.block, leadBlock));
+  // A centre with no address recorded cannot be ruled out by the place picked,
+  // so it stays on offer below the centres that do match.
+  const placePicked = Boolean(leadState || leadDistrict || leadBlock);
+  const unplaced = placePicked ? directory.filter((b) => !b.state && !b.district && !b.block) : [];
   const formStates = useMemo(
     () => distinct([...INDIAN_STATES, ...directory.map((b) => canonicalState(b.state))]),
     [directory],
   );
   const formDistricts = leadState ? distinct([...districtsFor(leadState), ...inState.map((b) => b.district)]) : [];
-  const formBlocks = leadDistrict ? distinct([...blocksFor(leadDistrict), ...inDistrict.map((b) => b.block)]) : [];
+  const formBlocks = leadDistrict ? distinct([...blocksFor(leadDistrict, leadState), ...inDistrict.map((b) => b.block)]) : [];
 
   const [leads, setLeads] = useState<AdmissionLead[]>([]);
   const [ready, setReady] = useState(true);
@@ -690,6 +694,17 @@ export default function AdmissionLeads() {
                       {inBlock.map((b) => (
                         <SelectItem key={b.id} value={b.id}>{b.district && !leadDistrict ? `${b.name} · ${b.district}` : b.name}</SelectItem>
                       ))}
+                      {unplaced.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel className="text-xs text-muted-foreground">Address not set</SelectLabel>
+                          {unplaced.map((b) => (
+                            <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                      {inBlock.length + unplaced.length === 0 && (
+                        <p className="px-2 py-1.5 text-sm text-muted-foreground">No centre found here</p>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>

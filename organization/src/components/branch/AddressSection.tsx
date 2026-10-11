@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { MapPin } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { INDIAN_STATES, DISTRICTS_BY_STATE, canonicalState } from "@/data/indianStates";
-import { PLACES_BY_DISTRICT } from "@/data/indianCities";
+import { blocksFor, citiesFor } from "@/data/indianCities";
 import { lookupPincode, geocode, uniqueSorted, type PostalPlace } from "@/lib/postal";
 
 export function AddressSection() {
@@ -48,10 +48,8 @@ export function AddressSection() {
         cities: uniqueSorted(postal.map((p) => p.name)),
       };
     }
-    return districtKey
-      ? PLACES_BY_DISTRICT[districtKey] || { blocks: [], cities: [] }
-      : { blocks: [], cities: [] };
-  }, [postal, districtKey]);
+    return { blocks: blocksFor(districtKey, stateKey), cities: citiesFor(districtKey) };
+  }, [postal, districtKey, stateKey]);
 
   // Debounced: fill state / district / block / city / coordinates from the PIN.
   useEffect(() => {

@@ -53,3 +53,4 @@ bun.lockb
 
 # Local Netlify folder
 .netlify
+organization/supabase/.temp/
