@@ -14,7 +14,7 @@ import { DEFAULT_INSTITUTE_NAME } from "./instituteName";
  * not part of the template: the template says where the photo goes, and every
  * card or certificate printed from it fills that box with a different face.
  */
-export type ElementType = "text" | "shape" | "image" | "qr" | "photo";
+export type ElementType = "text" | "shape" | "image" | "qr" | "photo" | "marks-table";
 
 export interface DocElement {
   id: string;
@@ -143,6 +143,7 @@ export const TOKEN_LABELS: Record<string, string> = {
   father_name: "Father's name",
   mother_name: "Mother's name",
   course_name: "Course",
+  course_duration: "Course duration",
   batch_name: "Batch",
   branch_name: "Branch",
   enrollment_no: "Enrollment no",
@@ -159,6 +160,9 @@ export const TOKEN_LABELS: Record<string, string> = {
   phone: "Phone",
   address: "Address",
   valid_until: "Valid until",
+  total_marks: "Total marks",
+  maximum_marks: "Maximum marks",
+  result: "Result",
   grade: "Grade",
   percentage: "Percentage",
   institute: "Institute",
@@ -178,6 +182,7 @@ export const SAMPLE_DATA: TokenData = {
   father_name: "Raj Kumar",
   mother_name: "Sunita Kumar",
   course_name: "AI Full Stack Developer",
+  course_duration: "12 months",
   batch_name: "Morning Batch A",
   branch_name: "Main Branch",
   enrollment_no: "ENR-2026-0125",
@@ -194,6 +199,10 @@ export const SAMPLE_DATA: TokenData = {
   phone: "98765 43210",
   address: "12 MG Road, Pune, Maharashtra",
   valid_until: "31 March 2027",
+  total_marks: "177",
+  maximum_marks: "200",
+  result: "Pass",
+  marks_rows: JSON.stringify([["Computer Fundamentals", 100, 40, 88, "Pass"], ["Office Applications", 100, 40, 89, "Pass"]]),
   grade: "A+",
   percentage: "88.4%",
   // Overwritten from `instituteName()` wherever a document is actually drawn,
@@ -257,14 +266,8 @@ function marksheet(): DocElement[] {
     element("text", { x: 70, y: 265, width: 650, height: 40, text: "Enrollment No: {{enrollment_no}}", fontSize: 18, align: "left" }),
     element("text", { x: 70, y: 310, width: 650, height: 40, text: "Course: {{course_name}}", fontSize: 18, align: "left" }),
     element("text", { x: 70, y: 355, width: 650, height: 40, text: "Batch: {{batch_name}}", fontSize: 18, align: "left" }),
-    element("shape", { x: 70, y: 420, width: 650, height: 320, border: "1px solid #94a3b8", background: "#f8fafc" }),
-    // Four boxes rather than one padded string: runs of spaces collapse in HTML,
-    // and separate columns are what a real marksheet body is filled into.
-    element("text", { x: 90, y: 432, width: 240, height: 36, text: "Subject", fontSize: 17, fontWeight: "700", align: "left" }),
-    element("text", { x: 340, y: 432, width: 110, height: 36, text: "Max", fontSize: 17, fontWeight: "700" }),
-    element("text", { x: 460, y: 432, width: 130, height: 36, text: "Obtained", fontSize: 17, fontWeight: "700" }),
-    element("text", { x: 600, y: 432, width: 100, height: 36, text: "Grade", fontSize: 17, fontWeight: "700" }),
-    element("shape", { x: 90, y: 470, width: 610, height: 1, background: "#94a3b8", border: "none", text: "" }),
+    element("marks-table", { x: 70, y: 420, width: 650, height: 320, fontSize: 16, border: "1px solid #94a3b8" }),
+    element("text", { x: 70, y: 740, width: 650, height: 35, text: "Total: {{total_marks}} / {{maximum_marks}} · Result: {{result}}", fontSize: 18, align: "left" }),
     element("text", { x: 70, y: 780, width: 320, height: 40, text: "Percentage: {{percentage}}", fontSize: 20, fontWeight: "700", align: "left" }),
     element("text", { x: 400, y: 780, width: 320, height: 40, text: "Grade: {{grade}}", fontSize: 20, fontWeight: "700", align: "left" }),
     element("text", { x: 70, y: 950, width: 300, height: 30, text: "Issued {{issue_date}}", fontSize: 15, align: "left" }),
@@ -534,6 +537,24 @@ export function saveDesigns(all: Partial<Record<DocumentKind, DocumentDesign>>) 
   localStorage.setItem(DESIGN_STORAGE_KEY, JSON.stringify(all));
 }
 
+/** Marks cells are escaped as text; template data cannot inject markup. */
+export function marksTableRowHeight(data: TokenData, width = 650, fontSize = 16): number {
+  let rows: unknown[][] = [];
+  try { rows = JSON.parse(data.marks_rows || "[]"); } catch { return 32; }
+  if (!Array.isArray(rows)) return 32;
+  return Math.max(32, ...rows.filter(Array.isArray).flatMap((row) => row.slice(0, 5).map((value, i) => {
+    const chars = Math.max(1, Math.floor((width * (i ? 0.14 : 0.44) - 10) / (fontSize * 0.6)));
+    return Math.ceil(String(value ?? "").length / chars) * fontSize * 1.25 + 8;
+  })));
+}
+export function marksTableHtml(data: TokenData, width = 650, fontSize = 16): string {
+  const escape = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+  let rows: unknown[][] = [];
+  try { const parsed = JSON.parse(data.marks_rows || "[]"); if (Array.isArray(parsed)) rows = parsed.filter(Array.isArray); } catch { /* empty table */ }
+  const rowHeight = marksTableRowHeight(data, width, fontSize);
+  return `<table style="width:100%;border-collapse:collapse;table-layout:fixed;font:inherit;color:inherit"><thead><tr style="height:40px;background:#f1f5f9">${["Subject", "Max", "Pass", "Marks", "Result"].map((h, i) => `<th style="width:${i ? 14 : 44}%;padding:4px;text-align:${i ? "center" : "left"};border:1px solid #cbd5e1">${h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr style="height:${rowHeight}px">${r.slice(0, 5).map((v, i) => `<td style="padding:4px;border:1px solid #cbd5e1;text-align:${i ? "center" : "left"};white-space:normal;overflow-wrap:anywhere;line-height:1.25">${escape(v)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
 /**
  * The printable form of a design. Kept here rather than in the page so the bulk
  * generators can render the same layout for a list of students later.
@@ -553,6 +574,7 @@ export function designHtml(
       const box =
         `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.width}px;height:${el.height}px;` +
         `transform:rotate(${el.rotate}deg);opacity:${el.opacity};z-index:${el.z};`;
+      if (el.type === "marks-table") return `<div style="${box}font-size:${el.fontSize}px;color:${el.color};overflow:hidden">${marksTableHtml(data, el.width, el.fontSize)}</div>`;
       if (el.type === "text") {
         const justify =
           el.align === "left" ? "flex-start" : el.align === "right" ? "flex-end" : "center";

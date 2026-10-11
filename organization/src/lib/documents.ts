@@ -9,6 +9,9 @@ export type StudentDocument = {
   enrollmentNo?: string;
   applicationNo?: string;
   admissionDate: string;
+  branchId?: string;
+  issueDate?: string;
+  examinationDate?: string;
   /** The roll number the institute assigns, printed beside the photograph. */
   rollNo?: string;
   fatherName?: string;
@@ -18,7 +21,8 @@ export type StudentDocument = {
   dateOfBirth?: string;
   /** A data URL. Drawn into the marksheet's photograph box when present. */
   photo?: string | null;
-  course?: { name: string; code?: string };
+  course?: { name: string; code?: string; duration?: string };
+  session?: string;
   batch?: { name: string };
   branch: {
     name: string;
@@ -277,7 +281,7 @@ export async function marksheetPdf(s: StudentDocument) {
   const right = width - margin;
   const name = [s.firstName, s.lastName].filter(Boolean).join(" ") || "-";
   const roll = s.rollNo || s.enrollmentNo || s.applicationNo || "-";
-  const award = s.awarding ?? {};
+  const award = { session: s.session, examMonthYear: s.examinationDate ? new Date(s.examinationDate).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : undefined, ...s.awarding };
 
   /* ---- header band: photograph, issuing block, verification code ---- */
   doc.setDrawColor(120);
@@ -398,8 +402,8 @@ export async function marksheetPdf(s: StudentDocument) {
   y += 8;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
-  doc.text(`Result: ${summary.result}`, margin, y);
-  dotted(doc, margin + 34, right - 60, y + 1.2);
+  doc.text(`Result: ${summary.result}${summary.max ? `   |   Percentage: ${(summary.total / summary.max * 100).toFixed(2)}%` : ""}`, margin, y);
+  dotted(doc, margin + 100, right - 60, y + 1.2);
 
   const notes = award.notes?.filter(Boolean) ?? [];
   if (notes.length) {
@@ -428,67 +432,69 @@ export async function marksheetPdf(s: StudentDocument) {
     align: "center",
   });
 
+  if (s.issueDate) doc.text(`Issue date: ${new Date(s.issueDate).toLocaleDateString("en-IN")}`, margin, signY + 5);
   save(doc, `marksheet-${s.enrollmentNo || s.applicationNo || name}.pdf`);
 }
 
-export function certificatePdf(s: StudentDocument) {
-  const doc = new jsPDF("landscape");
-  doc.setFillColor(24, 24, 27);
-  doc.rect(0, 0, 297, 210, "F");
-  doc.setDrawColor(199, 255, 47);
-  doc.setLineWidth(2);
-  doc.roundedRect(10, 10, 277, 190, 5, 5);
-  doc.setTextColor(199, 255, 47);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text(instituteName().toUpperCase(), 148.5, 38, { align: "center" });
-  doc.setTextColor(255);
-  doc.setFontSize(12);
-  doc.text("CERTIFICATE OF COURSE COMPLETION", 148.5, 57, { align: "center" });
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(190);
-  doc.setFontSize(11);
-  doc.text("This is to certify that", 148.5, 78, { align: "center" });
-  doc.setTextColor(255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(30);
-  doc.text(`${s.firstName} ${s.lastName}`, 148.5, 101, { align: "center" });
-  doc.setDrawColor(199, 255, 47);
-  doc.line(78, 108, 219, 108);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  // "S/o Ram Singh" under the name, which is how a certificate identifies its
-  // holder. Printed only when the admission recorded both halves of it.
-  if (s.parentage && s.fatherName) {
-    doc.setFontSize(11);
-    doc.text(`${s.parentage} ${s.fatherName}`, 148.5, 116, { align: "center" });
-    doc.setFontSize(12);
+export async function certificatePdf(s: StudentDocument) {
+  const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+  const navy = "#173653";
+  const gold = "#a77a32";
+  const name = [s.firstName, s.lastName].filter(Boolean).join(" ");
+  const reference = s.enrollmentNo || s.applicationNo || "";
+  const summary = marksheetSummary(s.examResults);
+  doc.setFillColor("#fffdf8"); doc.rect(0, 0, 210, 297, "F");
+  doc.setDrawColor(navy); doc.setLineWidth(1); doc.rect(10, 10, 190, 277);
+  doc.setDrawColor(gold); doc.setLineWidth(0.35); doc.rect(13, 13, 184, 271);
+  if (s.branch.logo) {
+    try { doc.addImage(s.branch.logo, 92, 20, 26, 26); } catch { /* optional logo */ }
   }
-  doc.text(
-    `has successfully completed ${s.course?.name || "the assigned course"}`,
-    148.5,
-    126,
-    { align: "center" },
-  );
-  doc.setTextColor(190);
-  doc.setFontSize(10);
-  doc.text(
-    `Enrollment: ${s.enrollmentNo || "Pending"}  |  Institute: ${s.branch.name}`,
-    148.5,
-    143,
-    { align: "center" },
-  );
-  doc.setTextColor(255);
-  doc.text("AUTHORIZED SIGNATORY", 228, 176, { align: "center" });
-  doc.text(new Date().toLocaleDateString("en-IN"), 69, 176, {
-    align: "center",
+  doc.setTextColor(navy); doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+  const heading = doc.splitTextToSize((s.branch.organization.name || instituteName()).toUpperCase(), 170);
+  doc.text(heading, 105, s.branch.logo ? 48 : 37, { align: "center" });
+  const headingY = (s.branch.logo ? 48 : 37) + (heading.length - 1) * 8;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  doc.text(s.branch.name, 105, headingY + 9, { align: "center", maxWidth: 170 });
+  doc.setDrawColor(gold); doc.line(30, headingY + 16, 180, headingY + 16);
+  doc.setFont("times", "bold"); doc.setFontSize(28); doc.setTextColor(gold);
+  const titleY = headingY + 25;
+  doc.text("Certificate", 105, titleY, { align: "center" });
+  doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(navy);
+  doc.text("OF COURSE COMPLETION", 105, titleY + 8, { align: "center" });
+  let y = titleY + 22;
+  const fields = [["ENROLLMENT NO.", reference || "-"], ["ROLL NO.", s.rollNo || "-"], ["SESSION", s.session || "-"]];
+  fields.forEach(([label, value], i) => {
+    const x = 23 + i * 55;
+    doc.setDrawColor("#d9d0bf"); doc.rect(x, y, 55, 17);
+    doc.setFontSize(7); doc.setFont("helvetica", "normal"); doc.text(label, x + 3, y + 5);
+    doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.text(value, x + 3, y + 12, { maxWidth: 49 });
   });
-  doc.setTextColor(199, 255, 47);
-  doc.setFontSize(8);
-  doc.text("Digitally generated from verified ERP records", 148.5, 190, {
-    align: "center",
-  });
-  save(doc, `certificate-${s.enrollmentNo}.pdf`);
+  y += 31;
+  if (s.photo) { try { doc.addImage(s.photo, 91, y, 28, 32); y += 38; } catch { /* optional photograph */ } }
+  doc.setFont("times", "italic"); doc.setFontSize(14); doc.text("This is to certify that", 105, y, { align: "center" });
+  y += 13;
+  doc.setFont("times", "bold"); doc.setFontSize(23);
+  const names = doc.splitTextToSize(name, 160); doc.text(names, 105, y, { align: "center" }); y += names.length * 9;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10);
+  if (s.fatherName) { doc.text(`${s.parentage || "Father / Guardian:"} ${s.fatherName}`, 105, y, { align: "center", maxWidth: 160 }); y += 9; }
+  doc.text("has successfully completed the prescribed course in", 105, y, { align: "center" }); y += 11;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+  const course = doc.splitTextToSize(s.course?.name || "", 160); doc.text(course, 105, y, { align: "center" }); y += course.length * 6 + 6;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+  if (s.course?.duration) { doc.text(`Course duration: ${s.course.duration}`, 105, y, { align: "center" }); y += 7; }
+  if (summary.max) { doc.text(`Marks: ${summary.total} / ${summary.max}   |   Percentage: ${(summary.total / summary.max * 100).toFixed(2)}%`, 105, y, { align: "center" }); y += 7; }
+  if (s.examinationDate) doc.text(`Examination conducted: ${new Date(s.examinationDate).toLocaleDateString("en-IN")}`, 105, y, { align: "center" });
+  const issued = new Date(s.issueDate || Date.now()).toLocaleDateString("en-IN");
+  doc.setFontSize(9); doc.text(`Issued: ${issued}`, 25, 258);
+  doc.setDrawColor(navy); doc.line(137, 253, 184, 253);
+  doc.setFontSize(8); doc.text("AUTHORIZED SIGNATORY", 160.5, 258, { align: "center" });
+  if (reference) {
+    const qr = await QRCode.toDataURL(`enrollment:${reference}`, { margin: 1, width: 128 });
+    doc.addImage(qr, "PNG", 94, 249, 22, 22);
+  }
+  doc.setFontSize(7); doc.setTextColor("#6b7280");
+  doc.text(`Student record reference: ${reference || "-"}`, 105, 278, { align: "center" });
+  save(doc, `certificate-${reference || s.firstName}.pdf`);
 }
 
 export function feeStatementPdf(record: {

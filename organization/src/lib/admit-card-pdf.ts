@@ -23,7 +23,8 @@ function drawCard(
   student: AdmitCardStudent,
   page: { width: number; height: number },
 ) {
-  const exam = findExam(template.exam);
+  const exam = template.liveExam || findExam(template.exam);
+  const institute = template.institute || INSTITUTE;
   const left = MARGIN;
   const right = page.width - MARGIN;
   const width = right - left;
@@ -36,12 +37,12 @@ function drawCard(
   doc.setTextColor(24, 24, 27);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(INSTITUTE.name, page.width / 2, y, { align: "center" });
+  doc.text(institute.name, page.width / 2, y, { align: "center" });
   y += 5;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(110);
-  doc.text(INSTITUTE.address, page.width / 2, y, { align: "center" });
+  doc.text(institute.address, page.width / 2, y, { align: "center" });
 
   y += 5;
   doc.setDrawColor(225);
@@ -60,7 +61,9 @@ function drawCard(
     doc.rect(left + 8, y, 26, 32);
     doc.setFontSize(7);
     doc.setTextColor(150);
-    doc.text("PHOTO", left + 21, y + 17, { align: "center" });
+    if (student.photo) {
+      try { doc.addImage(student.photo, left + 8, y, 26, 32); } catch { doc.text("PHOTO", left + 21, y + 17, { align: "center" }); }
+    } else doc.text("PHOTO", left + 21, y + 17, { align: "center" });
     textX = left + 42;
   }
 
@@ -74,8 +77,10 @@ function drawCard(
     doc.text(`${label}:`, textX, cursor);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(24, 24, 27);
-    doc.text(value, textX + 34, cursor);
-    cursor += 6;
+    const valueWidth = right - 8 - textX - 34;
+    const lines = doc.splitTextToSize(value, valueWidth);
+    doc.text(lines, textX + 34, cursor);
+    cursor += Math.max(6, lines.length * 4.5);
   }
 
   y = Math.max(cursor, y + 38) + 6;
@@ -108,13 +113,14 @@ function drawCard(
     y += lines.length * 4.5;
   }
 
-  const footerY = page.height - MARGIN - 12;
+  const footerY = page.height - MARGIN - 18;
   if (template.showQr) {
     doc.setDrawColor(200);
     doc.rect(left + 8, footerY - 8, 20, 20);
     doc.setFontSize(7);
     doc.setTextColor(150);
-    doc.text("QR", left + 18, footerY + 3, { align: "center" });
+    if (student.qr) doc.addImage(student.qr, "PNG", left + 8, footerY - 8, 20, 20);
+    else doc.text("QR", left + 18, footerY + 3, { align: "center" });
   }
   doc.setDrawColor(60);
   doc.line(right - 50, footerY + 6, right - 8, footerY + 6);

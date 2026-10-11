@@ -28,12 +28,15 @@ import { admitCardsPdf } from "@/lib/admit-card-pdf";
 import {
   ADMIT_CARD_TEMPLATES_KEY,
   AdmitCardTemplate,
-  EXAMS,
+  type Exam as CardExam,
   admitCardHtml,
   admitCardSheetHtml,
-  findExam,
+
 } from "@/data/admit-card-templates";
-import { getStudents, getBatches, getInvoices } from "@/lib/supabase/data";
+import QRCode from "qrcode";
+import { isExamCandidate } from "@/lib/assessments";
+import { photoOf } from "@/lib/studentTemplateDocument";
+import { getStudents, getBatches, getInvoices, getExams, getStudentDocument } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface AdmitCardStudent {
@@ -43,10 +46,14 @@ interface AdmitCardStudent {
   section: string;
   rollNo: string;
   feeStatus: "paid" | "pending" | "overdue";
+  branchId?: string;
+  batchId?: string;
+  courseId?: string;
+  courseIds?: string[];
+  photo?: string;
+  qr?: string;
 }
 
-const CLASSES = ["8th", "9th", "10th"];
-const SECTIONS = ["A", "B"];
 
 const FEE_BADGES: Record<string, string> = {
   paid: "bg-green-500/10 text-green-600 border-green-200",
@@ -60,7 +67,8 @@ export default function GenerateAdmitCards() {
   const [templates, setTemplates] = useState<AdmitCardTemplate[]>([]);
   const [admitStudents, setAdmitStudents] = useState<AdmitCardStudent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [batchMap, setBatchMap] = useState<Record<string, { name: string; code: string }>>({});
+  const [liveExams, setLiveExams] = useState<Array<CardExam & { branchId: string; courseId: string; batchId?: string }>>([]);
+  const [institute, setInstitute] = useState<{ name: string; address: string }>();
 
   const [examValue, setExamValue] = useState("");
   const [templateId, setTemplateId] = useState("");
@@ -75,35 +83,49 @@ export default function GenerateAdmitCards() {
     () => templates.find((t) => t.id === templateId),
     [templates, templateId],
   );
-  const exam = useMemo(() => findExam(examValue), [examValue]);
-  const effectiveTemplate = template;
-
+  const exam = liveExams.find((e) => e.value === examValue);
+  const effectiveTemplate = template && exam && institute ? { ...template, exam: exam.value, liveExam: exam, institute } : undefined;
+  const CLASSES = [...new Set(admitStudents.map((s) => s.class))].sort();
+  const SECTIONS = [...new Set(admitStudents.map((s) => s.section))].sort();
   useEffect(() => {
     let cancelled = false;
+    setInstitute(undefined);
+    const first = admitStudents.find((s) => exam && isExamCandidate(s, exam));
+    if (first) getStudentDocument(first.id, user?.branchId || null).then(({ data }) => {
+      if (!cancelled) setInstitute({ name: data.branch.organization.name || data.branch.name, address: data.branch.address || "" });
+    }).catch(() => { if (!cancelled) toast({ title: "Could not load institute details", variant: "destructive" }); });
+    return () => { cancelled = true; };
+  }, [examValue, admitStudents, user?.branchId, toast]);
+
+  useEffect(() => {
     try {
       const raw = localStorage.getItem(ADMIT_CARD_TEMPLATES_KEY);
       if (raw) setTemplates(JSON.parse(raw));
     } catch { /* use empty */ }
-    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const branchId = user?.branchId || "";
+    const branchId = user?.branchId || null;
     Promise.all([
       getStudents(branchId, 1, 100),
       getBatches(branchId),
       getInvoices(user?.branchId || ""),
+      getExams(branchId),
     ])
-      .then(([studentsRes, batchesRes, invoicesRes]) => {
+      .then(async ([studentsRes, batchesRes, invoicesRes, examsRes]) => {
         if (cancelled) return;
         // Build batch lookup: batchId -> { name, code }
         const map: Record<string, { name: string; code: string }> = {};
         for (const b of batchesRes.data || []) {
           map[b.id] = { name: b.name, code: b.code };
         }
-        setBatchMap(map);
+        setLiveExams(examsRes.data.filter((e) => e.status !== "CANCELLED").map((e) => ({
+          value: e.id, label: `${e.name} · ${e.course.name}`, branchId: e.branchId, courseId: e.courseId, batchId: e.batchId,
+          window: new Date(e.examDate).toLocaleDateString("en-IN"),
+          schedule: [{ subject: e.subject, when: new Date(e.examDate).toLocaleDateString("en-IN") }],
+        })));
 
         // Build invoice lookup: studentId -> worst outstanding state.
         // The live FeeStatus enum is DUE | PARTIAL | PAID | VOID - there is no
@@ -127,18 +149,19 @@ export default function GenerateAdmitCards() {
         const mapped: AdmitCardStudent[] = (studentsRes.data || []).map((s: any) => {
           const batchKey = s.batchId || "";
           const batch = map[batchKey];
-          const parts = batch?.name?.split(/\s+/) || ["—", "—"];
           const feeStatus = invoiceByStudent[s.id] || "pending";
           return {
             id: s.id,
+            branchId: s.branchId, batchId: s.batchId, courseId: s.courseId, courseIds: s.courseIds, photo: photoOf(s),
             name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
-            class: parts[0] || "—",
-            section: parts[1] || "—",
-            rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
+            class: batch?.name || "Unassigned",
+            section: batch?.code || "—",
+            rollNo: s.rollNo || s.enrollmentNo || s.applicationNo || "",
             feeStatus,
           };
         });
-        setAdmitStudents(mapped);
+        const prepared = await Promise.all(mapped.map(async (s) => ({ ...s, qr: await QRCode.toDataURL(`enrollment:${s.rollNo}`, { margin: 1, width: 128 }) })));
+        if (!cancelled) setAdmitStudents(prepared);
       })
       .catch(() => {
         if (!cancelled) {
@@ -153,12 +176,13 @@ export default function GenerateAdmitCards() {
     const term = searchTerm.trim().toLowerCase();
     return admitStudents.filter(
       (s) =>
+        (!exam || isExamCandidate(s, exam)) &&
         (classFilter === "all" || s.class === classFilter) &&
         (sectionFilter === "all" || s.section === sectionFilter) &&
         (feeFilter === "all" || s.feeStatus === feeFilter) &&
-        (!term || s.name.toLowerCase().includes(term) || s.id.toLowerCase().includes(term)),
+        (!term || s.name.toLowerCase().includes(term) || s.rollNo.toLowerCase().includes(term)),
     );
-  }, [classFilter, sectionFilter, feeFilter, searchTerm, admitStudents]);
+  }, [classFilter, sectionFilter, feeFilter, searchTerm, admitStudents, exam]);
 
   /** Rows hidden by the filters are not printed, even if they were ticked. */
   const chosen = filteredStudents.filter((s) => selectedStudents.includes(s.id));
@@ -175,6 +199,7 @@ export default function GenerateAdmitCards() {
 
   /** Every output button needs the same two things picked. */
   const ready = () => {
+    if (!exam) { toast({ title: "Select a live examination first", variant: "destructive" }); return false; }
     if (!effectiveTemplate) {
       toast({ title: "Pick a template", description: "Choose an admit card template first.", variant: "destructive" });
       return false;
@@ -232,12 +257,12 @@ export default function GenerateAdmitCards() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Select Examination</Label>
-              <Select value={examValue} onValueChange={setExamValue}>
+              <Select value={examValue} onValueChange={(id) => { setExamValue(id); setSelectedStudents([]); setClassFilter("all"); setSectionFilter("all"); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose examination" />
                 </SelectTrigger>
                 <SelectContent>
-                  {EXAMS.map((option) => (
+                  {liveExams.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       <div>
                         <div>{option.label}</div>
@@ -256,7 +281,7 @@ export default function GenerateAdmitCards() {
                   <SelectValue placeholder="Choose template" />
                 </SelectTrigger>
                 <SelectContent>
-                  {templates.map((t) => (
+                  {templates.filter((t) => t.status === "active").map((t) => (
                     <SelectItem key={t.id} value={t.id}>
                       {t.name}
                     </SelectItem>
@@ -271,13 +296,13 @@ export default function GenerateAdmitCards() {
             </div>
 
             <div className="space-y-2">
-              <Label>Class</Label>
+              <Label>Batch</Label>
               <Select value={classFilter} onValueChange={setClassFilter}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Classes</SelectItem>
+                  <SelectItem value="all">All Batches</SelectItem>
                   {CLASSES.map((value) => (
                     <SelectItem key={value} value={value}>{value}</SelectItem>
                   ))}
@@ -286,15 +311,15 @@ export default function GenerateAdmitCards() {
             </div>
 
             <div className="space-y-2">
-              <Label>Section</Label>
+              <Label>Batch code</Label>
               <Select value={sectionFilter} onValueChange={setSectionFilter}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Sections</SelectItem>
+                  <SelectItem value="all">All Batch Codes</SelectItem>
                   {SECTIONS.map((value) => (
-                    <SelectItem key={value} value={value}>Section {value}</SelectItem>
+                    <SelectItem key={value} value={value}>{value}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -336,15 +361,15 @@ export default function GenerateAdmitCards() {
             </div>
 
             <div className="flex flex-col gap-2 pt-4">
-              <Button className="w-full" disabled={chosen.length === 0} onClick={openPreview}>
+              <Button className="w-full" disabled={chosen.length === 0 || !effectiveTemplate || loading} onClick={openPreview}>
                 <Eye className="h-4 w-4 mr-2" />
                 Preview Admit Cards
               </Button>
-              <Button variant="outline" className="w-full" disabled={chosen.length === 0} onClick={print}>
+              <Button variant="outline" className="w-full" disabled={chosen.length === 0 || !effectiveTemplate || loading} onClick={print}>
                 <Printer className="h-4 w-4 mr-2" />
                 Print Admit Cards
               </Button>
-              <Button variant="outline" className="w-full" disabled={chosen.length === 0} onClick={download}>
+              <Button variant="outline" className="w-full" disabled={chosen.length === 0 || !effectiveTemplate || loading} onClick={download}>
                 <Download className="h-4 w-4 mr-2" />
                 Download PDF
               </Button>
@@ -382,7 +407,7 @@ export default function GenerateAdmitCards() {
                     </th>
                     <th className="p-3 text-left text-sm font-medium">Student ID</th>
                     <th className="p-3 text-left text-sm font-medium">Name</th>
-                    <th className="p-3 text-left text-sm font-medium">Class</th>
+                    <th className="p-3 text-left text-sm font-medium">Batch</th>
                     <th className="p-3 text-left text-sm font-medium">Roll No</th>
                     <th className="p-3 text-left text-sm font-medium">Fee Status</th>
                   </tr>

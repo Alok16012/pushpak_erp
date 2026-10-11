@@ -150,7 +150,7 @@ export default function MyResults() {
     if (!doc) return;
     setProcessing(true);
     try {
-      certificatePdf(doc);
+      await certificatePdf(doc);
       toast({ title: "Certificate downloaded" });
     } finally {
       setProcessing(false);

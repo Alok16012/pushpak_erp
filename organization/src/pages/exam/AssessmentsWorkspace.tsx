@@ -17,15 +17,18 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
+import { downloadCsv } from "@/lib/export";
 import { printFromTemplate } from "@/lib/studentTemplateDocument";
 import {
   admissionPdf,
   certificatePdf,
   marksheetPdf,
+  marksheetSummary,
   type StudentDocument,
 } from "@/lib/documents";
 import { Award, Download, FileCheck2, GraduationCap, Save, type LucideIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { isExamCandidate, validExamMarks, validScore } from "@/lib/assessments";
 import { newId } from "@/lib/id";
 import {
   getExams,
@@ -45,6 +48,9 @@ type Exam = {
   maxMarks: number;
   passMarks: number;
   status: string;
+  branchId: string;
+  courseId: string;
+  batchId?: string;
   course: { name: string };
   results: Array<{
     marks: number;
@@ -56,6 +62,10 @@ type Student = {
   firstName: string;
   lastName: string;
   enrollmentNo?: string;
+  branchId?: string;
+  courseId?: string;
+  courseIds?: string[];
+  batchId?: string;
 };
 type Course = { id: string; name: string; code: string };
 type Batch = { id: string; name: string; code: string; courseId: string };
@@ -112,6 +122,26 @@ export default function AssessmentsWorkspace() {
   const [marksExamId, setMarksExamId] = useState("");
   const [marks, setMarks] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [documentBranch, setDocumentBranch] = useState("all");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [documentRecord, setDocumentRecord] = useState<StudentDocument | null>(null);
+  const [documentLoading, setDocumentLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [issueDate, setIssueDate] = useState(() => new Date().toLocaleDateString("en-CA"));
+  const [examinationDate, setExaminationDate] = useState("");
+  const documentStudents = students.filter((s) => (documentBranch === "all" || s.branchId === documentBranch)
+    && `${s.firstName} ${s.lastName} ${s.enrollmentNo || ""}`.toLowerCase().includes(studentSearch.toLowerCase()));
+  useEffect(() => {
+    let cancelled = false;
+    setDocumentRecord(null);
+    if (!studentId) return;
+    setDocumentLoading(true);
+    getStudentDocument(studentId, branchId).then((r) => { if (!cancelled) setDocumentRecord(r.data); })
+      .catch((e) => { if (!cancelled) toast({ title: "Could not load student document", description: e.message, variant: "destructive" }); })
+      .finally(() => { if (!cancelled) setDocumentLoading(false); });
+    return () => { cancelled = true; };
+  }, [studentId, branchId, toast]);
+  const documentSummary = marksheetSummary(documentRecord?.examResults || []);
 
   /*
    * An organisation account belongs to no branch, and an exam must: the
@@ -164,7 +194,7 @@ export default function AssessmentsWorkspace() {
             variant: "destructive",
           }),
         ),
-    [toast],
+    [toast, branchId, orgId],
   );
   useEffect(() => {
     void load();
@@ -180,7 +210,7 @@ export default function AssessmentsWorkspace() {
   const examStudents = useMemo(
     () =>
       selectedExam
-        ? students.filter((s) => s.id)
+        ? students.filter((s) => isExamCandidate(s, selectedExam))
         : [],
     [students, selectedExam],
   );
@@ -223,6 +253,7 @@ export default function AssessmentsWorkspace() {
   const saveMarks = async (publish: boolean) => {
     if (!selectedExam) return;
     const results = Object.entries(marks)
+      .filter(([id]) => examStudents.some((s) => s.id === id))
       .filter(([, value]) => value !== "")
       .map(([student, value]) => ({ studentId: student, marks: Number(value) }));
     if (!results.length) {
@@ -231,6 +262,10 @@ export default function AssessmentsWorkspace() {
         description: "Enter marks for at least one student.",
         variant: "destructive",
       });
+      return;
+    }
+    if (results.some((r) => !validScore(r.marks, selectedExam.maxMarks))) {
+      toast({ title: "Invalid marks", description: `Enter a number between 0 and ${selectedExam.maxMarks}.`, variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -253,9 +288,14 @@ export default function AssessmentsWorkspace() {
   };
 
   const generate = async (kind: "admission" | "marksheet" | "certificate") => {
-    if (!studentId) return;
+    if (!studentId || generating || !issueDate) return;
+    setGenerating(true);
     try {
-      const body = await getStudentDocument(studentId, branchId);
+      const body: { data: StudentDocument } = await getStudentDocument(studentId, branchId);
+      body.data = { ...body.data, issueDate, examinationDate };
+      if (kind !== "admission" && !body.data.examResults.length) throw new Error("Publish this student's exam results before generating documents.");
+      if (kind === "certificate" && marksheetSummary(body.data.examResults).result !== "Pass") throw new Error("The student must pass every published paper before receiving a completion certificate.");
+      if (kind === "certificate" && !body.data.course?.name) throw new Error("Assign the student's course first.");
       // The institute's own template first: a certificate or marksheet the
       // office designed and gave this branch beats the layout written into
       // documents.ts, which is the same for everyone using this app.
@@ -266,8 +306,8 @@ export default function AssessmentsWorkspace() {
               kind === "certificate" ? "certificate" : "marksheet",
               body.data,
               user?.organizationId ?? null,
-              branchId,
-            ).catch(() => false);
+              body.data.branchId || branchId,
+            );
       if (printed) {
         toast({
           title: "Document ready",
@@ -293,6 +333,8 @@ export default function AssessmentsWorkspace() {
         description: e instanceof Error ? e.message : "Try again",
         variant: "destructive",
       });
+    } finally {
+      setGenerating(false);
     }
   };
   return (
@@ -310,7 +352,7 @@ export default function AssessmentsWorkspace() {
           [
             ["Published exams", published.length, FileCheck2],
             ["Recorded results", results.length, GraduationCap],
-            ["Ready documents", 3, Award],
+            ["Students with published results", new Set(published.flatMap((e) => e.results.map((r) => r.studentId))).size, Award],
           ] satisfies Array<[string, number, LucideIcon]>
         ).map(([label, value, Icon]) => (
           <Card key={label}>
@@ -336,7 +378,7 @@ export default function AssessmentsWorkspace() {
         <TabsContent value="results">
           <Card>
             <CardHeader>
-              <CardTitle>Published results</CardTitle>
+              <div className="flex flex-wrap justify-between gap-3"><CardTitle>Exam results</CardTitle><Button variant="outline" disabled={!results.length} onClick={() => downloadCsv("exam-results.csv", results.map((r) => { const s = students.find((s) => s.id === r.studentId); return { Enrollment: s?.enrollmentNo || "", Student: s ? `${s.firstName} ${s.lastName}` : r.studentId, Exam: r.exam.name, Subject: r.exam.subject, Date: r.exam.examDate, Maximum: r.exam.maxMarks, PassMarks: r.exam.passMarks, Marks: r.marks, Result: r.marks >= r.exam.passMarks ? "Pass" : "Fail", Status: r.exam.status }; }))}><Download className="mr-2 h-4 w-4" />Export marks report</Button></div>
             </CardHeader>
             <CardContent className="space-y-3">
               {exams.map((e) => (
@@ -516,7 +558,8 @@ export default function AssessmentsWorkspace() {
                     !draft.courseId ||
                     draft.name.trim().length < 2 ||
                     draft.subject.trim().length < 2 ||
-                    !draft.examDate
+                    !draft.examDate ||
+                    !validExamMarks(Number(draft.maxMarks), Number(draft.passMarks))
                   }
                   onClick={handleCreateExam}
                 >
@@ -634,15 +677,17 @@ export default function AssessmentsWorkspace() {
               <CardTitle>Generate verified documents</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="max-w-xl space-y-4">
-                <div>
+              <div className="space-y-4">
+                {pickBranch && <div className="max-w-xl space-y-2"><Label>Centre / Branch</Label><Select value={documentBranch} onValueChange={(id) => { setDocumentBranch(id); setStudentId(""); }}><SelectTrigger aria-label="Document branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branchOptions.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select></div>}
+                <Input aria-label="Search document students" placeholder="Search student name or enrollment number" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="max-w-xl" />
+                <div className="max-w-xl">
                   <p className="mb-2 text-sm font-medium">Student record</p>
                   <Select value={studentId} onValueChange={setStudentId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select student" />
                     </SelectTrigger>
                     <SelectContent>
-                      {students.map((s) => (
+                      {documentStudents.map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.firstName} {s.lastName} ·{" "}
                           {s.enrollmentNo || "Pending"}
@@ -651,7 +696,17 @@ export default function AssessmentsWorkspace() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid max-w-xl gap-4 sm:grid-cols-2">
+                  <div className="space-y-2"><Label htmlFor="documentIssueDate">Issue date *</Label><DatePicker id="documentIssueDate" value={issueDate} onChange={setIssueDate} /></div>
+                  <div className="space-y-2"><Label htmlFor="documentExamDate">Examination conducted date</Label><DatePicker id="documentExamDate" value={examinationDate} onChange={setExaminationDate} /></div>
+                </div>
+                {documentLoading && <p className="text-sm text-muted-foreground">Loading published results…</p>}
+                {documentRecord && <div className="rounded-xl border p-4 space-y-3">
+                  <div className="flex flex-wrap justify-between gap-2"><div><p className="font-semibold">{documentRecord.firstName} {documentRecord.lastName}</p><p className="text-sm text-muted-foreground">{documentRecord.course?.name} · {documentRecord.branch.name}</p></div><Badge>{documentSummary.result} · {documentSummary.total}/{documentSummary.max}</Badge></div>
+                  <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-2">Subject</th><th className="p-2">Exam</th><th className="p-2">Maximum</th><th className="p-2">Pass marks</th><th className="p-2">Obtained</th><th className="p-2">Result</th></tr></thead><tbody>{documentRecord.examResults.map((r, i) => <tr className="border-b" key={i}><td className="p-2">{r.exam.subject}</td><td className="p-2">{r.exam.name}</td><td className="p-2">{r.exam.maxMarks}</td><td className="p-2">{r.exam.passMarks}</td><td className="p-2 font-medium">{r.marks}</td><td className="p-2">{r.marks >= r.exam.passMarks ? "Pass" : "Fail"}</td></tr>)}</tbody></table></div>
+                  {!documentRecord.examResults.length && <p className="text-sm text-muted-foreground">No published results. Enter marks and publish the exam before issuing a marksheet or certificate.</p>}
+                </div>}
+                <div className="grid max-w-xl gap-3 sm:grid-cols-3">
                   {(
                     [
                       ["Admission summary", "admission"],
@@ -665,6 +720,7 @@ export default function AssessmentsWorkspace() {
                       key={kind}
                       variant="outline"
                       className="h-24 flex-col gap-2"
+                      disabled={!documentRecord || documentLoading || generating || !issueDate || (kind !== "admission" && !documentRecord.examResults.length) || (kind === "certificate" && documentSummary.result !== "Pass")}
                       onClick={() => generate(kind)}
                     >
                       <Download className="h-5 w-5" />

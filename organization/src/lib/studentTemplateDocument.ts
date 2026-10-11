@@ -3,10 +3,11 @@ import QRCode from "qrcode";
 import {
   SAMPLE_DATA,
   designHtml,
+  marksTableRowHeight,
   type DocumentKind,
   type TokenData,
 } from "@/lib/documentDesigner";
-import type { StudentDocument } from "@/lib/documents";
+import { marksheetSummary, type StudentDocument } from "@/lib/documents";
 import { printHtml } from "@/lib/export";
 import { loadDesignFor } from "@/lib/supabase/documentTemplates";
 
@@ -24,13 +25,25 @@ import { loadDesignFor } from "@/lib/supabase/documentTemplates";
 /** The tokens a template can fill from one student's record. */
 export function tokensFor(student: StudentDocument, extra: TokenData = {}): TokenData {
   const name = [student.firstName, student.lastName].filter(Boolean).join(" ");
-  const issued = new Date().toLocaleDateString("en-IN", {
+  const summary = marksheetSummary(student.examResults);
+  const percentage = summary.max ? Math.round(summary.total / summary.max * 10000) / 100 : 0;
+  const issued = new Date(student.issueDate || Date.now()).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "long",
     year: "numeric",
   });
   const filled: TokenData = {
     student_name: name,
+    total_marks: String(summary.total),
+    maximum_marks: String(summary.max),
+    percentage: summary.max ? `${percentage}%` : "",
+    result: summary.result,
+    grade: summary.result === "Pass" ? (percentage >= 85 ? "A+" : percentage >= 75 ? "A" : percentage >= 60 ? "B" : percentage >= 45 ? "C" : "D") : summary.result === "Fail" ? "F" : "",
+    marks_rows: JSON.stringify(student.examResults.map((r) => [r.exam.subject, r.exam.maxMarks, r.exam.passMarks, r.marks, r.marks >= r.exam.passMarks ? "Pass" : "Fail"])),
+    exam_date: student.examinationDate || "",
+    academic_year: student.session || "",
+    course_duration: student.course?.duration || "",
+
     father_name: student.fatherName || "",
     course_name: student.course?.name || "",
     batch_name: student.batch?.name || "",
@@ -50,13 +63,9 @@ export function tokensFor(student: StudentDocument, extra: TokenData = {}): Toke
     photo: student.photo || "",
   };
 
-  // The sample values stand in only for tokens this record cannot answer, so a
-  // half-filled template still reads as a document rather than as `{{tokens}}`.
-  const data: TokenData = { ...SAMPLE_DATA };
-  for (const [key, value] of Object.entries({ ...filled, ...extra })) {
-    if (value) data[key] = value;
-  }
-  data.photo = extra.photo ?? filled.photo;
+  // Samples belong only in the designer, never in a student's issued document.
+  const data: TokenData = Object.fromEntries(Object.keys(SAMPLE_DATA).map((key) => [key, ""]));
+  Object.assign(data, filled, extra);
   return data;
 }
 
@@ -97,6 +106,25 @@ export async function printFromTemplate(
   if (!template) return false;
 
   const data = tokensFor(student, extra);
+  if (kind === "marksheet") {
+    const tables = design.elements.filter((el) => el.type === "marks-table");
+    // Older designs have only an empty rectangle: use the full PDF instead.
+    if (!tables.length) return false;
+    const capacity = Math.min(...tables.map((el) => Math.floor((el.height - 40) / marksTableRowHeight(data, el.width, el.fontSize))));
+    if (capacity < 1) throw new Error("Increase the marks table height in the template.");
+    const pages: string[] = [];
+    for (let offset = 0; offset < Math.max(1, student.examResults.length); offset += capacity) {
+      const pageData = tokensFor({ ...student, examResults: student.examResults.slice(offset, offset + capacity) }, extra);
+      pageData.percentage = data.percentage;
+      pageData.grade = data.grade;
+      pageData.result = data.result;
+      pageData.total_marks = data.total_marks;
+      pageData.maximum_marks = data.maximum_marks;
+      pages.push(`<div style="page-break-after:always">${designHtml(kind, design, pageData, await qrImages(design, pageData))}</div>`);
+    }
+    printHtml(`${template.name} — ${student.firstName}`, pages.join(""));
+    return true;
+  }
   const qr = await qrImages(design, data);
   const name = [student.firstName, student.lastName].filter(Boolean).join(" ") || "Student";
   printHtml(`${template.name} — ${name}`, designHtml(kind, design, data, qr));
@@ -182,10 +210,8 @@ export function tokensForRecord(student: StudentRecord, extra: TokenData = {}): 
       year: "numeric",
     }),
   };
-  const data: TokenData = { ...SAMPLE_DATA };
-  for (const [key, value] of Object.entries({ ...filled, ...extra })) {
-    if (value) data[key] = value;
-  }
+  const data: TokenData = Object.fromEntries(Object.keys(SAMPLE_DATA).map((key) => [key, ""]));
+  Object.assign(data, filled, extra);
   data.photo = extra.photo ?? photoOf(student);
   return data;
 }

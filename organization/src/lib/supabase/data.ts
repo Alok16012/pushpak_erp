@@ -1,3 +1,4 @@
+import { isExamCandidate, validExamMarks, validScore } from "@/lib/assessments";
 import { supabase, supabaseUrl } from "./client";
 import { KNOWN_COURSE_CATEGORIES } from "../courseCategories";
 import { describeEnumRejection } from "../choices";
@@ -1547,6 +1548,11 @@ export async function addPayment(invoiceId: string, input: Record<string, unknow
    EXAMS
    ============================ */
 
+export type AcademicExam = {
+  id: string; name: string; subject: string; branchId: string; courseId: string; batchId?: string;
+  examDate: string; maxMarks: number; passMarks: number; status: string;
+};
+
 export async function getExams(branchId: string | null) {
   let query = supabase
     .from("exams")
@@ -1555,7 +1561,7 @@ export async function getExams(branchId: string | null) {
   if (branchId) query = query.eq("branchId", branchId);
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  const rows = (data || []) as Record<string, any>[];
+  const rows = (data || []) as AcademicExam[];
 
   // The exam pickers label each exam with its course, and `exams` only carries
   // `courseId`. Resolve the names in one extra request rather than per row.
@@ -1608,6 +1614,8 @@ function extractMissingExamColumn(error: { code?: string; message?: string } | n
 
 export async function createExam(branchId: string | null, input: Record<string, unknown>) {
   if (!branchId) throw new Error("Branch ID required to create exam");
+
+  if (!validExamMarks(Number(input.maxMarks), Number(input.passMarks))) throw new Error("Pass marks must be between zero and the maximum marks.");
 
   let currentPayload: Record<string, unknown> = { ...input, branchId };
 
@@ -1679,6 +1687,18 @@ export async function submitExamResults(examId: string, branchId: string | null,
   const exam = await getExamById(examId, branchId);
   if (!exam) throw new Error("Exam not found");
 
+  if (!results.length) throw new Error("Enter at least one result.");
+  if (new Set(results.map((r) => r.studentId)).size !== results.length) throw new Error("Duplicate student results.");
+  if (results.some((r) => !validScore(r.marks, Number(exam.maxMarks)))) {
+    throw new Error(`Marks must be between 0 and ${exam.maxMarks}.`);
+  }
+  const { data: candidates, error: candidateError } = await supabase.from("students")
+    .select("*").in("id", results.map((r) => r.studentId)).is("deletedAt", null);
+  if (candidateError) throw new Error(candidateError.message);
+  if (candidates?.length !== results.length || candidates.some((s) => !isExamCandidate(s, exam))) {
+    throw new Error("Every student must belong to the exam's branch, course and batch.");
+  }
+
   // exam_results came from Prisma: id and updatedAt are NOT NULL with no
   // database default, and there is no unique (examId, studentId) to upsert
   // on. A student already marked is updated; a new one is inserted whole.
@@ -1711,7 +1731,10 @@ export async function submitExamResults(examId: string, branchId: string | null,
     data = [...saved, ...((inserted || []) as Record<string, unknown>[])];
   }
 
-  if (publish) await supabase.from("exams").update({ status: "PUBLISHED" }).eq("id", examId);
+  if (publish) {
+    const { error } = await supabase.from("exams").update({ status: "PUBLISHED" }).eq("id", examId);
+    if (error) throw new Error(`Marks saved, but publishing failed: ${error.message}`);
+  }
 
   return { success: true, data: data || [] };
 }
@@ -1732,15 +1755,17 @@ export async function getStudentResults(studentId: string, branchId: string, exa
   if (examId) query = query.eq("examId", examId);
   const { data, error } = await query.order("examId", { ascending: false });
   if (error) throw new Error(error.message);
-  const filtered = (data || []).filter((r: any) => r.examId);
-  const result = filtered.map((r: any) => ({ ...r, studentEnrollmentNo: r.studentEnrollmentNo || "", studentFirstName: r.studentFirstName || "", studentLastName: r.studentLastName || "" }));
-  try {
-    const dates: Record<string, string> = {};
-    for (const r of filtered) { if (r.examId && !dates[r.examId]) { const e = await getExamById(r.examId, branchId); dates[r.examId] = e?.examDate || ""; } }
-    return { success: true, data: result.sort((a: any, b: any) => (dates[b.examId] || "").localeCompare(dates[a.examId] || "")) };
-  } catch {
-    return { success: true, data: result };
-  }
+  const examIds = [...new Set((data || []).map((r) => r.examId).filter(Boolean))];
+  let examsQuery = supabase.from("exams").select("*").in("id", examIds).eq("status", "PUBLISHED");
+  if (branchId) examsQuery = examsQuery.eq("branchId", branchId);
+  const { data: examRows, error: examError } = examIds.length ? await examsQuery : { data: [], error: null };
+  if (examError) throw new Error(examError.message);
+  const exams = new Map((examRows || []).map((e) => [e.id, e]));
+  return { success: true, data: (data || []).filter((r) => exams.has(r.examId)).map((r) => {
+    const exam = exams.get(r.examId)!;
+    return { id: r.id, exam: exam.name, subject: exam.subject, maxMarks: Number(exam.maxMarks), passMarks: Number(exam.passMarks), marks: Number(r.marks), examDate: exam.examDate };
+  }).sort((a, b) => String(b.examDate).localeCompare(String(a.examDate))) };
+
 }
 
 /**
@@ -1807,23 +1832,26 @@ export async function getStudentDocument(studentId: string, branchId: string | n
     : { data: [] };
   const payments = (paymentRows || []) as Record<string, any>[];
 
-  const { data: resultRows } = await supabase
+  const { data: resultRows, error: resultError } = await supabase
     .from("exam_results")
     .select("*")
     .eq("studentId", studentId);
+  if (resultError) throw new Error(resultError.message);
   const results = (resultRows || []) as Record<string, any>[];
 
   const examIds = [...new Set(results.map((r) => r.examId).filter(Boolean))];
-  const { data: examRows } = examIds.length
+  const { data: examRows, error: examError } = examIds.length
     ? await supabase.from("exams").select("*").in("id", examIds)
-    : { data: [] };
+    : { data: [], error: null };
+  if (examError) throw new Error(examError.message);
   const exams = new Map((examRows || []).map((e: any) => [e.id, e]));
 
   return {
     success: true,
     data: {
-      firstName: student.firstName || "",
+      firstName: [student.firstName, student.middleName].filter(Boolean).join(" "),
       lastName: student.lastName || "",
+      branchId: student.branchId,
       enrollmentNo: student.enrollmentNo || undefined,
       applicationNo: student.applicationNo || undefined,
       admissionDate: student.admissionDate || student.createdAt || "",
@@ -1845,7 +1873,8 @@ export async function getStudentDocument(studentId: string, branchId: string | n
       photo:
         jsonbImage((student.documents as Record<string, unknown> | null)?.passportPhoto) ||
         jsonbImage(student.photo),
-      course: course ? { name: course.name, code: course.code || undefined } : undefined,
+      course: course ? { name: course.name, code: course.code || undefined, duration: course.durationMonths ? `${course.durationMonths} months` : undefined } : undefined,
+      session: student.academicYear || undefined,
       batch: batch ? { name: batch.name } : undefined,
       branch: {
         name: branch?.name || "",
@@ -1876,7 +1905,10 @@ export async function getStudentDocument(studentId: string, branchId: string | n
           })),
       })),
       examResults: results
-        .filter((result) => exams.has(result.examId))
+        .filter((result) => {
+          const exam = exams.get(result.examId);
+          return exam?.status === "PUBLISHED" && exam.courseId === student.courseId && exam.branchId === student.branchId;
+        })
         .map((result) => {
           const exam = exams.get(result.examId) as Record<string, any>;
           return {

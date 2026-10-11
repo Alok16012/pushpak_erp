@@ -87,12 +87,10 @@ describe("parentage on the documents", () => {
 
   it("renders a certificate with and without it", async () => {
     const { certificatePdf } = await import("@/lib/documents");
-    expect(() =>
-      certificatePdf({ ...base, parentage: "Daughter of", fatherName: "Ram Singh" }),
-    ).not.toThrow();
+    await expect(certificatePdf({ ...base, parentage: "Daughter of", fatherName: "Ram Singh" })).resolves.toBeUndefined();
     // Half of it is not enough to print a line: "Son of" with no name reads
     // as a mistake on a certificate somebody keeps.
-    expect(() => certificatePdf({ ...base, parentage: "Son of", fatherName: "" })).not.toThrow();
+    await expect(certificatePdf({ ...base, parentage: "Son of", fatherName: "" })).resolves.toBeUndefined();
   });
 });
 

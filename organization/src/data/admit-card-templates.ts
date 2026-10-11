@@ -9,6 +9,8 @@ export interface AdmitCardTemplate {
   name: string;
   /** `value` of an entry in `EXAMS`. */
   exam: string;
+  liveExam?: Exam;
+  institute?: { name: string; address: string };
   status: "active" | "draft";
   size: "a4" | "a5" | "letter";
   showQr: boolean;
@@ -25,6 +27,8 @@ export interface AdmitCardStudent {
   section: string;
   rollNo: string;
   feeStatus: "paid" | "pending" | "overdue";
+  photo?: string;
+  qr?: string;
 }
 
 export interface ExamSlot {
@@ -187,7 +191,8 @@ export function admitCardHtml(
   student: AdmitCardStudent,
   options: { pageBreak?: boolean } = {},
 ) {
-  const exam = findExam(template.exam);
+  const exam = template.liveExam || findExam(template.exam);
+  const institute = template.institute || INSTITUTE;
   const rows = template.elements
     .map((label) => [label, fieldValue(label, student, exam)] as const)
     .filter(([, value]) => value !== null)
@@ -218,18 +223,18 @@ export function admitCardHtml(
     }">
       <div style="text-align:center;border-bottom:1px solid #e4e4e7;padding-bottom:10px;margin-bottom:10px">
         ${template.elements.includes("School Logo") ? `<div style="width:44px;height:44px;border-radius:50%;background:#f4f4f5;margin:0 auto 6px"></div>` : ""}
-        <p style="margin:0;font-size:15px;font-weight:700">${escapeHtml(INSTITUTE.name)}</p>
-        <p style="margin:0;font-size:10px;color:#6b7280">${escapeHtml(INSTITUTE.address)}</p>
+        <p style="margin:0;font-size:15px;font-weight:700">${escapeHtml(institute.name)}</p>
+        <p style="margin:0;font-size:10px;color:#6b7280">${escapeHtml(institute.address)}</p>
       </div>
       <p style="margin:0 0 10px;text-align:center;font-size:11px;font-weight:700;letter-spacing:.08em">ADMIT CARD</p>
       <div style="display:flex;gap:12px;margin-bottom:12px">
-        ${template.showPhoto ? `<div style="width:70px;height:84px;border:1px solid #d4d4d8;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#9ca3af;flex:none">PHOTO</div>` : ""}
+        ${template.showPhoto && student.photo ? `<img src="${escapeHtml(student.photo)}" style="width:70px;height:84px;object-fit:cover;flex:none" />` : template.showPhoto ? `<div style="width:70px;height:84px;border:1px solid #d4d4d8;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#9ca3af;flex:none">PHOTO</div>` : ""}
         <table style="border-collapse:collapse;flex:1">${rows}</table>
       </div>
       ${schedule}
       ${template.elements.includes("Instructions") ? `<p style="margin:0 0 12px;font-size:10px;color:#6b7280">${escapeHtml(INSTRUCTIONS)}</p>` : ""}
       <div style="display:flex;align-items:flex-end;justify-content:space-between;border-top:1px solid #e4e4e7;padding-top:10px">
-        ${template.showQr ? `<div style="width:46px;height:46px;border:1px solid #d4d4d8;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">QR</div>` : "<span></span>"}
+        ${template.showQr && student.qr ? `<img src="${escapeHtml(student.qr)}" style="width:46px;height:46px" />` : template.showQr ? `<div style="width:46px;height:46px;border:1px solid #d4d4d8;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#9ca3af">QR</div>` : "<span></span>"}
         <div style="text-align:center"><div style="width:96px;border-top:1px solid #111"></div><span style="font-size:9px;color:#6b7280">Principal's Signature</span></div>
       </div>
     </div>`;

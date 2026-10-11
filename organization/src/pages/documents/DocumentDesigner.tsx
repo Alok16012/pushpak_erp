@@ -35,9 +35,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { TemplateLibrary } from "@/components/documents/TemplateLibrary";
-import { photoOf, type StudentRecord } from "@/lib/studentTemplateDocument";
+import { photoOf, tokensFor, type StudentRecord } from "@/lib/studentTemplateDocument";
 import { printDesignPages } from "@/lib/export";
-import { getStudents, getCourses } from "@/lib/supabase/data";
+import type { StudentDocument } from "@/lib/documents";
+import { getStudents, getCourses, getStudentDocument } from "@/lib/supabase/data";
 import {
   instituteName as readInstituteName,
   loadInstituteName,
@@ -53,6 +54,7 @@ import {
   type DocumentDesign,
   type DocumentKind,
   SAMPLE_DATA,
+  marksTableHtml,
   TOKEN_LABELS,
   type TokenData,
   canvasSize,
@@ -250,47 +252,20 @@ export default function DocumentDesigner() {
     });
   };
 
-  /**
-   * Sample values are the fallback, not the source: a chosen student overwrites
-   * only the tokens their record can actually answer, so a certificate keeps a
-   * readable placeholder for the ones it cannot.
-   */
+  const [previewRecord, setPreviewRecord] = useState<StudentDocument | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewRecord(null);
+    if (studentId) getStudentDocument(studentId, user?.branchId || null)
+      .then(({ data }) => { if (!cancelled) setPreviewRecord(data); })
+      .catch(() => { if (!cancelled) toast({ title: "Could not load preview record", variant: "destructive" }); });
+    return () => { cancelled = true; };
+  }, [studentId, user?.branchId, toast]);
   const data: TokenData = useMemo(() => {
-    const base: TokenData = { ...SAMPLE_DATA, institute };
-    const student = students.find((s) => s.id === studentId);
-    if (!student) return base;
-    const name = [student.firstName, student.middleName, student.lastName]
-      .filter(Boolean)
-      .join(" ");
-    const filled: TokenData = {
-      student_name: name || base.student_name,
-      father_name: student.fatherName || "",
-      mother_name: student.motherName || "",
-      course_name:
-        courses.find((c) => c.id === student.courseId)?.name || base.course_name,
-      enrollment_no: student.enrollmentNo || "",
-      application_no: student.applicationNo || "",
-      certificate_id: student.enrollmentNo || student.applicationNo || "",
-      phone: student.phone || "",
-      blood_group: student.bloodGroup || "",
-      dob: student.dateOfBirth ? student.dateOfBirth.slice(0, 10) : "",
-      address: [student.streetAddress, student.city, student.state, student.pincode]
-        .filter(Boolean)
-        .join(", "),
-      issue_date: new Date().toLocaleDateString("en-IN", {
-        day: "2-digit",
-        month: "long",
-        year: "numeric",
-      }),
-    };
-    for (const [key, value] of Object.entries(filled)) {
-      if (value) base[key] = value;
-    }
-    // Not in the loop above: an empty photo has to clear the sample one rather
-    // than leave the previous student's face on the card.
-    base.photo = photoOf((student ?? {}) as StudentRecord);
-    return base;
-  }, [students, studentId, courses, institute]);
+    if (!studentId) return { ...SAMPLE_DATA, institute };
+    if (previewRecord) return tokensFor(previewRecord, { institute });
+    return Object.fromEntries(Object.keys(SAMPLE_DATA).map((key) => [key, ""]));
+  }, [studentId, previewRecord, institute]);
 
   // QR images are async, so they are rendered once per (element, payload) pair
   // and cached - regenerating inside render would loop forever.
@@ -532,6 +507,7 @@ export default function DocumentDesigner() {
   };
 
   const print = () => {
+    if (studentId && !previewRecord) return toast({ title: "Wait for the student record to load", variant: "destructive" });
     // Its own sheet, turned to match: a portrait certificate on a portrait A4.
     printDesignPages(meta.label, [designHtml(kind, design, data, qrByElement)], size.width, size.height);
   };
@@ -688,6 +664,7 @@ export default function DocumentDesigner() {
                   )
                 }
               />
+              {kind === "marksheet" && <ElementButton icon={Square} label="Marks table" onClick={() => add(element("marks-table", { x: 70, y: 420, width: 650, height: 320, fontSize: 16 }))} />}
               <ElementButton
                 icon={QrCode}
                 label="QR code"
@@ -1378,6 +1355,7 @@ function ElementBody({
   data: TokenData;
   qr?: string;
 }) {
+  if (el.type === "marks-table") return <div style={{ fontSize: el.fontSize, color: el.color, overflow: "hidden", height: "100%" }} dangerouslySetInnerHTML={{ __html: marksTableHtml(data, el.width, el.fontSize) }} />;
   if (el.type === "image") {
     return (
       <img
