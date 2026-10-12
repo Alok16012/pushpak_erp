@@ -1,6 +1,6 @@
 import {
   ArrowRight, Award, BookOpen, Bot, Briefcase, CheckCircle2, Code2, FolderKanban, GraduationCap, Laptop,
-  MonitorPlay, Rocket, Sparkles, Store, Target, Users, UserRound, Wifi,
+  Rocket, Sparkles, Store, Users, UserRound, Wifi,
 } from "lucide-react";
 import { CourseCard, CtaBand, Feature, SectionHeading } from "@/components/ui";
 import { popularCourses } from "@/lib/courses";
@@ -24,11 +24,23 @@ export default function Home() {
   return (
     <>
       {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-brand-50/70 via-white to-white">
-        <div className="absolute -left-32 top-10 h-72 w-72 rounded-full bg-brand-200/40 blur-3xl" />
-        <div className="absolute -right-24 top-40 h-72 w-72 rounded-full bg-leaf-100/70 blur-3xl" />
-        <div className="container relative grid items-center gap-12 py-14 sm:py-20 lg:grid-cols-[1.1fr_.9fr] lg:py-24">
-          <div>
+      <section className="relative isolate overflow-hidden bg-[#f4f7fc]">
+        <picture className="absolute inset-0 -z-20">
+          <source media="(min-width: 768px)" srcSet="/image/hero-digital-skills-wide-v2.webp" />
+          <img
+            src="/image/hero-digital-skills-v1-mobile.webp"
+            alt=""
+            aria-hidden="true"
+            width={1920}
+            height={1080}
+            fetchPriority="high"
+            loading="eager"
+            className="h-full w-full object-contain object-bottom md:object-cover md:object-center"
+          />
+        </picture>
+        <div aria-hidden="true" className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,#f4f7fc_0%,#f4f7fc_65%,transparent_85%)] md:bg-[linear-gradient(90deg,rgba(244,247,252,0.98)_0%,rgba(244,247,252,0.94)_30%,rgba(244,247,252,0.4)_52%,transparent_72%)]" />
+        <div className="container relative flex min-h-[calc(100svh-64px)] items-start pb-80 pt-12 sm:pt-16 md:min-h-[calc(100svh-72px)] md:items-center md:py-20">
+          <div className="w-full md:max-w-[52%] lg:max-w-[48%]">
             <span className="eyebrow"><Sparkles className="h-3.5 w-3.5" /> Admissions open — {new Date().getFullYear()}</span>
             <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.1] tracking-tight text-ink-900 sm:text-5xl lg:text-6xl">
               Computer Se{" "}
@@ -49,39 +61,6 @@ export default function Home() {
                 <li key={t} className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-leaf-600" />{t}</li>
               ))}
             </ul>
-          </div>
-
-          <div className="relative mx-auto w-full max-w-md lg:max-w-none">
-            <div className="card relative overflow-hidden p-6 shadow-lift sm:p-8">
-              <div className="flex items-center gap-3">
-                <img src="/logo.webp" alt="" width={56} height={56} className="h-14 w-14 rounded-full" />
-                <div>
-                  <p className="font-display text-lg font-extrabold">{site.fullName}</p>
-                  <p className="text-sm text-ink-500">{site.tagline}</p>
-                </div>
-              </div>
-              <div className="mt-6 grid gap-3">
-                {[
-                  { t: "Website Designing & Development", i: Code2 },
-                  { t: "Digital Marketing With A.I", i: Target },
-                  { t: "Graphic Designing & 3D Animation", i: MonitorPlay },
-                  { t: "Certified Computer Course", i: Laptop },
-                  { t: "Job Internship Program", i: Briefcase },
-                ].map(({ t, i: Icon }) => (
-                  <div key={t} className="flex items-center gap-3 rounded-xl border border-ink-100 bg-ink-50/60 px-4 py-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-brand-700 shadow-sm"><Icon className="h-[18px] w-[18px]" /></span>
-                    <span className="text-sm font-semibold text-ink-900">{t}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="absolute -bottom-5 -left-3 hidden items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-lift sm:flex">
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-leaf-50 text-leaf-700"><Award className="h-5 w-5" /></span>
-              <div>
-                <p className="text-sm font-bold">Course Certificate</p>
-                <p className="text-xs text-ink-500">On successful completion</p>
-              </div>
-            </div>
           </div>
         </div>
       </section>
