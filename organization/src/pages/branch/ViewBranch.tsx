@@ -41,7 +41,7 @@ import jsPDF from "jspdf";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { getBranchesWithStats, updateBranchWithDetails, getBranchDetails, deleteBranch, setBranchLogin } from "@/lib/supabase/data";
+import { getBranchesWithStats, updateBranchWithDetails, getBranchDetails, deleteBranch, setBranchLogin, getCertificateFee, setCertificateFee } from "@/lib/supabase/data";
 import { downloadCsv } from "@/lib/export";
 import { instituteName } from "@/lib/instituteName";
 import {
@@ -306,6 +306,26 @@ export default function ViewBranch() {
   // as it is and changes only the password.
   const [loginDraft, setLoginDraft] = useState({ username: "", password: "" });
   const [savingLogin, setSavingLogin] = useState(false);
+  // What the centre pays from its wallet for each student certificate. Only the
+  // head office sets it; "" until the saved price has been read.
+  const isOrgAdmin = ["SUPER_ADMIN", "ORGANIZATION_ADMIN"].includes(String(user?.role || "").toUpperCase());
+  const [certificateFee, setCertificateFeeDraft] = useState("");
+  const [savedCertificateFee, setSavedCertificateFee] = useState<number | null>(null);
+  const editingId = editing?.id ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    setCertificateFeeDraft("");
+    setSavedCertificateFee(null);
+    if (!editingId) return;
+    getCertificateFee(editingId)
+      .then((fee) => {
+        if (cancelled) return;
+        setSavedCertificateFee(fee);
+        setCertificateFeeDraft(String(fee));
+      })
+      .catch(() => { /* left blank; saving a blank fee changes nothing */ });
+    return () => { cancelled = true; };
+  }, [editingId]);
   // Last PIN we resolved, so re-renders of `editing` don't re-trigger a lookup.
   const resolvedPin = useRef("");
   const editingPin = String(editing?.pincode ?? "");
@@ -727,6 +747,10 @@ export default function ViewBranch() {
             : b,
         ),
       );
+      const fee = certificateFee.trim() === "" ? null : Number(certificateFee);
+      if (isOrgAdmin && fee !== null && Number.isFinite(fee) && fee >= 0 && fee !== savedCertificateFee) {
+        await setCertificateFee(editing.id, fee, user.name);
+      }
       toast({ title: "Branch updated", description: `${editing.name} was saved.` });
       setEditing(null);
     } catch (error) {
@@ -1186,6 +1210,33 @@ export default function ViewBranch() {
                   </div>
                 </div>
               </div>
+
+              {/* Certificate fee */}
+              {isOrgAdmin && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <Wallet className="h-4 w-4" /> Certificate Fee
+                  </h3>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-certificateFee">Fee per student certificate (₹)</Label>
+                      <Input
+                        id="edit-certificateFee"
+                        type="number"
+                        min={0}
+                        step="1"
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={certificateFee}
+                        onChange={(e) => setCertificateFeeDraft(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Deducted from this centre's wallet when a student's certificate is first generated. 0 means free.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Infrastructure */}
               <div className="space-y-4">

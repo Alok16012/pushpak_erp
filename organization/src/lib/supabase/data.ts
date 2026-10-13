@@ -3223,8 +3223,9 @@ export async function getWalletTransactions(
     pendingAmount: mapped
       .filter((t) => t.status === "PENDING")
       .reduce((sum, t) => sum + t.amount, 0),
+    // Recharges only: a certificate fee is a COMPLETED debit, not money in.
     approvedAmount: mapped
-      .filter((t) => t.status === "COMPLETED")
+      .filter((t) => t.status === "COMPLETED" && t.type !== "debit")
       .reduce((sum, t) => sum + t.amount, 0),
   };
 
@@ -5469,4 +5470,112 @@ export async function updateFranchiseLead(id: string, input: Record<string, unkn
       .single(),
   );
   return { success: true as const, data: toFranchiseLead(result.data as Record<string, unknown>) };
+}
+
+/* ---------------------------------------------------------------------------
+ * Certificate fee, charged to the centre's wallet.
+ *
+ * The head office sets a price per centre (branch_certificate_fees). Issuing a
+ * student's certificate runs issue_certificate(), which takes that price from
+ * the centre's wallet once per student and records the issue; printing it
+ * again, or the student's own download afterwards, is free. All of it arrives
+ * with certificate-wallet-charge.sql.
+ * ------------------------------------------------------------------------- */
+
+const missingRelation = (error: { code?: string; message?: string } | null) =>
+  error?.code === "42P01" || error?.code === "PGRST205" || error?.code === "PGRST202" ||
+  /does not exist|schema cache/i.test(error?.message || "");
+
+/** Every centre's certificate price, keyed by branch id. Empty until migrated. */
+export async function getCertificateFees(): Promise<Map<string, number>> {
+  const { data, error } = await supabase.from("branch_certificate_fees").select("branchId, amount");
+  if (error) {
+    if (missingRelation(error)) return new Map();
+    throw new Error(error.message);
+  }
+  return new Map((data || []).map((row) => [String(row.branchId), Number(row.amount) || 0]));
+}
+
+/** One centre's certificate price; 0 when none is set. */
+export async function getCertificateFee(branchId: string | null): Promise<number> {
+  if (!branchId) return 0;
+  const { data, error } = await supabase
+    .from("branch_certificate_fees")
+    .select("amount")
+    .eq("branchId", branchId)
+    .maybeSingle();
+  if (error) {
+    if (missingRelation(error)) return 0;
+    throw new Error(error.message);
+  }
+  return Number(data?.amount) || 0;
+}
+
+export async function setCertificateFee(branchId: string, amount: number, updatedBy?: string | null) {
+  const { error } = await supabase.from("branch_certificate_fees").upsert({
+    branchId,
+    amount: Math.max(0, Number(amount) || 0),
+    updatedBy: updatedBy || null,
+    updatedAt: new Date().toISOString(),
+  });
+  if (error) {
+    if (missingRelation(error)) {
+      throw new Error("Certificate fees are not set up yet. Run supabase/schema/certificate-wallet-charge.sql in Supabase.");
+    }
+    throw new Error(error.message);
+  }
+}
+
+export interface CertificateIssue {
+  amount: number;
+  issuedAt: string;
+}
+
+/** The student's certificate issue, or null when the centre has not issued it. */
+export async function getCertificateIssue(studentId: string | null): Promise<CertificateIssue | null> {
+  if (!studentId) return null;
+  const { data, error } = await supabase
+    .from("certificate_issues")
+    .select("amount, issuedAt")
+    .eq("studentId", studentId)
+    .maybeSingle();
+  if (error) {
+    if (missingRelation(error)) return null;
+    throw new Error(error.message);
+  }
+  return data ? { amount: Number(data.amount) || 0, issuedAt: String(data.issuedAt) } : null;
+}
+
+export interface CertificateCharge {
+  charged: boolean;
+  alreadyIssued: boolean;
+  amount: number;
+  balance?: number;
+}
+
+/**
+ * Charge the centre for the student's certificate (once) and record the issue.
+ * Throws with a readable message when the wallet cannot cover the fee, so the
+ * caller does not print.
+ */
+export async function issueCertificate(studentId: string, issuedBy?: string | null): Promise<CertificateCharge> {
+  const { data, error } = await supabase.rpc("issue_certificate", {
+    p_student_id: studentId,
+    p_issued_by: issuedBy || null,
+  });
+  if (error) {
+    if (missingRelation(error)) {
+      throw new Error("Certificate wallet charging is not set up yet. Run supabase/schema/certificate-wallet-charge.sql in Supabase.");
+    }
+    const low = /INSUFFICIENT_BALANCE:\s*(.*)/.exec(error.message);
+    if (low) throw new Error(`Centre wallet balance is too low: ${low[1]} Recharge the wallet, then generate again.`);
+    throw new Error(error.message);
+  }
+  const row = (data || {}) as Partial<CertificateCharge>;
+  return {
+    charged: Boolean(row.charged),
+    alreadyIssued: Boolean(row.alreadyIssued),
+    amount: Number(row.amount) || 0,
+    balance: row.balance == null ? undefined : Number(row.balance),
+  };
 }

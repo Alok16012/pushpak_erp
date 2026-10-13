@@ -1056,8 +1056,9 @@ export default function WalletRecharge() {
 
                         {/* Amount */}
                         <TableCell className="text-right py-1.5 whitespace-nowrap">
-                          <span className="font-mono font-bold text-foreground text-xs">
-                            ₹{tx.amount.toLocaleString("en-IN")}
+                          {/* A debit (a certificate fee) left the wallet. */}
+                          <span className={`font-mono font-bold text-xs ${tx.type === "debit" ? "text-rose-600" : "text-foreground"}`}>
+                            {tx.type === "debit" ? "−" : ""}₹{tx.amount.toLocaleString("en-IN")}
                           </span>
                         </TableCell>
 
@@ -1134,7 +1135,7 @@ export default function WalletRecharge() {
                                 : "bg-rose-600 hover:bg-rose-600 text-white"
                             }`}
                           >
-                            {isApproved ? "Approved" : isPending ? "Pending" : "Rejected"}
+                            {tx.type === "debit" ? "Deducted" : isApproved ? "Approved" : isPending ? "Pending" : "Rejected"}
                           </Badge>
                         </TableCell>
 

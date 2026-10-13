@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getStudentPortalInvoices, getStudentProfile, getStudentPortalResults, submitPortalRequest } from "@/lib/supabase/data";
+import { getStudentPortalInvoices, getStudentProfile, getStudentPortalResults, issueCertificate, submitPortalRequest } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 import { certificatePdf, marksheetPdf } from "@/lib/documents";
 import { downloadCsv, printHtml } from "@/lib/export";
@@ -150,8 +150,21 @@ export default function MyResults() {
     if (!doc) return;
     setProcessing(true);
     try {
+      // The first certificate a student receives is paid for by their centre's
+      // wallet, whoever generates it; a wallet that cannot cover it holds the
+      // download until the centre recharges.
+      await issueCertificate(profile?.id ?? "", user?.name);
       await certificatePdf(doc);
       toast({ title: "Certificate downloaded" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      toast({
+        title: "Certificate not available yet",
+        description: /wallet balance/i.test(message)
+          ? "Your centre has not released the certificate yet. Please contact your centre."
+          : message || "Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setProcessing(false);
     }

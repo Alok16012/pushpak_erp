@@ -39,6 +39,10 @@ import {
   getBatches,
   getBranches,
   getStudentDocument,
+  getCertificateFee,
+  getCertificateIssue,
+  issueCertificate,
+  type CertificateIssue,
 } from "@/lib/supabase/data";
 type Exam = {
   id: string;
@@ -142,6 +146,20 @@ export default function AssessmentsWorkspace() {
     return () => { cancelled = true; };
   }, [studentId, branchId, toast]);
   const documentSummary = marksheetSummary(documentRecord?.examResults || []);
+  // The centre's certificate price and whether this student's certificate has
+  // already been issued (and so paid for): the first print takes the price from
+  // the centre's wallet, every later one is free.
+  const [certificateFee, setCertificateFee] = useState<{ fee: number; issued: CertificateIssue | null } | null>(null);
+  const documentBranchId = documentRecord?.branchId || branchId;
+  useEffect(() => {
+    let cancelled = false;
+    setCertificateFee(null);
+    if (!studentId || !documentRecord) return;
+    Promise.all([getCertificateFee(documentBranchId), getCertificateIssue(studentId)])
+      .then(([fee, issued]) => { if (!cancelled) setCertificateFee({ fee, issued }); })
+      .catch(() => { /* the note is a courtesy; the charge itself is checked on print */ });
+    return () => { cancelled = true; };
+  }, [studentId, documentRecord, documentBranchId]);
 
   /*
    * An organisation account belongs to no branch, and an exam must: the
@@ -296,6 +314,17 @@ export default function AssessmentsWorkspace() {
       if (kind !== "admission" && !body.data.examResults.length) throw new Error("Publish this student's exam results before generating documents.");
       if (kind === "certificate" && marksheetSummary(body.data.examResults).result !== "Pass") throw new Error("The student must pass every published paper before receiving a completion certificate.");
       if (kind === "certificate" && !body.data.course?.name) throw new Error("Assign the student's course first.");
+      // The centre pays for the certificate before it is printed, once per
+      // student; a wallet that cannot cover it stops the print here.
+      let charged = "";
+      if (kind === "certificate") {
+        const charge = await issueCertificate(studentId, user?.name);
+        if (charge.charged) charged = ` ₹${charge.amount.toLocaleString("en-IN")} was deducted from the centre wallet.`;
+        setCertificateFee((prev) => ({
+          fee: prev?.fee ?? charge.amount,
+          issued: prev?.issued ?? { amount: charge.amount, issuedAt: new Date().toISOString() },
+        }));
+      }
       // The institute's own template first: a certificate or marksheet the
       // office designed and gave this branch beats the layout written into
       // documents.ts, which is the same for everyone using this app.
@@ -311,7 +340,7 @@ export default function AssessmentsWorkspace() {
       if (printed) {
         toast({
           title: "Document ready",
-          description: `The ${kind} was printed from your branch's template.`,
+          description: `The ${kind} was printed from your branch's template.${charged}`,
         });
         return;
       }
@@ -325,7 +354,7 @@ export default function AssessmentsWorkspace() {
       })[kind](body.data);
       toast({
         title: "PDF generated",
-        description: `The ${kind} is ready in Downloads.`,
+        description: `The ${kind} is ready in Downloads.${charged}`,
       });
     } catch (e) {
       toast({
@@ -728,6 +757,15 @@ export default function AssessmentsWorkspace() {
                     </Button>
                   ))}
                 </div>
+                {documentRecord && certificateFee && (
+                  <p className="text-sm text-muted-foreground">
+                    {certificateFee.issued
+                      ? `Certificate already issued${certificateFee.issued.amount ? ` (₹${certificateFee.issued.amount.toLocaleString("en-IN")} charged)` : ""} — printing it again is free.`
+                      : certificateFee.fee > 0
+                        ? `Generating the certificate deducts ₹${certificateFee.fee.toLocaleString("en-IN")} from ${documentRecord.branch.name}'s wallet.`
+                        : "No certificate fee is set for this centre."}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Documents use live admission, course, payment, and published
                   result records. PDF files are generated locally and are
