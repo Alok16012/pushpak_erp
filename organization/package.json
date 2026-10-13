@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:site": "npm run dev --prefix site",
-    "build": "vite build && npm run build:site",
-    "build:site": "npm ci --prefix site --no-audit --no-fund && npm run build --prefix site && node scripts/merge-site.mjs",
+    "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
