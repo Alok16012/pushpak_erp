@@ -435,6 +435,8 @@ const STUDENT_OPTIONAL_COLUMNS = [
   // They arrive with add-student-parentage.sql.
   "parentage",
   "maritalStatus",
+  // The block within the district. It arrives with add-student-block.sql.
+  "block",
 ];
 
 const isMissingStudentColumn = (error: { code?: string; message?: string } | null) =>

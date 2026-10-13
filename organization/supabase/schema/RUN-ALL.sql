@@ -78,6 +78,23 @@ alter table public.students
   add column if not exists "maritalStatus" text;
 
 
+-- ---------- add-student-block.sql ----------
+-- The block a student lives in.
+--
+-- The admission form now asks for the address state, district and block, each
+-- a dropdown narrowed by the one before it, as the branch and enquiry forms
+-- already do. Students had no column for the block.
+--
+-- Nullable: older admissions, and places outside the bundled block lists, have
+-- none.
+--
+-- Run once in the Supabase SQL editor. Safe to re-run. The application degrades
+-- gracefully until it is: the insert retries without this and saves the rest
+-- of the admission rather than failing whole.
+alter table public.students
+  add column if not exists "block" text;
+
+
 -- ---------- next-application-no.sql ----------
 -- The next application number, counted across every branch. A branch account
 -- reads only its own students, so counting from the client handed out numbers
@@ -2590,6 +2607,9 @@ select 'students.parentage'      as thing,
        to_regclass('public.students') is not null
        and exists (select 1 from information_schema.columns
                     where table_name = 'students' and column_name = 'parentage') as present
+union all select 'students.block',
+       exists (select 1 from information_schema.columns
+                where table_name = 'students' and column_name = 'block')
 union all select 'batch_timings.classMode',
        exists (select 1 from information_schema.columns
                 where table_name = 'batch_timings' and column_name = 'classMode')

@@ -38,6 +38,7 @@ export interface StudentRow {
   streetAddress?: string | null;
   city?: string | null;
   district?: string | null;
+  block?: string | null;
   state?: string | null;
   pincode?: string | null;
   dateOfBirth?: string | null;
@@ -120,7 +121,7 @@ export function toStudentProfile(row: StudentRow): StudentProfile {
     guardian: text(row.fatherName),
     parentage: text(row.parentage),
     guardianPhone: text(row.fatherPhone),
-    address: [row.streetAddress, row.city, row.district, row.state, row.pincode]
+    address: [row.streetAddress, row.city, row.block, row.district, row.state, row.pincode]
       .filter(Boolean)
       .join(", "),
     dob: asDay(row.dateOfBirth),

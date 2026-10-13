@@ -53,6 +53,7 @@ import { getTemplateAssignments, getTemplates } from "@/lib/supabase/documentTem
 import { isoOrNull, dateInputValue } from "@/lib/dates";
 import { INDIAN_STATES, canonicalState, districtsFor } from "@/data/indianStates";
 import { lookupPincode, geocode } from "@/lib/postal";
+import { blocksFor, citiesFor } from "@/data/indianCities";
 
 /** What the InstituteType and Gender enums hold; anything else was typed in. */
 const INSTITUTE_TYPES = ["COMPUTER", "TYPING", "PARAMEDICAL", "OTHER"];
@@ -1102,7 +1103,7 @@ export default function ViewBranch() {
                     <Label htmlFor="edit-state">State</Label>
                     <Select
                       value={editing.state}
-                      onValueChange={(value) => setEditing({ ...editing, state: value, district: "" })}
+                      onValueChange={(value) => setEditing({ ...editing, state: value, district: "", block: "", city: "" })}
                     >
                       <SelectTrigger id="edit-state"><SelectValue placeholder="Select state" /></SelectTrigger>
                       <SelectContent>
@@ -1114,36 +1115,41 @@ export default function ViewBranch() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-district">District</Label>
-                    {/* Districts are only mapped for some states; fall back to
-                        free text so the rest stay editable. */}
-                    {districtOptions.length > 0 ? (
-                      <Select
-                        value={editing.district}
-                        onValueChange={(value) => setEditing({ ...editing, district: value })}
-                      >
-                        <SelectTrigger id="edit-district"><SelectValue placeholder="Select district" /></SelectTrigger>
-                        <SelectContent>
-                          {districtOptions.map((district) => (
-                            <SelectItem key={district} value={district}>{district}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        id="edit-district"
-                        value={editing.district}
-                        placeholder={editing.state ? "Enter district" : "Select state first"}
-                        onChange={(e) => setEditing({ ...editing, district: e.target.value })}
-                      />
-                    )}
+                    {/* Each list waits for the one before it; a place the
+                        bundled lists do not carry is typed in under "Other". */}
+                    <SelectWithCustom
+                      id="edit-district"
+                      value={editing.district}
+                      onValueChange={(value) => setEditing({ ...editing, district: value, block: "", city: "" })}
+                      options={districtOptions}
+                      placeholder={editing.state ? "Select district" : "Select state first"}
+                      customPlaceholder="Type the district"
+                      disabled={!editing.state}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-block">Block</Label>
-                    <Input id="edit-block" value={editing.block} onChange={(e) => setEditing({ ...editing, block: e.target.value })} />
+                    <SelectWithCustom
+                      id="edit-block"
+                      value={editing.block}
+                      onValueChange={(value) => setEditing({ ...editing, block: value })}
+                      options={blocksFor(editing.district, editing.state)}
+                      placeholder={editing.district ? "Select block" : "Select district first"}
+                      customPlaceholder="Type the block"
+                      disabled={!editing.district}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-city">City</Label>
-                    <Input id="edit-city" value={editing.city} onChange={(e) => setEditing({ ...editing, city: e.target.value })} />
+                    <SelectWithCustom
+                      id="edit-city"
+                      value={editing.city}
+                      onValueChange={(value) => setEditing({ ...editing, city: value })}
+                      options={citiesFor(editing.district)}
+                      placeholder={editing.district ? "Select city" : "Select district first"}
+                      customPlaceholder="Type the city"
+                      disabled={!editing.district}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-pincode">Pincode</Label>

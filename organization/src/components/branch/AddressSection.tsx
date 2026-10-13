@@ -7,6 +7,7 @@ import { MapPin } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { INDIAN_STATES, DISTRICTS_BY_STATE, canonicalState } from "@/data/indianStates";
 import { blocksFor, citiesFor } from "@/data/indianCities";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { lookupPincode, geocode, uniqueSorted, type PostalPlace } from "@/lib/postal";
 
 export function AddressSection() {
@@ -31,8 +32,6 @@ export function AddressSection() {
 
   const [blockQuery, setBlockQuery] = useState("");
   const [cityQuery, setCityQuery] = useState("");
-  const [showBlockList, setShowBlockList] = useState(false);
-  const [showCityList, setShowCityList] = useState(false);
   const [pincode, setPincode] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
@@ -181,81 +180,35 @@ export function AddressSection() {
             </Select>
           </div>
         </div>
-        {/* Block: typeahead dropdown — only after district is picked */}
-        <div className="space-y-2 relative">
-          <Label htmlFor="block">Block</Label>
-          <Input
-            id="block"
-            name="block"
-            placeholder={
-              places.blocks.length > 0 ? "Type to search block" : "Enter block"
-            }
-            value={blockQuery}
-            onChange={(e) => {
-              setBlockQuery(e.target.value);
-              setShowBlockList(true);
-            }}
-            onFocus={() => setShowBlockList(true)}
-            onBlur={() => setTimeout(() => setShowBlockList(false), 180)}
-            autoComplete="off"
-          />
-          {showBlockList && blockQuery && places.blocks.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-50 bg-white border rounded-md shadow-lg max-h-44 overflow-y-auto">
-              {places.blocks
-                .filter((b) => b.toLowerCase().includes(blockQuery.toLowerCase()))
-                .map((b) => (
-                  <div
-                    key={b}
-                    className="px-3 py-2 cursor-pointer hover:bg-accent text-sm"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setBlockQuery(b);
-                      setShowBlockList(false);
-                    }}
-                  >
-                    {b}
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
-        {/* City: typeahead dropdown — only after district is picked */}
-        <div className="space-y-2 relative">
-          <Label htmlFor="city">City *</Label>
-          <Input
-            id="city"
-            name="city"
-            placeholder={
-              places.cities.length > 0 ? "Type to search city" : "Enter city"
-            }
-            value={cityQuery}
-            onChange={(e) => {
-              setCityQuery(e.target.value);
-              setShowCityList(true);
-            }}
-            onFocus={() => setShowCityList(true)}
-            onBlur={() => setTimeout(() => setShowCityList(false), 180)}
-            autoComplete="off"
-          />
-          {showCityList && cityQuery && places.cities.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-50 bg-white border rounded-md shadow-lg max-h-44 overflow-y-auto">
-              {places.cities
-                .filter((c) => c.toLowerCase().includes(cityQuery.toLowerCase()))
-                .map((c) => (
-                  <div
-                    key={c}
-                    className="px-3 py-2 cursor-pointer hover:bg-accent text-sm"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      setCityQuery(c);
-                      setShowCityList(false);
-                    }}
-                  >
-                    {c}
-                  </div>
-                ))}
-            </div>
-          )}
+        {/* Block and city: dropdowns once a district is picked, with "Other"
+            for a place the lists do not carry. */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="block">Block</Label>
+            <SelectWithCustom
+              id="block"
+              name="block"
+              value={blockQuery}
+              onValueChange={setBlockQuery}
+              options={places.blocks}
+              placeholder={districtKey ? "Select block" : "Select district first"}
+              customPlaceholder="Type the block"
+              disabled={!districtKey}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="city">City *</Label>
+            <SelectWithCustom
+              id="city"
+              name="city"
+              value={cityQuery}
+              onValueChange={setCityQuery}
+              options={places.cities}
+              placeholder={districtKey ? "Select city" : "Select district first"}
+              customPlaceholder="Type the city"
+              disabled={!districtKey}
+            />
+          </div>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">

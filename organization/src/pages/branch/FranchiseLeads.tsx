@@ -26,6 +26,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { downloadCsv } from "@/lib/export";
 import { INDIAN_STATES, districtsFor } from "@/data/indianStates";
+import { blocksFor, citiesFor } from "@/data/indianCities";
+import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { followUpBucket, followUpQueue, monthlyEnquiries, pipeline } from "@/lib/leads";
 import {
   FRANCHISE_STAGES,
@@ -144,6 +146,8 @@ export default function FranchiseLeads() {
   const converted = countAt("Converted");
 
   const districtOptions = useMemo(() => districtsFor(draft.state), [draft.state]);
+  const blockOptions = useMemo(() => blocksFor(draft.district, draft.state), [draft.district, draft.state]);
+  const cityOptions = useMemo(() => citiesFor(draft.district), [draft.district]);
 
   const openDetail = async (lead: FranchiseLead) => {
     setDetail(lead);
@@ -630,7 +634,7 @@ export default function FranchiseLeads() {
               <Label>State</Label>
               <Select
                 value={draft.state}
-                onValueChange={(v) => setDraft((d) => ({ ...d, state: v, district: "" }))}
+                onValueChange={(v) => setDraft((d) => ({ ...d, state: v, district: "", block: "", city: "" }))}
               >
                 <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
                 <SelectContent>
@@ -640,26 +644,38 @@ export default function FranchiseLeads() {
             </div>
             <div className="space-y-2">
               <Label>District</Label>
-              {/* Narrowed to the state, and free text when the state has no
-                  bundled list, so a district is never simply unavailable. */}
-              {districtOptions.length ? (
-                <Select value={draft.district} onValueChange={(v) => setField("district", v)}>
-                  <SelectTrigger><SelectValue placeholder="Select district" /></SelectTrigger>
-                  <SelectContent>
-                    {districtOptions.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input value={draft.district} onChange={(e) => setField("district", e.target.value)} />
-              )}
+              {/* Each list waits for the one before it; a place the bundled
+                  lists do not carry is typed in under "Other". */}
+              <SelectWithCustom
+                value={draft.district}
+                onValueChange={(v) => setDraft((d) => ({ ...d, district: v, block: "", city: "" }))}
+                options={districtOptions}
+                placeholder={draft.state ? "Select district" : "Select a state first"}
+                customPlaceholder="Type the district"
+                disabled={!draft.state}
+              />
             </div>
             <div className="space-y-2">
               <Label>Block / police station</Label>
-              <Input value={draft.block} onChange={(e) => setField("block", e.target.value)} />
+              <SelectWithCustom
+                value={draft.block}
+                onValueChange={(v) => setField("block", v)}
+                options={blockOptions}
+                placeholder={draft.district ? "Select block" : "Select a district first"}
+                customPlaceholder="Type the block"
+                disabled={!draft.district}
+              />
             </div>
             <div className="space-y-2">
               <Label>City / town</Label>
-              <Input value={draft.city} onChange={(e) => setField("city", e.target.value)} />
+              <SelectWithCustom
+                value={draft.city}
+                onValueChange={(v) => setField("city", v)}
+                options={cityOptions}
+                placeholder={draft.district ? "Select city" : "Select a district first"}
+                customPlaceholder="Type the city"
+                disabled={!draft.district}
+              />
             </div>
             <div className="space-y-2">
               <Label>Pincode</Label>

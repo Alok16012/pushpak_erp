@@ -32,7 +32,7 @@ import {
   type SessionYear,
 } from "@/lib/supabase/data";
 import { INDIAN_STATES, districtsFor } from "@/data/indianStates";
-import { citiesFor } from "@/data/indianCities";
+import { blocksFor, citiesFor } from "@/data/indianCities";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -63,6 +63,7 @@ type Draft = {
   streetAddress: string;
   city: string;
   district: string;
+  block: string;
   state: string;
   pincode: string;
   country: string;
@@ -133,6 +134,7 @@ const blank: Draft = {
   streetAddress: "",
   city: "",
   district: "",
+  block: "",
   state: "",
   pincode: "",
   country: "India",
@@ -887,16 +889,16 @@ export default function AdmissionsWorkspace() {
                     onChange={(e) => set("streetAddress", e.target.value)}
                   />
                 </Field>
-                {/* State, then its districts, then the district's towns --
-                    an address is written from the outside in, and picking the
-                    state first is what narrows the next two lists. A district
-                    or town the tables do not carry is typed in instead. */}
+                {/* State, then its districts, then the district's blocks and
+                    towns -- an address is written from the outside in, and
+                    picking the state first is what narrows the next lists. A
+                    place the tables do not carry is typed in instead. */}
                 <Field l="State" required>
                   <Picker
                     value={draft.state}
                     onChange={(v) => {
-                      // The old district and city belong to the old state.
-                      setDraft((p) => ({ ...p, state: v, district: "", city: "" }));
+                      // The old district, block and city belong to the old state.
+                      setDraft((p) => ({ ...p, state: v, district: "", block: "", city: "" }));
                     }}
                     options={INDIAN_STATES.map((s) => [s, s])}
                     placeholder="Select state"
@@ -905,11 +907,21 @@ export default function AdmissionsWorkspace() {
                 <Field l="District">
                   <SelectWithCustom
                     value={draft.district}
-                    onValueChange={(v) => setDraft((p) => ({ ...p, district: v, city: "" }))}
+                    onValueChange={(v) => setDraft((p) => ({ ...p, district: v, block: "", city: "" }))}
                     options={districtsFor(draft.state)}
                     placeholder={draft.state ? "Select district" : "Select a state first"}
                     customPlaceholder="Type the district"
                     disabled={!draft.state}
+                  />
+                </Field>
+                <Field l="Block">
+                  <SelectWithCustom
+                    value={draft.block}
+                    onValueChange={(v) => set("block", v)}
+                    options={blocksFor(draft.district, draft.state)}
+                    placeholder={draft.district ? "Select block" : "Select a district first"}
+                    customPlaceholder="Type the block"
+                    disabled={!draft.district}
                   />
                 </Field>
                 <Field l="City" required>
@@ -1368,7 +1380,7 @@ export default function AdmissionsWorkspace() {
                     <Row k="Gender" v={draft.gender} />
                     <Row
                       k="Address"
-                      v={[draft.streetAddress, draft.city, draft.district, draft.state, draft.pincode]
+                      v={[draft.streetAddress, draft.city, draft.block, draft.district, draft.state, draft.pincode]
                         .filter(Boolean)
                         .join(", ")}
                     />

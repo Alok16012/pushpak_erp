@@ -13,6 +13,12 @@ import js_311d1cd6 from "../behaviour/311d1cd6.js?raw";
 import js_73893071 from "../behaviour/73893071.js?raw";
 import js_8026bb16 from "../behaviour/8026bb16.js?raw";
 import js_8f7dc309 from "../behaviour/8f7dc309.js?raw";
+import js_places from "../behaviour/place-pickers.js?raw";
+import { INDIAN_STATES, DISTRICTS_BY_STATE } from "../../src/data/indianStates";
+import { BIHAR_BLOCKS } from "../../src/data/biharBlocks";
+
+/** The lists the place pickers narrow from, handed to the browser script. */
+const PLACES_JSON = JSON.stringify({ districts: DISTRICTS_BY_STATE, blocks: { Bihar: BIHAR_BLOCKS } }).replace(/</g, "\\u003c");
 import js_ab901942 from "../behaviour/ab901942.js?raw";
 import js_c1268ab4 from "../behaviour/c1268ab4.js?raw";
 import js_c865a084 from "../behaviour/c865a084.js?raw";
@@ -758,7 +764,10 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="text" name="state" className="form-input" placeholder="Enter state" required />
+                      <select name="state" className="form-input" data-place="state" required defaultValue="">
+                        <option value="" disabled>Select state</option>
+                        {INDIAN_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label className="form-label">
@@ -769,7 +778,19 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="text" name="district" className="form-input" placeholder="Enter district" required />
+                      <select name="district" className="form-input" data-place="district" required defaultValue="" disabled>
+                        <option value="" disabled>Select state first</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="form-label">
+                        {" "}Block{" "}
+                      </label>
+                      {" "}
+                      <select name="block" className="form-input" data-place="block" defaultValue="" disabled>
+                        <option value="" disabled>Select district first</option>
+                      </select>
+                      <input type="text" name="block" className="form-input mt-2" data-place="block-other" placeholder="Type the block" hidden disabled />
                     </div>
                     <div>
                       <label className="form-label">
@@ -1097,6 +1118,8 @@ export default function Franchise() {
           </div>
         </footer>
         <script dangerouslySetInnerHTML={{ __html: js_8f7dc309 }} />
+        <script id="place-data" type="application/json" dangerouslySetInnerHTML={{ __html: PLACES_JSON }} />
+        <script dangerouslySetInnerHTML={{ __html: js_places }} />
         <meta charSet="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>

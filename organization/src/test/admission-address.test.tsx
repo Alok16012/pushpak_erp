@@ -53,7 +53,7 @@ beforeEach(() => {
 });
 
 describe("Admission address", () => {
-  it("asks for the state before the district and the district before the city", () => {
+  it("asks for the state, then the district, then the block and the city", () => {
     render(
     <MemoryRouter>
       <AdmissionsWorkspace />
@@ -62,18 +62,19 @@ describe("Admission address", () => {
     // The required marker is a "*" inside the label, so read the name alone.
     const labels = Array.from(document.querySelectorAll("label"))
       .map((el) => el.textContent?.replace("*", "").trim())
-      .filter((text) => ["State", "District", "City", "Street address"].includes(text || ""));
-    expect(labels).toEqual(["Street address", "State", "District", "City"]);
+      .filter((text) => ["State", "District", "Block", "City", "Street address"].includes(text || ""));
+    expect(labels).toEqual(["Street address", "State", "District", "Block", "City"]);
   });
 
-  it("will not take a district until a state is chosen, nor a city until a district is", () => {
+  it("will not take a district until a state is chosen, nor a block or city until a district is", () => {
     render(
     <MemoryRouter>
       <AdmissionsWorkspace />
     </MemoryRouter>,
   );
     expect(screen.getByText("Select a state first")).toBeInTheDocument();
-    expect(screen.getByText("Select a district first")).toBeInTheDocument();
+    // Block and City both wait on the district.
+    expect(screen.getAllByText("Select a district first")).toHaveLength(2);
   });
 
   it("narrows the district list to the state, and the city list to the district", () => {
@@ -121,6 +122,6 @@ describe("Admission address", () => {
     // Patna is not in Kerala, and Danapur is not in Patna any more.
     expect(screen.queryByText("Patna")).toBeNull();
     expect(screen.queryByText("Danapur")).toBeNull();
-    expect(screen.getByText("Select a district first")).toBeInTheDocument();
+    expect(screen.getAllByText("Select a district first")).toHaveLength(2);
   });
 });
