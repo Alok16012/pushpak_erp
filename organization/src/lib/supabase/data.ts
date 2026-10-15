@@ -4933,6 +4933,17 @@ export async function setUserRole(userId: string, roleId: string | null) {
  * Returns an empty list for anyone whose role has none -- which every account
  * had before roles existed -- and that reads as "everything this view allows".
  */
+/**
+ * A Super Admin always has every page and every action. The SUPER_ADMIN
+ * account itself, and any role the institute named "Super Admin", are never
+ * narrowed by Access Control -- a page added to the app later must appear for
+ * them without anyone remembering to tick it, and a slip on the Access
+ * Control page must not lock the head office out of its own panel.
+ */
+export const isSuperAdminRole = (role: { name?: string | null; baseRole?: string | null } | null | undefined) =>
+  String(role?.baseRole || "").toUpperCase() === "SUPER_ADMIN" ||
+  /^\s*super\s*-?\s*admin\s*$/i.test(String(role?.name || ""));
+
 export async function getUserModules(
   userId: string | null,
   fallback?: { role?: string | null; organizationId?: string | null },
@@ -4952,9 +4963,16 @@ export async function getUserModules(
     organizationId: (data as { organizationId?: string } | null)?.organizationId || fallback?.organizationId || null,
   };
 
+  if (String(row.role || "").toUpperCase() === "SUPER_ADMIN") {
+    return { success: true as const, data: [] as string[], permissions: {} as Permissions };
+  }
+
   // The role the login was actually given.
   if (row.roleId) {
     const role = await getRole(row.roleId).catch(() => null);
+    if (role?.data && isSuperAdminRole(role.data)) {
+      return { success: true as const, data: [] as string[], permissions: {} as Permissions };
+    }
     if (role?.data) return { success: true as const, data: role.data.modules, permissions: role.data.permissions };
     // The role itself could not be read: fall through to the built-in one.
   }

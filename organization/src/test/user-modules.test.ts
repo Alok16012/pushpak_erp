@@ -95,3 +95,25 @@ describe("the pages a login is granted", () => {
     expect(data).toEqual([]);
   });
 });
+
+describe("Super Admin", () => {
+  it("keeps every page and action even when its role lists only some", async () => {
+    userRow = { roleId: "role-super", role: "ORGANIZATION_ADMIN", organizationId: "org1" };
+    roleRows = [{ id: "role-super", organizationId: "org1", name: "Super Admin", baseRole: "ORGANIZATION_ADMIN", modules: ["/course/view"], permissions: { "/course/view": [] }, isSystem: false }];
+    const result = await getUserModules("u-super");
+    expect(result.data).toEqual([]);
+    expect(result.permissions).toEqual({});
+  });
+
+  it("never narrows the SUPER_ADMIN account itself", async () => {
+    userRow = { roleId: null, role: "SUPER_ADMIN", organizationId: "org1" };
+    roleRows = [{ ...ACCOUNTANT_ROLE, baseRole: "SUPER_ADMIN", modules: ["/fee/collection"] }];
+    expect((await getUserModules("u-root")).data).toEqual([]);
+  });
+
+  it("still narrows other admin roles", async () => {
+    userRow = { roleId: "role-ops", role: "ORGANIZATION_ADMIN", organizationId: "org1" };
+    roleRows = [{ id: "role-ops", organizationId: "org1", name: "Operations Admin", baseRole: "ORGANIZATION_ADMIN", modules: ["/course/view"], isSystem: false }];
+    expect((await getUserModules("u-ops")).data).toEqual(["/course/view"]);
+  });
+});

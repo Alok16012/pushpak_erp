@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { getRoles, updateRole, canManageUsers, type RoleRow } from "@/lib/supabase/data";
+import { getRoles, updateRole, canManageUsers, isSuperAdminRole, type RoleRow } from "@/lib/supabase/data";
 import { ACTIONS, ACTION_LABELS, actionsOn, type Action, type Permissions } from "@/lib/permissions";
 import { modulesForView } from "@/lib/navigation";
 import { viewForRole, type View } from "@/lib/roles";
@@ -47,9 +47,11 @@ export default function AccessControl() {
   const [granted, setGranted] = useState<string[]>([]);
   const [perms, setPerms] = useState<Permissions>({});
 
-  const mayEdit = viewForRole(user?.role) === "admin" && canManageUsers(user?.role);
   const roleId = params.get("role") ?? "";
   const role = roles.find((r) => r.id === roleId) ?? null;
+  // A Super Admin always has everything; there is nothing here to narrow.
+  const superAdmin = isSuperAdminRole(role);
+  const mayEdit = viewForRole(user?.role) === "admin" && canManageUsers(user?.role) && !superAdmin;
 
   /** The pages this role's level can reach at all — the ceiling on the ticks. */
   const groups = useMemo(
@@ -89,8 +91,8 @@ export default function AccessControl() {
   // The ticks follow whichever role is being looked at.
   useEffect(() => {
     // Nothing ticked has always meant "every page"; show it as every page ticked.
-    setGranted(role ? (role.modules.length ? role.modules : everyPath) : []);
-    setPerms(role?.permissions ?? {});
+    setGranted(role ? (role.modules.length && !isSuperAdminRole(role) ? role.modules : everyPath) : []);
+    setPerms(role && !isSuperAdminRole(role) ? role.permissions : {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role?.id, role?.modules, role?.permissions]);
 
@@ -237,6 +239,16 @@ export default function AccessControl() {
             </CardContent>
           </Card>
 
+          {superAdmin && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardContent className="p-4 text-sm">
+                <p className="font-semibold">Super Admin has full access</p>
+                <p className="mt-1 text-muted-foreground">
+                  Every page and every action — including pages added to the app later. It cannot be narrowed here.
+                </p>
+              </CardContent>
+            </Card>
+          )}
           <p className="text-xs text-muted-foreground">
             <b>View</b> puts the page in the role's menu. <b>Create</b> (add / new / save), <b>Edit</b>, <b>Delete</b>,{" "}
             <b>Print</b>, <b>Export</b> and <b>Approve</b> decide which buttons work on it — ticking any of them ticks View

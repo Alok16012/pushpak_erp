@@ -21,10 +21,14 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 vi.mock("@/lib/supabase/data", () => ({
   canManageUsers: () => true,
+  isSuperAdminRole: (r: { name?: string } | null) => /^super admin$/i.test(String(r?.name || "")),
   getRoles: () =>
     Promise.resolve({
       success: true,
-      data: [{ id: "r1", organizationId: "org1", name: "Accountant", description: "", baseRole: "ACCOUNTANT", modules: [], isSystem: true, permissions: {} }],
+      data: [
+        { id: "r1", organizationId: "org1", name: "Accountant", description: "", baseRole: "ACCOUNTANT", modules: [], isSystem: true, permissions: {} },
+        { id: "r2", organizationId: "org1", name: "Super Admin", description: "", baseRole: "ORGANIZATION_ADMIN", modules: ["/course/view"], isSystem: false, permissions: {} },
+      ],
     }),
   updateRole: (...a: unknown[]) => updateRole(...a),
 }));
@@ -80,5 +84,14 @@ describe("Access Control matrix", () => {
     const [, input] = updateRole.mock.calls[0] as [string, { permissions: Record<string, string[]> }];
     expect(input.permissions["/exam/results"]).toEqual([]);
     expect(input.permissions["/fee/collection"]).toEqual([]);
+  });
+
+  it("shows Super Admin as full access that cannot be narrowed", async () => {
+    render(<MemoryRouter initialEntries={["/user/access-control?role=r2"]}><AccessControl /></MemoryRouter>);
+    expect(await screen.findByText("Super Admin has full access", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked();
+    expect(screen.getByLabelText("Create on Results & Marksheets")).toBeChecked();
+    expect(screen.getByLabelText("Create on Results & Marksheets")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Save permissions/ })).toBeNull();
   });
 });
