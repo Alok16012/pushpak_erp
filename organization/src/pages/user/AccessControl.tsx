@@ -96,7 +96,9 @@ export default function AccessControl() {
 
   const has = (url: string, action: Action) => actionsOn(perms, url).includes(action);
   /** Sets one action on some pages; a page left with every action needs no entry. */
-  const setAction = (urls: string[], action: Action, on: boolean) =>
+  const setAction = (urls: string[], action: Action, on: boolean) => {
+    // Allowing an action on a page means the role must be able to open it.
+    if (on) setGranted((list) => [...new Set([...list, ...urls])]);
     setPerms((current) => {
       const next = { ...current };
       for (const url of urls) {
@@ -108,6 +110,7 @@ export default function AccessControl() {
       }
       return next;
     });
+  };
   const viewOnly = () => {
     setGranted(everyPath);
     setPerms(Object.fromEntries(everyPath.map((url) => [url, [] as Action[]])));
@@ -234,6 +237,11 @@ export default function AccessControl() {
             </CardContent>
           </Card>
 
+          <p className="text-xs text-muted-foreground">
+            <b>View</b> puts the page in the role's menu. <b>Create</b> (add / new / save), <b>Edit</b>, <b>Delete</b>,{" "}
+            <b>Print</b>, <b>Export</b> and <b>Approve</b> decide which buttons work on it — ticking any of them ticks View
+            too. Tick a group's row to set every page in it.
+          </p>
           <Card>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full min-w-[760px] text-sm">
@@ -267,10 +275,10 @@ export default function AccessControl() {
                           {ACTIONS.map((a) => (
                             <td key={a} className="p-2.5 text-center">
                               <Checkbox
-                                checked={open.length > 0 && open.every((url) => has(url, a))}
-                                disabled={!mayEdit || open.length === 0}
+                                checked={open.length === urls.length && urls.every((url) => has(url, a))}
+                                disabled={!mayEdit}
                                 aria-label={`${ACTION_LABELS[a]} in all of ${group.group}`}
-                                onCheckedChange={(value) => setAction(open, a, value === true)}
+                                onCheckedChange={(value) => setAction(value === true ? urls : open, a, value === true)}
                               />
                             </td>
                           ))}
@@ -292,7 +300,7 @@ export default function AccessControl() {
                                 <td key={a} className="p-2.5 text-center">
                                   <Checkbox
                                     checked={canOpen && has(item.url, a)}
-                                    disabled={!mayEdit || !canOpen}
+                                    disabled={!mayEdit}
                                     aria-label={`${ACTION_LABELS[a]} on ${item.title}`}
                                     onCheckedChange={(value) => setAction([item.url], a, value === true)}
                                   />

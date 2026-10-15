@@ -12,7 +12,7 @@ export const ACTIONS = ["create", "edit", "delete", "print", "export", "approve"
 export type Action = (typeof ACTIONS)[number];
 
 export const ACTION_LABELS: Record<Action, string> = {
-  create: "Add",
+  create: "Create",
   edit: "Edit",
   delete: "Delete",
   print: "Print",

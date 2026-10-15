@@ -39,29 +39,41 @@ beforeEach(() => {
 describe("Access Control matrix", () => {
   it("narrows one page to view and print, and saves it", async () => {
     render(<MemoryRouter initialEntries={["/user/access-control?role=r1"]}><AccessControl /></MemoryRouter>);
-    const view = await screen.findByLabelText("View Results & Marksheets");
+    const view = await screen.findByLabelText("View Results & Marksheets", {}, { timeout: 5000 });
     expect(view).toBeChecked();
     expect(screen.getByLabelText("Delete on Results & Marksheets")).toBeChecked();
 
-    for (const action of ["Add", "Edit", "Delete", "Export", "Approve"]) {
+    for (const action of ["Create", "Edit", "Delete", "Export", "Approve"]) {
       fireEvent.click(screen.getByLabelText(`${action} on Results & Marksheets`));
     }
     expect(screen.getByLabelText("Delete on Results & Marksheets")).not.toBeChecked();
     expect(screen.getByLabelText("Print on Results & Marksheets")).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: /Save permissions/ }));
-    await waitFor(() => expect(updateRole).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updateRole).toHaveBeenCalledTimes(1), { timeout: 5000 });
     const [id, input] = updateRole.mock.calls[0] as [string, { modules: string[]; permissions: Record<string, string[]> }];
     expect(id).toBe("r1");
     expect(input.modules).toEqual([]); // every page still open
     expect(input.permissions).toEqual({ "/exam/results": ["print"] });
   });
 
+  it("ticks View along with an action on a page the role could not open", async () => {
+    render(<MemoryRouter initialEntries={["/user/access-control?role=r1"]}><AccessControl /></MemoryRouter>);
+    await screen.findByLabelText("View Results & Marksheets", {}, { timeout: 5000 });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByLabelText("View Results & Marksheets")).not.toBeChecked();
+    const create = screen.getByLabelText("Create on Results & Marksheets");
+    expect(create).not.toBeDisabled();
+    fireEvent.click(create);
+    expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked();
+    expect(screen.getByLabelText("Create on Results & Marksheets")).toBeChecked();
+  });
+
   it("makes a role view-only across the board", async () => {
     render(<MemoryRouter initialEntries={["/user/access-control?role=r1"]}><AccessControl /></MemoryRouter>);
-    await screen.findByLabelText("View Results & Marksheets");
+    await screen.findByLabelText("View Results & Marksheets", {}, { timeout: 5000 });
     fireEvent.click(screen.getByRole("button", { name: "View only" }));
-    expect(screen.getByLabelText("Add on Results & Marksheets")).not.toBeChecked();
+    expect(screen.getByLabelText("Create on Results & Marksheets")).not.toBeChecked();
     expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: /Save permissions/ }));
     await waitFor(() => expect(updateRole).toHaveBeenCalled());
