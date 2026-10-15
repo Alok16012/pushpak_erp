@@ -15,7 +15,9 @@ import { getPortalRequests, getStudentProfile, getStudentPortalInvoices, getStud
 import { useAuth } from "@/contexts/AuthContext";
 import { downloadHtml, printHtml } from "@/lib/export";
 import { admissionPdf } from "@/lib/documents";
-import { EXAMS, admitCardHtml } from "@/data/admit-card-templates";
+import { admitCardHtml, blankAdmitCardTemplate, type Exam } from "@/data/admit-card-templates";
+import { getPublicAdmitCard, type PublicAdmitCard } from "@/lib/supabase/examWorkflow";
+import { termLabel, termPlan } from "@/lib/examWorkflow";
 import { idCardHtml } from "@/data/id-card-templates";
 import { admitCardsPdf } from "@/lib/admit-card-pdf";
 import {
@@ -53,7 +55,9 @@ export default function MyDocuments() {
   const [error, setError] = useState<string | null>(null);
   const [idTemplateId, setIdTemplateId] = useState("");
   const [admitTemplateId, setAdmitTemplateId] = useState("");
-  const [examValue, setExamValue] = useState("midterm");
+  // The admit card the centre issued (exam-workflow.sql): roll number, exam
+  // centre and the paper-by-paper schedule.
+  const [issuedCard, setIssuedCard] = useState<PublicAdmitCard | null>(null);
   const [requestKind, setRequestKind] = useState(REQUEST_KINDS[2]);
   const [requestNote, setRequestNote] = useState("");
   const [requestOpen, setRequestOpen] = useState(false);
@@ -90,6 +94,11 @@ export default function MyDocuments() {
       .then(([profileResult, invoicesResult, resultsResult, requestsRes]) => {
         if (cancelled) return;
         setProfile(profileResult.data);
+        if (profileResult.data?.enrollmentNo) {
+          getPublicAdmitCard(profileResult.data.enrollmentNo)
+            .then((card) => { if (!cancelled) setIssuedCard(card); })
+            .catch(() => { /* no admit card section rather than a failed page */ });
+        }
         setInvoices(invoicesResult.data);
         setResults(resultsResult.data);
         setRequests(
@@ -125,11 +134,27 @@ export default function MyDocuments() {
   const dues = feeSummary(invoices);
   const idTemplate = activeIdTemplates.find((template) => template.id === idTemplateId);
   const admitTemplate = activeAdmitTemplates.find((template) => template.id === admitTemplateId);
-  const exam = EXAMS.find((option) => option.value === examValue);
+  const day = (iso: string) =>
+    iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "";
+  const cardDates = (issuedCard?.schedule || []).map((s) => s.date).filter(Boolean).sort();
+  const exam: Exam | undefined = issuedCard?.issued
+    ? {
+        value: "issued",
+        label: `${issuedCard.student?.course || "Examination"} — ${termLabel(termPlan(issuedCard.courseTerms).type, issuedCard.term || 1)}${issuedCard.session ? ` (${issuedCard.session})` : ""}`,
+        window: cardDates.length ? `${day(cardDates[0])}${cardDates.length > 1 ? ` to ${day(cardDates[cardDates.length - 1])}` : ""}` : "To be announced",
+        schedule: [
+          ...(issuedCard.examCentre ? [{ subject: "Exam centre", when: [issuedCard.examCentre.name, issuedCard.examCentre.address].filter(Boolean).join(", ") }] : []),
+          ...(issuedCard.schedule || []).map((s) => ({ subject: s.subject, when: `${day(s.date)} ${s.time}` })),
+        ],
+      }
+    : undefined;
   const idStudent = profile ? asIdCardStudent(profile) : null;
   const admitBlocked = dues.overdue > 0;
-  const admitStudent = profile ? asAdmitCardStudent(profile, dues.due > 0 ? (admitBlocked ? "overdue" : "pending") : "paid") : null;
-  const admitCard = admitTemplate ? { ...admitTemplate, exam: examValue } : undefined;
+  const baseAdmit = profile ? asAdmitCardStudent(profile, dues.due > 0 ? (admitBlocked ? "overdue" : "pending") : "paid") : null;
+  const admitStudent = baseAdmit && issuedCard?.issued ? { ...baseAdmit, rollNo: issuedCard.rollNo || baseAdmit.rollNo } : null;
+  // The institute's template when this browser has one, otherwise the standard layout.
+  const template = admitTemplate || { ...blankAdmitCardTemplate(), id: "standard", name: "Admit card", status: "active" as const };
+  const admitCard = exam ? { ...template, exam: exam.value, liveExam: exam } : undefined;
 
   const printIdCard = () => {
     if (!idTemplate || !idStudent) return toast({ title: "No ID card template published", variant: "destructive" });
@@ -141,12 +166,12 @@ export default function MyDocuments() {
     toast({ title: "ID card saved", description: "Open the file and print it at actual size." });
   };
   const printAdmitCard = () => {
-    if (!admitCard || !admitStudent) return toast({ title: "No admit card template published", variant: "destructive" });
+    if (!admitCard || !admitStudent) return toast({ title: "Admit card not issued yet", description: "Your centre issues it once the exam schedule is out.", variant: "destructive" });
     if (admitBlocked) return toast({ title: "Admit card on hold", description: `${money(dues.overdue)} is overdue. Clear it from Fees & receipts to release the card.`, variant: "destructive" });
     printHtml(`Admit card — ${profile?.name}`, admitCardHtml(admitCard, admitStudent));
   };
   const downloadAdmitCard = () => {
-    if (!admitCard || !admitStudent) return toast({ title: "No admit card template published", variant: "destructive" });
+    if (!admitCard || !admitStudent) return toast({ title: "Admit card not issued yet", description: "Your centre issues it once the exam schedule is out.", variant: "destructive" });
     if (admitBlocked) return toast({ title: "Admit card on hold", description: `${money(dues.overdue)} is overdue. Clear it from Fees & receipts to release the card.`, variant: "destructive" });
     admitCardsPdf(admitCard, [admitStudent], `admit-card-${profile?.rollNo}.pdf`);
     toast({ title: "Admit card downloaded", description: `${exam?.label} · ${exam?.window}` });
@@ -221,16 +246,13 @@ export default function MyDocuments() {
           <Card>
             <CardHeader className="flex-row items-center justify-between space-y-0">
               <CardTitle className="flex items-center gap-2"><FileText className="h-4 w-4" />Admit card</CardTitle>
-              <Select value={examValue} onValueChange={setExamValue}>
-                <SelectTrigger className="w-[190px]"><SelectValue placeholder="Examination" /></SelectTrigger>
-                <SelectContent>{EXAMS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-              </Select>
+              {issuedCard?.issued && <Badge variant="secondary">Roll {issuedCard.rollNo}</Badge>}
             </CardHeader>
             <CardContent>
               {admitBlocked && <p className="mb-3 rounded-xl border border-destructive/25 bg-destructive/10 p-3 text-xs text-destructive">Held back: {money(dues.overdue)} is overdue. The card is released as soon as the balance is cleared.</p>}
               {admitCard && admitStudent
                 ? <div className="max-h-[420px] overflow-auto rounded-2xl bg-muted/50 p-4" dangerouslySetInnerHTML={{ __html: admitCardHtml(admitCard, admitStudent) }} />
-                : <p className="py-10 text-center text-sm text-muted-foreground">Your institute has not published an admit card template yet.</p>}
+                : <p className="py-10 text-center text-sm text-muted-foreground">Your admit card has not been issued yet. It appears here once your centre issues it.</p>}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button size="sm" onClick={downloadAdmitCard} disabled={!admitCard || !profile}><Download className="mr-1.5 h-3.5 w-3.5" />Download PDF</Button>
                 <Button size="sm" variant="outline" onClick={printAdmitCard} disabled={!admitCard || !profile}><Printer className="mr-1.5 h-3.5 w-3.5" />Print</Button>

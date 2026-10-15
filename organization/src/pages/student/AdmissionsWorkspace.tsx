@@ -13,7 +13,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SelectWithCustom } from "@/components/ui/select-with-custom";
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, FileText, Save, Upload, X } from "lucide-react";
+import { DocumentViewer } from "@/components/student/StudentDocuments";
+import { fileKind, studentFiles, type StudentFile } from "@/lib/studentDocuments";
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Eye, FileText, Save, Upload, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { EditableSelect } from "@/components/ui/EditableSelect";
 import { MultiSelect } from "@/components/ui/MultiSelect";
@@ -352,6 +354,8 @@ export default function AdmissionsWorkspace() {
     }
   });
   const [saving, setSaving] = useState(false);
+  /** The uploaded document open full size, if any. */
+  const [viewing, setViewing] = useState<StudentFile | null>(null);
   /** Set once the record exists, so the issued number has somewhere to be read. */
   const [issued, setIssued] = useState<{ applicationNo: string; name: string } | null>(
     null,
@@ -391,6 +395,16 @@ export default function AdmissionsWorkspace() {
       .then(({ data }) => {
         if (cancelled) return;
         setDraft(draftFromRecord(data as Record<string, unknown>));
+        // The files already on the record, so they can be seen and kept: the
+        // documents column is written whole, and an edit that attached one new
+        // scan used to save that scan alone and lose the rest.
+        setDocuments(
+          Object.fromEntries(
+            studentFiles(data as Record<string, unknown>)
+              .filter((file) => ADMISSION_DOCUMENTS.some((doc) => doc.id === file.key))
+              .map((file) => [file.key, { name: file.name || file.label, dataUrl: file.url, uploadedAt: file.uploadedAt || "" }]),
+          ),
+        );
       })
       .catch((error) => {
         if (cancelled) return;
@@ -1296,6 +1310,27 @@ export default function AdmissionsWorkspace() {
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
+                          {held && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="gap-1.5"
+                              aria-label={`View ${doc.label}`}
+                              onClick={() =>
+                                setViewing({
+                                  key: doc.id,
+                                  label: doc.label,
+                                  name: held.name,
+                                  url: held.dataUrl,
+                                  uploadedAt: held.uploadedAt,
+                                  kind: fileKind(held.dataUrl, held.name),
+                                })
+                              }
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              View
+                            </Button>
+                          )}
                           <Button
                             variant={held ? "outline" : "default"}
                             size="sm"
@@ -1484,6 +1519,7 @@ export default function AdmissionsWorkspace() {
           </div>
         </div>
       </Card>
+      <DocumentViewer file={viewing} studentName={[draft.firstName, draft.lastName].filter(Boolean).join(" ") || "student"} onClose={() => setViewing(null)} />
     </AppLayout>
   );
 }

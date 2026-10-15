@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import {
   Table,
   TableBody,
@@ -19,6 +19,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Search, MoreHorizontal, ChevronLeft, ChevronRight, Filter, X, Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import * as Router from "react-router-dom";
+import { usePermissionsOrNull } from "@/contexts/PermissionsContext";
+import { labelAllowed } from "@/lib/permissions";
 
 export interface Column<T> {
   key: keyof T | string;
@@ -64,6 +67,23 @@ interface DataTableProps<T> {
   pageSize?: number;
 }
 
+type LocationValue = { location?: { pathname?: string } } | null;
+const NoLocation = createContext<LocationValue>(null);
+/** The router's location context, read without useLocation() so a table
+ *  rendered outside a router (or under a stubbed router) still works. */
+const LocationContext: React.Context<LocationValue> = (() => {
+  try {
+    return ((Router as Record<string, unknown>).UNSAFE_LocationContext as React.Context<LocationValue>) || NoLocation;
+  } catch {
+    return NoLocation;
+  }
+})();
+
+/** The page's path, or "" when the table is rendered outside a router. */
+function useCurrentPath() {
+  return useContext(LocationContext)?.location?.pathname ?? "";
+}
+
 export function DataTable<T extends { id: string | number }>({
   data,
   columns,
@@ -76,6 +96,13 @@ export function DataTable<T extends { id: string | number }>({
   emptyMessage = "No data available",
   pageSize = 10,
 }: DataTableProps<T>) {
+  // Row actions the signed-in role may not perform on this page (Access
+  // Control) are left out of the menu rather than refused after a click.
+  const permissions = usePermissionsOrNull();
+  const path = useCurrentPath();
+  const rowActions = actions
+    ? (item: T) => actions(item).filter((action) => labelAllowed(permissions, path, action.label))
+    : undefined;
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -263,7 +290,7 @@ export function DataTable<T extends { id: string | number }>({
                 {columns.slice(1,5).map(column => <div key={String(column.key)} className="min-w-0"><dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{column.header}</dt><dd className="mt-1 break-words text-sm">{column.cell ? column.cell(item) : String((item as Record<string,unknown>)[String(column.key)] ?? "-")}</dd></div>)}
               </dl>
             </div>
-            {actions && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="-mr-2 -mt-2 h-10 w-10 shrink-0"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{actions(item).map((action,index)=><DropdownMenuItem key={index} onClick={action.onClick} className={action.destructive?"text-destructive":""}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>}
+            {actions && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="-mr-2 -mt-2 h-10 w-10 shrink-0"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{rowActions!(item).map((action,index)=><DropdownMenuItem key={index} onClick={action.onClick} className={action.destructive?"text-destructive":""}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>}
           </div>
         </article>)}
       </div>
@@ -334,7 +361,7 @@ export function DataTable<T extends { id: string | number }>({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {actions(item).map((action, index) => (
+                          {rowActions!(item).map((action, index) => (
                             <DropdownMenuItem
                               key={index}
                               onClick={action.onClick}

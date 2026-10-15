@@ -70,6 +70,12 @@ const AcademicsWorkspace = lazy(() => import("./pages/course/AcademicsWorkspace"
 
 // Exam Management
 const AssessmentsWorkspace = lazy(() => import("./pages/exam/AssessmentsWorkspace"));
+const CourseSubjects = lazy(() => import("./pages/exam/CourseSubjects"));
+const ExamCentres = lazy(() => import("./pages/exam/ExamCentres"));
+const ExamSchedule = lazy(() => import("./pages/exam/ExamSchedule"));
+const AdmitCards = lazy(() => import("./pages/exam/AdmitCards"));
+const Results = lazy(() => import("./pages/exam/Results"));
+const Certificates = lazy(() => import("./pages/exam/Certificates"));
 
 // Online Exam
 const CreateOnlineExam = lazy(() => import("./pages/online-exam/CreateOnlineExam"));
@@ -218,10 +224,14 @@ const App = () => (
           <Route path="/course/batch/assign" element={<AssignCourseToBatch />} />
           <Route path="/course/batch/assign-students" element={<AssignStudentsToBatch />} />
           <Route path="/course/syllabus" element={<CourseSyllabus />} />
+          <Route path="/course/subjects" element={<CourseSubjects />} />
 
           {/* Exam Management */}
           <Route path="/exam/create" element={<AssessmentsWorkspace />} />
-          <Route path="/exam/schedule" element={<AssessmentsWorkspace />} />
+          <Route path="/exam/schedule" element={<ExamSchedule />} />
+          <Route path="/exam/centres" element={<ExamCentres />} />
+          <Route path="/exam/admit-cards" element={<AdmitCards />} />
+          <Route path="/exam/results" element={<Results />} />
           <Route path="/exam/assign-marks" element={<AssessmentsWorkspace />} />
           <Route path="/exam/marks-list" element={<AssessmentsWorkspace />} />
           <Route path="/exam/grade-management" element={<AssessmentsWorkspace />} />
@@ -248,6 +258,8 @@ const App = () => (
           {/* Certificates */}
           <Route path="/certificate/template" element={<DocumentDesigner />} />
           <Route path="/certificate/generate" element={<AssessmentsWorkspace />} />
+          <Route path="/certificate/issue" element={<Certificates />} />
+          <Route path="/student/passout" element={<Certificates passoutOnly />} />
           <Route path="/certificate/centre" element={<CentreDocuments />} />
 
           {/* Marksheets */}

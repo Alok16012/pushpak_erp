@@ -10,6 +10,7 @@ import { menuFor } from "@/lib/navigation";
 import { VIEWS } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import { getNotices } from "@/lib/supabase/data";
+import { CentreBar } from "./CentreBar";
 
 export function AppHeader() {
   const { user, view, allowedPaths, logout } = useAuth();
@@ -80,6 +81,7 @@ export function AppHeader() {
         </button>
       </div>
       <div className="flex items-center gap-2">
+        <CentreBar />
         {/* A persistent shortcut everywhere except the dashboard, which already
             offers it as its own primary action — outline so that when a page
             does have a filled button, there is still only one focal point. */}

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { StudentDocuments } from "@/components/student/StudentDocuments";
+import { studentFiles, type StudentFile } from "@/lib/studentDocuments";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, Column } from "@/components/ui/DataTable";
@@ -37,6 +39,8 @@ interface OnlineAdmission {
   course: string;
   batch: string;
   documents: string[];
+  /** The uploads themselves, to open from the details. */
+  files: StudentFile[];
   paymentStatus: AdmissionPayment;
   status: AdmissionView;
   requestedDocuments?: string[];
@@ -158,6 +162,7 @@ export default function OnlineAdmissionList() {
             course: s.course?.name || "Not assigned",
             batch: s.batch?.name || "Not assigned",
             documents: uploadedDocuments(s),
+            files: studentFiles(s),
             paymentStatus: paymentFor(byStudent.get(String(s.id)) ?? []),
             status: admissionView(s),
             requestedDocuments: requestedDocuments(s),
@@ -379,11 +384,7 @@ export default function OnlineAdmissionList() {
               </dl>
               <div>
                 <p className="mb-1 text-xs text-muted-foreground">Documents uploaded</p>
-                <div className="flex flex-wrap gap-1">
-                  {details.documents.map((doc) => (
-                    <Badge key={doc} variant="secondary">{doc}</Badge>
-                  ))}
-                </div>
+                <StudentDocuments files={details.files} studentName={details.name} emptyText="No documents uploaded." />
               </div>
               {details.requestedDocuments?.length ? (
                 <div>

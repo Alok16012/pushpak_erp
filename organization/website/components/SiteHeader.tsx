@@ -471,7 +471,7 @@ export default function SiteHeader() {
                 {" "}
               </a>
               {" "}
-              <a href="#certificate">
+              <a href="/verification.html#certificate">
                 {" "}
                 <span className="dropdown-icon">
                   {" "}
@@ -493,7 +493,7 @@ export default function SiteHeader() {
                 {" "}
               </a>
               {" "}
-              <a href="/computercentre/login?as=student">
+              <a href="/verification.html#result">
                 {" "}
                 <span className="dropdown-icon">
                   {" "}
@@ -509,6 +509,28 @@ export default function SiteHeader() {
                   {" "}
                   <small className="dropdown-description">
                     {" "}Check examination result{" "}
+                  </small>
+                  {" "}
+                </span>
+                {" "}
+              </a>
+              {" "}
+              <a href="/verification.html#admit">
+                {" "}
+                <span className="dropdown-icon">
+                  {" "}
+                  <i data-lucide="id-card"></i>
+                  {" "}
+                </span>
+                {" "}
+                <span>
+                  {" "}
+                  <b className="dropdown-title">
+                    {" "}Admit Card{" "}
+                  </b>
+                  {" "}
+                  <small className="dropdown-description">
+                    {" "}Download admit card{" "}
                   </small>
                   {" "}
                 </span>
@@ -853,13 +875,13 @@ export default function SiteHeader() {
                   {" "}Student Login{" "}
                 </a>
                 {" "}
-                <a href="#certificate">
+                <a href="/verification.html#certificate">
                   {" "}
                   <i data-lucide="award"></i>
                   {" "}Certificate{" "}
                 </a>
                 {" "}
-                <a href="/computercentre/login?as=student">
+                <a href="/verification.html#result">
                   {" "}
                   <i data-lucide="file-check"></i>
                   {" "}Result{" "}
@@ -875,6 +897,12 @@ export default function SiteHeader() {
                   {" "}
                   <i data-lucide="credit-card"></i>
                   {" "}Online Payment{" "}
+                </a>
+                {" "}
+                <a href="/verification.html#admit">
+                  {" "}
+                  <i data-lucide="id-card"></i>
+                  {" "}Admit Card{" "}
                 </a>
               </div>
             </div>

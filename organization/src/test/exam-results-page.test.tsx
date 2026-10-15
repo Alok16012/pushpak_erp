@@ -1,0 +1,112 @@
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+
+/**
+ * The Results page: pick a centre's student and a term, type theory and
+ * practical marks, and the total, percentage, grade and result are worked out
+ * before saving -- the final term's marksheet is what a certificate rests on.
+ */
+const toast = vi.fn();
+const saveMarksheet = vi.fn((_input: Record<string, unknown>, _by: string) => Promise.resolve({ result: "PASS", percentage: 75, grade: "A" }));
+
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
+vi.mock("@/components/layout/AppLayout", () => ({
+  AppLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ view: "franchise", user: { id: "u1", name: "Centre Staff", role: "FRANCHISE", organizationId: "org1", branchId: "b1" } }),
+}));
+vi.mock("@/lib/supabase/data", () => ({
+  getBranches: () => Promise.resolve({ success: true, data: [{ id: "b1", name: "Begusarai Centre" }, { id: "b2", name: "Patna Centre" }] }),
+  getCourses: () => Promise.resolve({ success: true, data: [{ id: "c1", name: "ADCA", durationMonths: 24 }] }),
+  getSessionYears: () => Promise.resolve({ success: true, data: [{ name: "2026-2027" }] }),
+  getStudentPicklist: () =>
+    Promise.resolve({
+      success: true,
+      data: [
+        { id: "s1", branchId: "b1", courseId: "c1", firstName: "Ram", lastName: "Kumar", enrollmentNo: "E001", academicYear: "2026-2027" },
+      ],
+    }),
+  getStudentDocument: vi.fn(),
+}));
+vi.mock("@/lib/supabase/examWorkflow", () => ({
+  getExamCentres: () => Promise.resolve([]),
+  getMarksheets: () => Promise.resolve([]),
+  deleteMarksheet: vi.fn(),
+  saveMarksheet: (input: Record<string, unknown>, by: string) => saveMarksheet(input, by),
+  getCourseSubjects: () =>
+    Promise.resolve([
+      { id: "x1", courseId: "c1", term: 2, code: "A01", name: "Web Design", subjectType: "BOTH", theoryMax: 100, theoryMin: 35, practicalMax: 50, practicalMin: 20, sortOrder: 1 },
+      { id: "x2", courseId: "c1", term: 2, code: "A02", name: "Tally", subjectType: "THEORY", theoryMax: 100, theoryMin: 35, practicalMax: 0, practicalMin: 0, sortOrder: 2 },
+      { id: "x3", courseId: "c1", term: 1, code: "A00", name: "Basics", subjectType: "THEORY", theoryMax: 100, theoryMin: 35, practicalMax: 0, practicalMin: 0, sortOrder: 1 },
+    ]),
+}));
+
+vi.mock("@/components/ui/PageHeader", () => ({ PageHeader: () => <div /> }));
+vi.mock("@/lib/studentTemplateDocument", () => ({ printFromTemplate: vi.fn() }));
+vi.mock("@/lib/documents", () => ({ marksheetPdf: vi.fn() }));
+
+const Results = (await import("@/pages/exam/Results")).default;
+
+const control = (label: string) => {
+  const labelEl = Array.from(document.querySelectorAll("label")).find((el) => el.textContent?.trim() === label)!;
+  return within(labelEl.parentElement!).getByRole("combobox");
+};
+const choose = async (label: string, option: RegExp | string) => {
+  fireEvent.keyDown(control(label), { key: "Enter" });
+  fireEvent.click(await screen.findByRole("option", { name: option }));
+};
+
+beforeEach(() => {
+  toast.mockClear();
+  saveMarksheet.mockClear();
+});
+
+describe("Results page", () => {
+  it("works out the result from theory and practical marks and saves the final term", async () => {
+    render(<MemoryRouter><Results /></MemoryRouter>);
+    await waitFor(() => expect(control("Centre")).toHaveTextContent("Begusarai Centre"));
+
+    await choose("Student", /Ram Kumar/);
+    await choose("Year / Semester", "2nd Year");
+
+    // The second year's two papers, not the first year's.
+    expect(await screen.findByText("Web Design")).toBeInTheDocument();
+    expect(screen.queryByText("Basics")).toBeNull();
+    expect(screen.getByText(/final term/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Web Design theory"), { target: { value: "80" } });
+    fireEvent.change(screen.getByLabelText("Web Design practical"), { target: { value: "15" } });
+    fireEvent.change(screen.getByLabelText("Tally theory"), { target: { value: "90" } });
+
+    // 185 of 250, but a practical below its minimum fails the subject.
+    expect(screen.getByText("FAIL")).toBeInTheDocument();
+    expect(screen.getByText(/Below minimum: Web Design/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Web Design practical"), { target: { value: "40" } });
+    expect(screen.getByText("PASS")).toBeInTheDocument();
+    expect(screen.getByText("84%")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save result" }));
+    await waitFor(() => expect(saveMarksheet).toHaveBeenCalledTimes(1));
+    const [input, by] = saveMarksheet.mock.calls[0] as unknown as [Record<string, unknown>, string];
+    expect(by).toBe("Centre Staff");
+    expect(input).toMatchObject({ studentId: "s1", branchId: "b1", courseId: "c1", term: 2, session: "2026-2027", isFinal: true, enrollmentNo: "E001" });
+    expect((input.marks as Array<Record<string, unknown>>).map((l) => [l.name, l.theory, l.practical])).toEqual([
+      ["Web Design", 80, 40],
+      ["Tally", 90, null],
+    ]);
+  });
+
+  it("will not save a mark above the paper's maximum", async () => {
+    render(<MemoryRouter><Results /></MemoryRouter>);
+    await waitFor(() => expect(control("Centre")).toHaveTextContent("Begusarai Centre"));
+    await choose("Student", /Ram Kumar/);
+    await choose("Year / Semester", "1st Year");
+    fireEvent.change(await screen.findByLabelText("Basics theory"), { target: { value: "120" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save result" }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ description: "Basics: theory marks must be between 0 and 100." })));
+    expect(saveMarksheet).not.toHaveBeenCalled();
+  });
+});

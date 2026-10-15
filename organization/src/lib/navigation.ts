@@ -102,6 +102,7 @@ export const menuItems: MenuItem[] = [
       { title: "Assign Course to Batch", url: "/course/batch/assign", icon: ListChecks },
       { title: "Assign Students", url: "/course/batch/assign-students", icon: ListChecks },
       { title: "Course Syllabus", url: "/course/syllabus", icon: BookOpen },
+      { title: "Course Subjects", url: "/course/subjects", icon: ListChecks },
     ],
   },
   {
@@ -111,6 +112,7 @@ export const menuItems: MenuItem[] = [
       { title: "Admission Form", url: "/student/admission-form", icon: FileText },
       { title: "View Students", url: "/student/view", icon: Users },
       { title: "Online Admission List", url: "/student/online-admissions", icon: Globe },
+      { title: "Passout Students", url: "/student/passout", icon: GraduationCap },
     ],
   },
   {
@@ -128,7 +130,11 @@ export const menuItems: MenuItem[] = [
     title: "Exam & Marks",
     icon: ClipboardList,
     items: [
-      { title: "Assessments & Results", url: "/exam/marks-list", icon: FileCheck },
+      { title: "Exam Centres", url: "/exam/centres", icon: School },
+      { title: "Exam Schedule", url: "/exam/schedule", icon: Calendar },
+      { title: "Admit Cards", url: "/exam/admit-cards", icon: IdCard },
+      { title: "Results & Marksheets", url: "/exam/results", icon: FileCheck },
+      { title: "Class Tests", url: "/exam/marks-list", icon: ListChecks },
     ],
   },
   {
@@ -158,6 +164,7 @@ export const menuItems: MenuItem[] = [
       { title: "Document Designer", url: "/documents/designer", icon: LayoutTemplate },
       { title: "Certificate Format", url: "/certificate/template", icon: LayoutTemplate },
       { title: "Marksheet Format", url: "/marksheet/template", icon: LayoutTemplate },
+      { title: "Certificates", url: "/certificate/issue", icon: Award },
       { title: "Student Documents", url: "/certificate/generate", icon: Printer },
       { title: "Centre Certificate", url: "/certificate/centre", icon: Award },
       // ID and admit card layouts are drawn in the Document Designer above, so
@@ -259,6 +266,7 @@ const franchiseMenu: MenuItem[] = [
     "/student/admission-form",
     "/student/view",
     "/student/online-admissions",
+    "/student/passout",
   ]),
   ...scope("Course Management", [
     "/course/view",
@@ -267,6 +275,7 @@ const franchiseMenu: MenuItem[] = [
     "/course/batch/assign",
     "/course/batch/assign-students",
     "/course/syllabus",
+    "/course/subjects",
   ], "Courses & Batches"),
   ...scope("Fee Management", ["/fee/collection", "/fee/due-collection"]),
   ...scope("Attendance Management", [
@@ -274,9 +283,10 @@ const franchiseMenu: MenuItem[] = [
     "/attendance/report",
     "/attendance/logs",
   ]),
-  ...scope("Exam & Marks", ["/exam/marks-list"]),
+  ...scope("Exam & Marks", ["/exam/schedule", "/exam/admit-cards", "/exam/results", "/exam/marks-list"]),
   ...scope("Live Class", ["/live-class/view", "/tools/code-lab", "/tools/whiteboard"]),
   ...scope("Certificate & Marksheet", [
+    "/certificate/issue",
     "/certificate/generate",
     "/certificate/centre",
     "/cards/generate-id",

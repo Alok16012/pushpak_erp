@@ -288,3 +288,9 @@
     to { opacity: 1; transform: translateY(0); }
   }
 }
+
+/* A control the signed-in role has no permission for (PermissionGuard). */
+[data-perm-denied="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

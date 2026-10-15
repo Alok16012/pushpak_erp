@@ -29,6 +29,7 @@ import { useNavigate } from "react-router-dom";
 import { StudentRoster, formatAdmissionDate } from "@/components/student/StudentRoster";
 import { StudentLoginDialog } from "@/components/student/StudentLoginDialog";
 import { StudentContact } from "@/components/student/StudentContact";
+import { StudentDocuments } from "@/components/student/StudentDocuments";
 import { canIssueStudentLogin } from "@/lib/roles";
 import { formatPhone } from "@/lib/phone";
 import {
@@ -182,12 +183,12 @@ export default function ViewStudents() {
 
   const [details, setDetails] = useState<StudentRosterRow | null>(null);
   const [detail, setDetail] = useState<StudentDetail | null>(null);
-  const [detailTab, setDetailTab] = useState<"profile" | "fees">("profile");
+  const [detailTab, setDetailTab] = useState<"profile" | "fees" | "documents">("profile");
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailInvoices, setDetailInvoices] = useState<StudentInvoice[] | null>(null);
   const [pendingDelete, setPendingDelete] = useState<StudentRosterRow | null>(null);
 
-  const openDetail = (student: StudentRosterRow, tab: "profile" | "fees") => {
+  const openDetail = (student: StudentRosterRow, tab: "profile" | "fees" | "documents") => {
     setDetails(student);
     setDetailTab(tab);
     setDetail(null);
@@ -253,6 +254,7 @@ export default function ViewStudents() {
         rows={students}
         loading={loading}
         onView={(student) => openDetail(student, "profile")}
+        onDocuments={(student) => openDetail(student, "documents")}
         // The whole admission form, not a five-box dialog: every column on the
         // record is editable there, and the five that used to be here were
         // applied to the session and then thrown away.
@@ -424,10 +426,29 @@ export default function ViewStudents() {
             </div>
           )}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDetailTab(detailTab === "profile" ? "fees" : "profile")}>
-              {detailTab === "profile" ? "Fee details" : "Profile"}
-            </Button>
+          {detailTab === "documents" && details && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">Uploaded documents</p>
+              {detail ? (
+                <StudentDocuments
+                  record={detail as unknown as Record<string, unknown>}
+                  studentName={details.name}
+                  emptyText="This student has not uploaded any documents yet."
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">Loading documents…</p>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="flex-wrap gap-2">
+            {(["profile", "documents", "fees"] as const)
+              .filter((tab) => tab !== detailTab)
+              .map((tab) => (
+                <Button key={tab} variant="outline" onClick={() => setDetailTab(tab)}>
+                  {tab === "profile" ? "Profile" : tab === "fees" ? "Fee details" : "Documents"}
+                </Button>
+              ))}
             <Button onClick={() => navigate("/fee/collection")}>Collect fee</Button>
           </DialogFooter>
         </DialogContent>

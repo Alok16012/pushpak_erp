@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Loader2, Save, Shield } from "lucide-react";
 
@@ -6,7 +6,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { getRoles, updateRole, canManageUsers, type RoleRow } from "@/lib/supabase/data";
+import { ACTIONS, ACTION_LABELS, actionsOn, type Action, type Permissions } from "@/lib/permissions";
 import { modulesForView } from "@/lib/navigation";
 import { viewForRole, type View } from "@/lib/roles";
 
@@ -44,6 +45,7 @@ export default function AccessControl() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [granted, setGranted] = useState<string[]>([]);
+  const [perms, setPerms] = useState<Permissions>({});
 
   const mayEdit = viewForRole(user?.role) === "admin" && canManageUsers(user?.role);
   const roleId = params.get("role") ?? "";
@@ -86,8 +88,34 @@ export default function AccessControl() {
 
   // The ticks follow whichever role is being looked at.
   useEffect(() => {
-    setGranted(role?.modules ?? []);
-  }, [role?.id, role?.modules]);
+    // Nothing ticked has always meant "every page"; show it as every page ticked.
+    setGranted(role ? (role.modules.length ? role.modules : everyPath) : []);
+    setPerms(role?.permissions ?? {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role?.id, role?.modules, role?.permissions]);
+
+  const has = (url: string, action: Action) => actionsOn(perms, url).includes(action);
+  /** Sets one action on some pages; a page left with every action needs no entry. */
+  const setAction = (urls: string[], action: Action, on: boolean) =>
+    setPerms((current) => {
+      const next = { ...current };
+      for (const url of urls) {
+        const list = new Set(actionsOn(next, url));
+        if (on) list.add(action);
+        else list.delete(action);
+        if (list.size === ACTIONS.length) delete next[url];
+        else next[url] = ACTIONS.filter((a) => list.has(a));
+      }
+      return next;
+    });
+  const viewOnly = () => {
+    setGranted(everyPath);
+    setPerms(Object.fromEntries(everyPath.map((url) => [url, [] as Action[]])));
+  };
+  const fullAccess = () => {
+    setGranted(everyPath);
+    setPerms({});
+  };
 
   const toggle = (url: string, on: boolean) =>
     setGranted((list) => (on ? [...new Set([...list, url])] : list.filter((p) => p !== url)));
@@ -104,8 +132,12 @@ export default function AccessControl() {
       // Everything ticked is stored as nothing: "the whole menu" should keep
       // meaning the whole menu even after a page is added to the app later.
       const modules = granted.length === everyPath.length ? [] : granted;
-      await updateRole(role.id, { modules });
-      setRoles((list) => list.map((r) => (r.id === role.id ? { ...r, modules } : r)));
+      // Only pages the role can open carry action limits.
+      const permissions = Object.fromEntries(
+        Object.entries(perms).filter(([url]) => granted.includes(url) && everyPath.includes(url)),
+      ) as Permissions;
+      await updateRole(role.id, { modules, permissions });
+      setRoles((list) => list.map((r) => (r.id === role.id ? { ...r, modules, permissions } : r)));
       toast({
         title: "Permissions saved",
         description:
@@ -128,12 +160,14 @@ export default function AccessControl() {
     <AppLayout>
       <PageHeader
         title="Access Control"
-        description="Tick the pages each role may open. Everything unticked disappears from their menu."
+        description="Tick what each role may do on every page: View, Add, Edit, Delete, Print, Export, Approve."
         breadcrumbs={[{ label: "User Management", href: "/user/all" }, { label: "Access Control" }]}
         actions={
           mayEdit &&
           role && (
-            <Button className="gap-2" onClick={save} disabled={saving}>
+            // Never held back by the guard: a role narrowed by mistake must
+            // still be able to be put right from here.
+            <Button className="gap-2" onClick={save} disabled={saving} data-perm-ignore="">
               <Save className="h-4 w-4" />
               {saving ? "Saving…" : "Save permissions"}
             </Button>
@@ -181,17 +215,18 @@ export default function AccessControl() {
                 <p className="text-xs text-muted-foreground">
                   {role.description || "No description"}
                   <br />
-                  {granted.length === 0
-                    ? "Nothing ticked — this role gets every page its level allows."
-                    : `${granted.length} of ${everyPath.length} pages granted.`}
+                  {`${granted.length} of ${everyPath.length} pages · ${Object.keys(perms).filter((u) => granted.includes(u)).length} with limited actions`}
                 </p>
               )}
               {role && mayEdit && (
                 <div className="ml-auto flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setGranted(everyPath)}>
-                    Select all
+                  <Button variant="outline" size="sm" onClick={fullAccess}>
+                    Full access
                   </Button>
-                  <Button variant="outline" size="sm" onClick={() => setGranted([])}>
+                  <Button variant="outline" size="sm" onClick={viewOnly}>
+                    View only
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => { setGranted([]); setPerms({}); }}>
                     Clear
                   </Button>
                 </div>
@@ -199,48 +234,85 @@ export default function AccessControl() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {groups.map((group) => {
-              const urls = group.items.map((item) => item.url);
-              const all = urls.every((url) => granted.includes(url));
-              return (
-                <Card key={group.group}>
-                  <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-                    <CardTitle className="flex items-center gap-2 text-sm">
-                      <Shield className="h-4 w-4 text-muted-foreground" />
-                      {group.group}
-                    </CardTitle>
-                    <Checkbox
-                      checked={all}
-                      disabled={!mayEdit}
-                      aria-label={`Grant all of ${group.group}`}
-                      onCheckedChange={(value) => toggleGroup(urls, value === true)}
-                    />
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {group.items.map((item) => (
-                      <label
-                        key={item.url}
-                        className="flex cursor-pointer items-center gap-2 text-sm"
-                      >
-                        <Checkbox
-                          checked={granted.includes(item.url)}
-                          disabled={!mayEdit}
-                          aria-label={item.title}
-                          onCheckedChange={(value) => toggle(item.url, value === true)}
-                        />
-                        <span>{item.title}</span>
-                      </label>
+          <Card>
+            <CardContent className="overflow-x-auto p-0">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
+                    <th className="p-3 text-left font-semibold">Page</th>
+                    <th className="w-16 p-3 text-center font-semibold">View</th>
+                    {ACTIONS.map((a) => (
+                      <th key={a} className="w-16 p-3 text-center font-semibold">{ACTION_LABELS[a]}</th>
                     ))}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.map((group) => {
+                    const urls = group.items.map((item) => item.url);
+                    const open = urls.filter((url) => granted.includes(url));
+                    return (
+                      <FragmentRows key={group.group}>
+                        <tr className="border-b bg-muted/20">
+                          <td className="p-2.5 pl-3 font-semibold">
+                            <span className="flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />{group.group}</span>
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <Checkbox
+                              checked={urls.every((url) => granted.includes(url))}
+                              disabled={!mayEdit}
+                              aria-label={`View all of ${group.group}`}
+                              onCheckedChange={(value) => toggleGroup(urls, value === true)}
+                            />
+                          </td>
+                          {ACTIONS.map((a) => (
+                            <td key={a} className="p-2.5 text-center">
+                              <Checkbox
+                                checked={open.length > 0 && open.every((url) => has(url, a))}
+                                disabled={!mayEdit || open.length === 0}
+                                aria-label={`${ACTION_LABELS[a]} in all of ${group.group}`}
+                                onCheckedChange={(value) => setAction(open, a, value === true)}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                        {group.items.map((item) => {
+                          const canOpen = granted.includes(item.url);
+                          return (
+                            <tr key={item.url} className="border-b last:border-0">
+                              <td className="p-2.5 pl-9">{item.title}</td>
+                              <td className="p-2.5 text-center">
+                                <Checkbox
+                                  checked={canOpen}
+                                  disabled={!mayEdit}
+                                  aria-label={`View ${item.title}`}
+                                  onCheckedChange={(value) => toggle(item.url, value === true)}
+                                />
+                              </td>
+                              {ACTIONS.map((a) => (
+                                <td key={a} className="p-2.5 text-center">
+                                  <Checkbox
+                                    checked={canOpen && has(item.url, a)}
+                                    disabled={!mayEdit || !canOpen}
+                                    aria-label={`${ACTION_LABELS[a]} on ${item.title}`}
+                                    onCheckedChange={(value) => setAction([item.url], a, value === true)}
+                                  />
+                                </td>
+                              ))}
+                            </tr>
+                          );
+                        })}
+                      </FragmentRows>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
 
           {role && (
             <p className="text-xs text-muted-foreground">
-              These decide the menu and the pages this app will open. The database keeps its own
+              View decides the menu and the pages this role can open; the other columns decide which
+              buttons work there — anything unticked is greyed out and refused with a message. The database keeps its own
               rules on top — a branch role cannot read another branch's records whatever is ticked
               here.{" "}
               <Badge variant="outline" className="ml-1">
@@ -252,4 +324,9 @@ export default function AccessControl() {
       )}
     </AppLayout>
   );
+}
+
+/** A group heading row and its page rows, as siblings in the table body. */
+function FragmentRows({ children }: { children: React.ReactNode }) {
+  return <Fragment>{children}</Fragment>;
 }

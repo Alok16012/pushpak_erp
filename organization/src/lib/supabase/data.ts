@@ -16,6 +16,8 @@ import {
   type RecordPaymentInput,
 } from "./studentFee";
 import { feeStanding } from "../fees";
+import { asExamResults, termPlan, type MarkLine } from "../examWorkflow";
+import type { Permissions } from "../permissions";
 
 /**
  * Asserts that a delete actually removed something.
@@ -1763,10 +1765,38 @@ export async function getStudentResults(studentId: string, branchId: string, exa
   const { data: examRows, error: examError } = examIds.length ? await examsQuery : { data: [], error: null };
   if (examError) throw new Error(examError.message);
   const exams = new Map((examRows || []).map((e) => [e.id, e]));
-  return { success: true, data: (data || []).filter((r) => exams.has(r.examId)).map((r) => {
+  const fromExams = (data || []).filter((r) => exams.has(r.examId)).map((r) => {
     const exam = exams.get(r.examId)!;
     return { id: r.id, exam: exam.name, subject: exam.subject, maxMarks: Number(exam.maxMarks), passMarks: Number(exam.passMarks), marks: Number(r.marks), examDate: exam.examDate };
-  }).sort((a, b) => String(b.examDate).localeCompare(String(a.examDate))) };
+  });
+
+  // Term marksheets (exam-workflow.sql), one row per paper, the term naming
+  // the "exam" the portal groups by. Absent tables simply add nothing.
+  const fromSheets: typeof fromExams = [];
+  if (!examId) {
+    const { data: sheetRows } = await supabase.from("marksheets").select("id, term, issueDate, marks").eq("studentId", studentId);
+    if (sheetRows?.length) {
+      const { data: studentRow } = await supabase.from("students").select("courseId").eq("id", studentId).maybeSingle();
+      const { data: courseRow } = studentRow?.courseId
+        ? await supabase.from("courses").select("*").eq("id", studentRow.courseId).maybeSingle()
+        : { data: null };
+      const type = termPlan(courseRow ? mapCourse(courseRow) : null).type;
+      for (const sheet of sheetRows) {
+        asExamResults([{ term: Number(sheet.term) || 1, issueDate: sheet.issueDate, marks: (sheet.marks || []) as MarkLine[] }], type)
+          .forEach((row, i) => fromSheets.push({
+            id: `${sheet.id}:${i}`,
+            exam: row.exam.name,
+            subject: row.exam.subject,
+            maxMarks: row.exam.maxMarks,
+            passMarks: row.exam.passMarks,
+            marks: row.marks,
+            examDate: row.exam.examDate,
+          }));
+      }
+    }
+  }
+
+  return { success: true, data: [...fromSheets, ...fromExams].sort((a, b) => String(b.examDate).localeCompare(String(a.examDate))) };
 
 }
 
@@ -1848,6 +1878,20 @@ export async function getStudentDocument(studentId: string, branchId: string | n
   if (examError) throw new Error(examError.message);
   const exams = new Map((examRows || []).map((e: any) => [e.id, e]));
 
+  // A student on the marksheet workflow (exam-workflow.sql) is read from their
+  // marksheets, one row per paper, so the institute's own marksheet and
+  // certificate layouts print the theory and practical marks. Older records
+  // keep coming from the per-paper exams below.
+  const { data: sheetRows } = await supabase
+    .from("marksheets")
+    .select("term, issueDate, marks")
+    .eq("studentId", studentId);
+  const sheets = ((sheetRows || []) as Array<Record<string, any>>).map((row) => ({
+    term: Number(row.term) || 1,
+    issueDate: row.issueDate as string | null,
+    marks: (Array.isArray(row.marks) ? row.marks : []) as MarkLine[],
+  }));
+
   return {
     success: true,
     data: {
@@ -1906,7 +1950,9 @@ export async function getStudentDocument(studentId: string, branchId: string | n
             paidAt: payment.paidAt || payment.createdAt || "",
           })),
       })),
-      examResults: results
+      examResults: sheets.length
+        ? asExamResults(sheets, termPlan(course).type)
+        : results
         .filter((result) => {
           const exam = exams.get(result.examId);
           return exam?.status === "PUBLISHED" && exam.courseId === student.courseId && exam.branchId === student.branchId;
@@ -4714,6 +4760,9 @@ export interface RoleRow {
   modules: string[];
   /** One of the eight the app ships with: renamable, not deletable. */
   isSystem: boolean;
+  /** What the role may do on each page beyond opening it (role-permissions.sql).
+   *  A page with no entry keeps every action. */
+  permissions: Permissions;
 }
 
 const mapRole = (row: Record<string, unknown>): RoleRow => ({
@@ -4724,6 +4773,10 @@ const mapRole = (row: Record<string, unknown>): RoleRow => ({
   baseRole: String(row.baseRole || "STAFF") as SystemRole,
   modules: Array.isArray(row.modules) ? (row.modules as string[]) : [],
   isSystem: Boolean(row.isSystem),
+  permissions:
+    row.permissions && typeof row.permissions === "object" && !Array.isArray(row.permissions)
+      ? (row.permissions as Permissions)
+      : {},
 });
 
 /** True while roles.sql has not been run; the app falls back to the eight. */
@@ -4794,9 +4847,10 @@ export async function createRole(
 
 export async function updateRole(
   id: string,
-  input: Partial<{ name: string; description: string; baseRole: SystemRole; modules: string[] }>,
+  input: Partial<{ name: string; description: string; baseRole: SystemRole; modules: string[]; permissions: Permissions }>,
 ) {
   const payload: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  if (input.permissions !== undefined) payload.permissions = input.permissions;
   if (input.name !== undefined) payload.name = input.name.trim();
   if (input.description !== undefined) payload.description = input.description.trim() || null;
   if (input.baseRole !== undefined) payload.baseRole = input.baseRole;
@@ -4808,7 +4862,12 @@ export async function updateRole(
     .eq("id", id)
     .select("*")
     .single();
-  if (error) throw new Error(describeRoleConflict(error, String(input.name ?? "")));
+  if (error) {
+    if (input.permissions !== undefined && (error.code === "PGRST204" || /permissions/.test(error.message || ""))) {
+      throw new Error("Action permissions are not set up yet. Run supabase/schema/role-permissions.sql in Supabase.");
+    }
+    throw new Error(describeRoleConflict(error, String(input.name ?? "")));
+  }
   return { success: true as const, data: mapRole(data as Record<string, unknown>) };
 }
 
@@ -4878,7 +4937,7 @@ export async function getUserModules(
   userId: string | null,
   fallback?: { role?: string | null; organizationId?: string | null },
 ) {
-  if (!userId) return { success: true as const, data: [] as string[] };
+  if (!userId) return { success: true as const, data: [] as string[], permissions: {} as Permissions };
   const { data } = await supabase
     .from("users")
     .select('"roleId", role, "organizationId"')
@@ -4896,7 +4955,7 @@ export async function getUserModules(
   // The role the login was actually given.
   if (row.roleId) {
     const role = await getRole(row.roleId).catch(() => null);
-    if (role?.data) return { success: true as const, data: role.data.modules };
+    if (role?.data) return { success: true as const, data: role.data.modules, permissions: role.data.permissions };
     // The role itself could not be read: fall through to the built-in one.
   }
 
@@ -4911,7 +4970,7 @@ export async function getUserModules(
   const builtIn = roles?.data.find(
     (role) => role.isSystem && role.baseRole === String(row.role || "").toUpperCase(),
   );
-  return { success: true as const, data: builtIn?.modules ?? [] };
+  return { success: true as const, data: builtIn?.modules ?? [], permissions: builtIn?.permissions ?? ({} as Permissions) };
 }
 
 /* ============================
@@ -5551,6 +5610,7 @@ export interface CertificateCharge {
   alreadyIssued: boolean;
   amount: number;
   balance?: number;
+  certificateNo?: string;
 }
 
 /**
@@ -5558,24 +5618,91 @@ export interface CertificateCharge {
  * Throws with a readable message when the wallet cannot cover the fee, so the
  * caller does not print.
  */
-export async function issueCertificate(studentId: string, issuedBy?: string | null): Promise<CertificateCharge> {
-  const { data, error } = await supabase.rpc("issue_certificate", {
-    p_student_id: studentId,
-    p_issued_by: issuedBy || null,
-  });
+export async function issueCertificate(
+  studentId: string,
+  issuedBy?: string | null,
+  dates: { issueDate?: string | null; examConductedDate?: string | null } = {},
+): Promise<CertificateCharge> {
+  // The dates are only sent when given: a database still on the two-argument
+  // function (before exam-workflow.sql) answers a call that names them with
+  // "function not found".
+  const args: Record<string, unknown> = { p_student_id: studentId, p_issued_by: issuedBy || null };
+  if (dates.issueDate) args.p_issue_date = dates.issueDate;
+  if (dates.examConductedDate) args.p_exam_date = dates.examConductedDate;
+  const { data, error } = await supabase.rpc("issue_certificate", args);
   if (error) {
     if (missingRelation(error)) {
       throw new Error("Certificate wallet charging is not set up yet. Run supabase/schema/certificate-wallet-charge.sql in Supabase.");
     }
     const low = /INSUFFICIENT_BALANCE:\s*(.*)/.exec(error.message);
     if (low) throw new Error(`Centre wallet balance is too low: ${low[1]} Recharge the wallet, then generate again.`);
+    if (/NOT_ELIGIBLE/.test(error.message)) {
+      throw new Error("The student has no passed final-term marksheet yet. Create and pass the final result first.");
+    }
     throw new Error(error.message);
   }
   const row = (data || {}) as Partial<CertificateCharge>;
+  if (row.charged) announceWalletChange();
   return {
     charged: Boolean(row.charged),
     alreadyIssued: Boolean(row.alreadyIssued),
     amount: Number(row.amount) || 0,
     balance: row.balance == null ? undefined : Number(row.balance),
+    certificateNo: row.certificateNo ? String(row.certificateNo) : undefined,
   };
+}
+
+/* ---------------------------------------------------------------------------
+ * The centre's strip in its own panel: who it is, until when it is licensed,
+ * and what its wallet holds -- what a centre looks at before it issues
+ * anything the wallet pays for.
+ * ------------------------------------------------------------------------- */
+
+export interface CentreSummary {
+  name: string;
+  code: string;
+  isActive: boolean;
+  validUpto: string | null;
+  balance: number;
+}
+
+/** Fired after anything that moves a centre's wallet, so the header re-reads it. */
+export const WALLET_CHANGED = "wallet:changed";
+export const announceWalletChange = () => {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(WALLET_CHANGED));
+};
+
+export async function getCentreSummary(branchId: string | null): Promise<CentreSummary | null> {
+  if (!branchId) return null;
+  const [branchRes, licenseRes, walletRes] = await Promise.all([
+    supabase.from("branches").select("name, code, isActive").eq("id", branchId).maybeSingle(),
+    supabase.from("branch_licenses").select("expiryDate").eq("branchId", branchId).maybeSingle(),
+    supabase.from("branch_wallets").select("balance").eq("branchId", branchId).maybeSingle(),
+  ]);
+  if (branchRes.error || !branchRes.data) return null;
+  return {
+    name: String(branchRes.data.name || ""),
+    code: String(branchRes.data.code || ""),
+    isActive: branchRes.data.isActive !== false,
+    validUpto: licenseRes.data?.expiryDate ? String(licenseRes.data.expiryDate) : null,
+    balance: Number(walletRes.data?.balance) || 0,
+  };
+}
+
+/**
+ * Every student as a pick list: the columns a picker and a register need, and
+ * none of the uploads. `select("*")` carries each student's base64 documents
+ * and photo, which across a whole institute is megabytes for a dropdown.
+ */
+export async function getStudentPicklist(branchId: string | null) {
+  let query = supabase
+    .from("students")
+    .select('id, "branchId", "courseId", "firstName", "middleName", "lastName", "enrollmentNo", "applicationNo", "fatherName", "academicYear", "dateOfBirth", phone')
+    .is("deletedAt", null)
+    .order("firstName")
+    .limit(10000);
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return { success: true as const, data: data || [] };
 }

@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Users,
   KeyRound,
+  FileText,
 } from "lucide-react";
 import { StudentContact } from "@/components/student/StudentContact";
 import { formatPhone, normalisePhone, telHref } from "@/lib/phone";
@@ -90,6 +91,8 @@ interface StudentRosterProps {
   rows: StudentRosterRow[];
   loading?: boolean;
   onView: (student: StudentRosterRow) => void;
+  /** Opens the student's uploaded documents; omitted where not offered. */
+  onDocuments?: (student: StudentRosterRow) => void;
   onEdit: (student: StudentRosterRow) => void;
   onDelete: (student: StudentRosterRow) => void;
   onExport: (rows: StudentRosterRow[]) => void;
@@ -103,6 +106,7 @@ export function StudentRoster({
   rows,
   loading = false,
   onView,
+  onDocuments,
   onEdit,
   onDelete,
   onExport,
@@ -485,6 +489,15 @@ export function StudentRoster({
                     >
                       <Eye className="h-4 w-4" />
                     </IconAction>
+                    {onDocuments && (
+                      <IconAction
+                        label="Student documents"
+                        onClick={() => onDocuments(student)}
+                        className="bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <FileText className="h-4 w-4" />
+                      </IconAction>
+                    )}
                     <IconAction
                       label="Edit student"
                       onClick={() => onEdit(student)}

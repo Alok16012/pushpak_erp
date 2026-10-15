@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { viewForRole } from "@/lib/roles";
 import { getUserModules } from "@/lib/supabase/data";
+import { allows, type Action, type Permissions } from "@/lib/permissions";
+import { PermissionsContext } from "./PermissionsContext";
 
 type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
 
@@ -12,6 +14,10 @@ type Auth = {
   view: "admin" | "franchise" | "student";
   /** Pages this person's role grants. Empty means everything their view allows. */
   allowedPaths: string[];
+  /** What the role may do on each page beyond opening it; a page with no entry keeps every action. */
+  permissions: Permissions;
+  /** Whether the role may perform this action on this page. */
+  can: (action: Action, path: string) => boolean;
   /** The centre an organisation admin is working as ("Login as center"), if any. */
   actingAs: ActingAs | null;
   /** Work as a centre, or pass null to return to the organisation's own view. */
@@ -44,6 +50,7 @@ const Context = createContext<Auth | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [allowedPaths, setAllowedPaths] = useState<string[]>([]);
+  const [rolePermissions, setRolePermissions] = useState<Permissions>({});
   const [loading, setLoading] = useState(true);
 
   const realView = viewForRole(user?.role);
@@ -133,14 +140,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user?.id) {
       setAllowedPaths([]);
+      setRolePermissions({});
       return;
     }
     let live = true;
     const refresh = () =>
       getUserModules(user.id, { role: user.role, organizationId: user.organizationId ?? null })
-        .then((result) => live && setAllowedPaths(result.data))
+        .then((result) => {
+          if (!live) return;
+          setAllowedPaths(result.data);
+          setRolePermissions(result.permissions ?? {});
+        })
         // A database without roles.sql grants the view's whole menu, as before.
-        .catch(() => live && setAllowedPaths([]));
+        .catch(() => {
+          if (!live) return;
+          setAllowedPaths([]);
+          setRolePermissions({});
+        });
     refresh();
     // An administrator can change the role while this person is signed in, so
     // the menu is re-read when the tab comes back and once a minute, rather
@@ -181,12 +197,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         actAsCentre,
         // A centre is shown its whole franchise menu, not the admin role's pages.
         allowedPaths: actingAs ? [] : allowedPaths,
+        // Working as a centre, the head office keeps every action there too.
+        permissions: actingAs ? {} : rolePermissions,
+        can: (action: Action, path: string) => (actingAs ? true : allows(rolePermissions, path, action)),
         login,
         logout,
         loading,
       }}
     >
-      {children}
+      <PermissionsContext.Provider value={actingAs ? null : rolePermissions}>{children}</PermissionsContext.Provider>
     </Context.Provider>
   );
 }

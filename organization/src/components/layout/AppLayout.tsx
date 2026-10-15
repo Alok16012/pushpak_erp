@@ -6,6 +6,7 @@ import { AppHeader } from "./AppHeader";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { useAuth } from "@/contexts/AuthContext";
 import { MobileNav } from "./MobileNav";
+import { PermissionGuard } from "./PermissionGuard";
 import { loadInstituteLogo } from "@/lib/instituteLogo";
 
 interface AppLayoutProps {
@@ -40,7 +41,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           <AppHeader />
           <WorkspaceBar />
           <main className="min-w-0 flex-1 overflow-x-hidden px-4 pb-28 pt-4 sm:px-6 sm:pt-5 md:pb-10 lg:px-7 animate-fade-in">
-            <div className="mx-auto w-full max-w-[1600px]">{children}</div>
+            <div className="mx-auto w-full max-w-[1600px]"><PermissionGuard>{children}</PermissionGuard></div>
           </main>
           <MobileNav />
         </div>

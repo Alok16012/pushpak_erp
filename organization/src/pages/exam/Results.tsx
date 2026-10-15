@@ -1,0 +1,351 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { DataTable, type Column } from "@/components/ui/DataTable";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { marksheetPdf } from "@/lib/documents";
+import { printFromTemplate } from "@/lib/studentTemplateDocument";
+import { getStudentDocument } from "@/lib/supabase/data";
+import {
+  asExamResults,
+  hasPractical,
+  hasTheory,
+  isFinalTerm,
+  lineFor,
+  lineProblem,
+  summarise,
+  termLabel,
+  termPlan,
+  termsOf,
+  type CourseSubject,
+  type MarkLine,
+} from "@/lib/examWorkflow";
+import {
+  deleteMarksheet,
+  getCourseSubjects,
+  getMarksheets,
+  saveMarksheet,
+  type MarksheetRecord,
+} from "@/lib/supabase/examWorkflow";
+import { studentName, useExamData } from "./useExamData";
+
+const today = () => new Date().toLocaleDateString("en-CA");
+
+/**
+ * The result of a term: a student's theory and practical marks for each paper,
+ * with the total, percentage, grade and PASS / FAIL worked out as they are
+ * typed. The final term's passed marksheet is what a certificate is issued on.
+ */
+export default function Results() {
+  const { toast } = useToast();
+  const { user, ownBranch, branches, sessions, students, courseOf, branchOf, studentOf } = useExamData();
+  const [branchId, setBranchId] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [term, setTerm] = useState(1);
+  const [session, setSession] = useState("");
+  const [issueDate, setIssueDate] = useState(today);
+  const [lines, setLines] = useState<MarkLine[]>([]);
+  const [subjects, setSubjects] = useState<CourseSubject[]>([]);
+  const [sheets, setSheets] = useState<MarksheetRecord[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (ownBranch) setBranchId(ownBranch);
+  }, [ownBranch]);
+
+  const load = useCallback(async () => {
+    try {
+      setSheets(await getMarksheets({ branchId: ownBranch }));
+    } catch (e) {
+      toast({ title: "Could not load results", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  }, [ownBranch, toast]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const student = studentOf.get(studentId) || null;
+  const course = student ? courseOf.get(student.courseId) || null : null;
+  const terms = useMemo(() => termsOf(course), [course]);
+  const candidates = students.filter((s) => !branchId || s.branchId === branchId);
+  const existing = sheets.find((s) => s.studentId === studentId && s.term === term) || null;
+
+  useEffect(() => {
+    if (!course) return setSubjects([]);
+    getCourseSubjects(course.id)
+      .then(setSubjects)
+      .catch((e) => toast({ title: "Could not load subjects", description: e.message, variant: "destructive" }));
+  }, [course, toast]);
+
+  // The form opens on the saved marksheet when there is one; otherwise on the
+  // term's subjects with empty boxes.
+  useEffect(() => {
+    const termSubjects = subjects.filter((s) => s.term === term);
+    const saved = new Map((existing?.marks || []).map((l) => [l.subjectId, l]));
+    const fromSubjects = termSubjects.map((s) => lineFor(s, saved.get(s.id)));
+    // A subject removed since the marksheet was made keeps its line.
+    const orphaned = (existing?.marks || []).filter((l) => !termSubjects.some((s) => s.id === l.subjectId));
+    setLines([...fromSubjects, ...orphaned]);
+    if (existing) {
+      setIssueDate(existing.issueDate || today());
+      setSession(existing.session || student?.academicYear || sessions[0] || "");
+    } else {
+      setSession(student?.academicYear || sessions[0] || "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subjects, term, existing, studentId]);
+
+  const summary = summarise(lines);
+  const setMark = (index: number, part: "theory" | "practical", value: string) =>
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, [part]: value === "" ? null : Number(value) } : l)));
+
+  const save = async () => {
+    if (!student) return toast({ title: "Choose the student", variant: "destructive" });
+    const problem = lines.map(lineProblem).find(Boolean);
+    if (problem) return toast({ title: "Check the marks", description: problem, variant: "destructive" });
+    setSaving(true);
+    try {
+      const result = await saveMarksheet(
+        {
+          studentId: student.id,
+          branchId: student.branchId,
+          courseId: student.courseId,
+          term,
+          session,
+          issueDate,
+          marks: lines,
+          isFinal: isFinalTerm(course, term),
+          enrollmentNo: student.enrollmentNo,
+        },
+        user?.name,
+      );
+      toast({
+        title: existing ? "Result updated" : "Result saved",
+        description: `${studentName(student)} · ${result.result} · ${result.percentage}% (${result.grade})`,
+      });
+      await load();
+    } catch (e) {
+      toast({ title: "Could not save result", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const print = async (sheet: MarksheetRecord) => {
+    try {
+      const { data } = await getStudentDocument(sheet.studentId, ownBranch);
+      const c = courseOf.get(sheet.courseId);
+      const doc = {
+        ...data,
+        issueDate: sheet.issueDate,
+        session: sheet.session || data.session,
+        examResults: asExamResults([sheet], termPlan(c).type),
+      };
+      const extra = {
+        marksheet_no: sheet.marksheetNo,
+        term: termLabel(termPlan(c).type, sheet.term),
+        session: sheet.session,
+      };
+      const printed = await printFromTemplate("marksheet", doc, user?.organizationId ?? null, sheet.branchId, extra);
+      if (!printed) await marksheetPdf(doc);
+    } catch (e) {
+      toast({ title: "Could not print marksheet", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
+  const remove = async (sheet: MarksheetRecord) => {
+    if (!window.confirm("Delete this result?")) return;
+    try {
+      await deleteMarksheet(sheet.id);
+      await load();
+    } catch (e) {
+      toast({ title: "Could not delete", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
+  const edit = (sheet: MarksheetRecord) => {
+    setBranchId(sheet.branchId);
+    setStudentId(sheet.studentId);
+    setTerm(sheet.term);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  type Row = MarksheetRecord & { name: string; enrollmentNo: string; courseName: string; termName: string; centre: string };
+  const rows: Row[] = sheets.map((s) => {
+    const st = studentOf.get(s.studentId);
+    const c = courseOf.get(s.courseId);
+    return {
+      ...s,
+      name: studentName(st) || "—",
+      enrollmentNo: st?.enrollmentNo || "—",
+      courseName: c?.name || "—",
+      termName: termLabel(termPlan(c).type, s.term),
+      centre: branchOf.get(s.branchId)?.name || "—",
+    };
+  });
+  const columns: Column<Row>[] = [
+    { key: "enrollmentNo", header: "Enrollment No", sortable: true, cell: (r) => <span className="font-mono text-xs">{r.enrollmentNo}</span> },
+    { key: "name", header: "Student", sortable: true, cell: (r) => <span className="font-medium">{r.name}</span> },
+    { key: "courseName", header: "Course" },
+    { key: "termName", header: "Year / Sem", cell: (r) => <span>{r.termName} {r.isFinal && <Badge variant="secondary" className="ml-1">Final</Badge>}</span> },
+    { key: "percentage", header: "Marks", sortable: true, cell: (r) => <span className="text-xs">{r.totalObtained}/{r.totalMax} · {r.percentage}% · {r.grade}</span> },
+    { key: "result", header: "Result", cell: (r) => <Badge variant={r.result === "PASS" ? "default" : "destructive"}>{r.result}</Badge> },
+    { key: "centre", header: "Institute" },
+  ];
+
+  return (
+    <AppLayout>
+      <PageHeader
+        title="Results & Marksheets"
+        description="Enter theory and practical marks term wise; totals, grade and result are worked out"
+        breadcrumbs={[{ label: "Exam & Marks" }, { label: "Results" }]}
+      />
+      <Card className="mb-4">
+        <CardHeader><CardTitle>{existing ? "Edit result" : "Create result"}</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="space-y-2">
+              <Label>Centre</Label>
+              <Select value={branchId} onValueChange={(v) => { setBranchId(v); setStudentId(""); }} disabled={!!ownBranch}>
+                <SelectTrigger><SelectValue placeholder="Select centre" /></SelectTrigger>
+                <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 lg:col-span-2">
+              <Label>Student</Label>
+              <Select value={studentId} onValueChange={(v) => { setStudentId(v); setTerm(1); }}>
+                <SelectTrigger><SelectValue placeholder={candidates.length ? "Select student" : "No students"} /></SelectTrigger>
+                <SelectContent>
+                  {candidates.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {studentName(s)}{s.enrollmentNo ? ` · ${s.enrollmentNo}` : ""}{courseOf.get(s.courseId) ? ` · ${courseOf.get(s.courseId)?.name}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Year / Semester</Label>
+              <Select value={String(term)} onValueChange={(v) => setTerm(Number(v))} disabled={!course}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{terms.map((t) => <SelectItem key={t.term} value={String(t.term)}>{t.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Issue date</Label>
+              <DatePicker value={issueDate} onChange={setIssueDate} />
+            </div>
+          </div>
+          {student && !course && <p className="text-sm text-destructive">This student has no course assigned. Assign the course on the admission first.</p>}
+
+          {course && (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {course.name} · {terms.find((t) => t.term === term)?.label}
+                {isFinalTerm(course, term) ? " · final term (the certificate is issued on this result)" : ""}
+                {session ? ` · Session ${session}` : ""}
+              </p>
+              <div className="overflow-x-auto rounded-xl border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+                      <th className="p-2">Code</th>
+                      <th className="p-2">Subject</th>
+                      <th className="p-2 text-center">Theory (min/max)</th>
+                      <th className="p-2">Theory obtained</th>
+                      <th className="p-2 text-center">Practical (min/max)</th>
+                      <th className="p-2">Practical obtained</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((l, i) => {
+                      const low = (v: number | null, min: number) => v !== null && v < min;
+                      return (
+                        <tr key={l.subjectId} className="border-b last:border-0">
+                          <td className="p-2 font-mono text-xs">{l.code || "—"}</td>
+                          <td className="p-2 font-medium">{l.name}</td>
+                          <td className="p-2 text-center text-muted-foreground">{hasTheory(l) ? `${l.theoryMin} / ${l.theoryMax}` : "—"}</td>
+                          <td className="p-2 w-32">
+                            {hasTheory(l) && (
+                              <Input
+                                type="number"
+                                min={0}
+                                max={l.theoryMax}
+                                aria-label={`${l.name} theory`}
+                                className={low(l.theory, l.theoryMin) ? "border-destructive" : ""}
+                                value={l.theory ?? ""}
+                                onChange={(e) => setMark(i, "theory", e.target.value)}
+                              />
+                            )}
+                          </td>
+                          <td className="p-2 text-center text-muted-foreground">{hasPractical(l) ? `${l.practicalMin} / ${l.practicalMax}` : "—"}</td>
+                          <td className="p-2 w-32">
+                            {hasPractical(l) && (
+                              <Input
+                                type="number"
+                                min={0}
+                                max={l.practicalMax}
+                                aria-label={`${l.name} practical`}
+                                className={low(l.practical, l.practicalMin) ? "border-destructive" : ""}
+                                value={l.practical ?? ""}
+                                onChange={(e) => setMark(i, "practical", e.target.value)}
+                              />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!lines.length && (
+                      <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No subjects for this term. Add them under Course Management → Course Subjects.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {lines.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl bg-muted/40 p-3 text-sm">
+                  <span>Total <b>{summary.totalObtained}</b> / {summary.totalMax}</span>
+                  <span>Percentage <b>{summary.percentage}%</b></span>
+                  <span>Grade <b>{summary.grade}</b></span>
+                  <Badge variant={summary.result === "PASS" ? "default" : "destructive"}>{summary.result}</Badge>
+                  {summary.failedSubjects.length > 0 && (
+                    <span className="text-xs text-destructive">Below minimum: {summary.failedSubjects.join(", ")}</span>
+                  )}
+                </div>
+              )}
+              <Button onClick={save} disabled={saving || !lines.length}>{saving ? "Saving…" : existing ? "Update result" : "Save result"}</Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Results</CardTitle></CardHeader>
+        <CardContent>
+          <DataTable
+            data={rows}
+            columns={columns}
+            searchPlaceholder="Search name, enrollment…"
+            filters={[
+              { label: "Course", key: "courseName" },
+              { label: "Result", key: "result" },
+              { label: "Institute", key: "centre" },
+            ]}
+            actions={(r) => [
+              { label: "Edit", onClick: () => edit(r) },
+              { label: "Print marksheet", onClick: () => void print(r) },
+              { label: "Delete", onClick: () => void remove(r), destructive: true },
+            ]}
+            emptyMessage="No results yet."
+          />
+        </CardContent>
+      </Card>
+    </AppLayout>
+  );
+}
