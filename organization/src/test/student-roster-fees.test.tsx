@@ -134,14 +134,17 @@ describe("StudentRoster money columns", () => {
 });
 
 describe("StudentRoster branch filter", () => {
-  it("lists the branches and narrows the roster to the one picked", () => {
+  it("lists the branches, searches them, and narrows the roster to the one picked", async () => {
     roster([
       student({ id: "s1", name: "Durga Prasad", branch: "iDEAL Coaching Classes" }),
       student({ id: "s2", name: "Krishna Singh", branch: "PNS COMPUTER ACADEMY" }),
     ]);
 
-    const filter = screen.getByLabelText("Filter by branch");
-    fireEvent.change(filter, { target: { value: "PNS COMPUTER ACADEMY" } });
+    fireEvent.keyDown(screen.getByLabelText("Filter by branch"), { key: "Enter" });
+    // The list carries a search box; typing narrows the centres offered.
+    fireEvent.change(await screen.findByLabelText("Search centre…"), { target: { value: "pns" } });
+    expect(screen.queryByRole("option", { name: "iDEAL Coaching Classes" })).toBeNull();
+    fireEvent.click(screen.getByRole("option", { name: "PNS COMPUTER ACADEMY" }));
 
     expect(screen.queryByText("Durga Prasad")).toBeNull();
     expect(screen.getByText("Krishna Singh")).toBeInTheDocument();

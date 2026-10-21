@@ -1,4 +1,5 @@
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,6 +21,9 @@ import { StudentContact } from "@/components/student/StudentContact";
 import { formatPhone, normalisePhone, telHref } from "@/lib/phone";
 import { rupees } from "@/lib/fees";
 import type { StudentRosterRow } from "@/lib/supabase/data";
+
+/** Radix Select needs a non-empty value for "every branch". */
+const ALL_BRANCHES = "__all__";
 
 const PAGE_SIZE = 10;
 
@@ -197,19 +201,19 @@ export function StudentRoster({
 
           <div className="flex flex-wrap gap-2">
             {branchOptions.length > 1 && (
-              <select
-                value={branchFilter}
-                onChange={(e) => setBranchFilter(e.target.value)}
-                className={selectClass}
-                aria-label="Filter by branch"
-              >
-                <option value="">All branches</option>
-                {branchOptions.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
-                  </option>
-                ))}
-              </select>
+              <Select value={branchFilter || ALL_BRANCHES} onValueChange={(v) => setBranchFilter(v === ALL_BRANCHES ? "" : v)}>
+                <SelectTrigger aria-label="Filter by branch" className="h-10 w-auto min-w-[10rem] max-w-[16rem]">
+                  <SelectValue placeholder="All branches" />
+                </SelectTrigger>
+                <SelectContent searchable searchPlaceholder="Search centre…">
+                  <SelectItem value={ALL_BRANCHES}>All branches</SelectItem>
+                  {branchOptions.map((branch) => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
 
             <select

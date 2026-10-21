@@ -154,7 +154,7 @@ export default function ExamSchedule() {
       <Label>{label}</Label>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
-        <SelectContent>
+        <SelectContent searchable={label === "Centre" || label === "Exam centre" || undefined} searchPlaceholder={`Search ${label.toLowerCase()}…`}>
           {options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
         </SelectContent>
       </Select>

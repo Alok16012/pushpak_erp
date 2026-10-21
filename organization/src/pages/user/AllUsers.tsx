@@ -727,7 +727,7 @@ const AllUsers = () => {
                     <SelectTrigger id="new-branch" aria-label="Branch for the new user">
                       <SelectValue placeholder="Select a branch" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable searchPlaceholder="Search centre…">
                       <SelectItem value="none">Head office (no branch)</SelectItem>
                       {branchOptions.map((branch) => (
                         <SelectItem key={branch.id} value={branch.id}>

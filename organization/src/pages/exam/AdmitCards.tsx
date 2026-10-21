@@ -242,7 +242,9 @@ export default function AdmitCards() {
       <Label>{label}</Label>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
-        <SelectContent>{options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
+        <SelectContent searchable={label === "Centre" || label === "Student" || undefined} searchPlaceholder={`Search ${label.toLowerCase()}…`}>
+          {options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+        </SelectContent>
       </Select>
     </div>
   );

@@ -471,7 +471,7 @@ export default function AssessmentsWorkspace() {
                         <SelectTrigger aria-label="Branch">
                           <SelectValue placeholder="Select branch" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent searchable searchPlaceholder="Search centre…">
                           {branchOptions.map((b) => (
                             <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                           ))}
@@ -707,7 +707,7 @@ export default function AssessmentsWorkspace() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {pickBranch && <div className="max-w-xl space-y-2"><Label>Centre / Branch</Label><Select value={documentBranch} onValueChange={(id) => { setDocumentBranch(id); setStudentId(""); }}><SelectTrigger aria-label="Document branch"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All branches</SelectItem>{branchOptions.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select></div>}
+                {pickBranch && <div className="max-w-xl space-y-2"><Label>Centre / Branch</Label><Select value={documentBranch} onValueChange={(id) => { setDocumentBranch(id); setStudentId(""); }}><SelectTrigger aria-label="Document branch"><SelectValue /></SelectTrigger><SelectContent searchable searchPlaceholder="Search centre…"><SelectItem value="all">All branches</SelectItem>{branchOptions.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select></div>}
                 <Input aria-label="Search document students" placeholder="Search student name or enrollment number" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} className="max-w-xl" />
                 <div className="max-w-xl">
                   <p className="mb-2 text-sm font-medium">Student record</p>

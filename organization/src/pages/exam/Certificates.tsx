@@ -182,7 +182,7 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
                 <Label>Centre</Label>
                 <Select value={branchId} onValueChange={(v) => { setBranchId(v); setStudentId(""); }} disabled={!!ownBranch}>
                   <SelectTrigger><SelectValue placeholder="Select centre" /></SelectTrigger>
-                  <SelectContent>{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
+                  <SelectContent searchable searchPlaceholder="Search centre…">{branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">

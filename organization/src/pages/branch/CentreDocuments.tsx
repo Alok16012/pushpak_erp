@@ -154,7 +154,7 @@ export default function CentreDocuments() {
                 <SelectTrigger className="max-w-sm">
                   <SelectValue placeholder="Choose a branch" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="Search centre…">
                   {branches.map((branch) => (
                     <SelectItem key={branch.id} value={branch.id}>
                       {branch.name}

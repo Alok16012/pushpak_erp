@@ -769,7 +769,7 @@ export default function EnquiriesWorkspace() {
                   {showBranch && (
                     <Select value={branchFilter} onValueChange={setBranchFilter}>
                       <SelectTrigger className="w-full md:w-52"><SelectValue placeholder="Branch" /></SelectTrigger>
-                      <SelectContent>
+                      <SelectContent searchable searchPlaceholder="Search centre…">
                         <SelectItem value="all">All branches</SelectItem>
                         {branches.map((b) => (
                           <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
@@ -1229,7 +1229,7 @@ export default function EnquiriesWorkspace() {
                             <SelectTrigger>
                               <SelectValue placeholder="Select the branch for this visit" />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent searchable searchPlaceholder="Search centre…">
                               {branches.map((b) => (
                                 <SelectItem key={b.id} value={b.id}>
                                   {b.name}

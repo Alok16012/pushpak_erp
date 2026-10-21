@@ -552,7 +552,7 @@ export default function AcademicsWorkspace() {
                         <SelectTrigger>
                           <SelectValue placeholder="Select branch" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent searchable searchPlaceholder="Search centre…">
                           {branches.map((b) => (
                             <SelectItem value={b.id} key={b.id}>{b.name}</SelectItem>
                           ))}

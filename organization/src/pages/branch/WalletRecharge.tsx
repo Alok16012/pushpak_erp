@@ -720,7 +720,7 @@ export default function WalletRecharge() {
                 <SelectTrigger className="h-8 w-[160px] text-xs">
                   <SelectValue placeholder="All Branches" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="Search centre…">
                   <SelectItem value="all">All Branches</SelectItem>
                   {institutes.map((inst) => (
                     <SelectItem key={inst.id} value={inst.id}>

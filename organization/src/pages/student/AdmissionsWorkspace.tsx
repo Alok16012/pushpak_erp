@@ -977,6 +977,7 @@ export default function AdmissionsWorkspace() {
                       }}
                       options={branches.map((b) => [b.id, b.name])}
                       placeholder="Choose branch"
+                      searchable
                     />
                   </Field>
                 )}
@@ -1564,19 +1565,22 @@ function Picker({
   options,
   placeholder = "Select",
   disabled,
+  searchable,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: Array<[string, string]>;
   placeholder?: string;
   disabled?: boolean;
+  /** A search box over the options; long lists get one anyway. */
+  searchable?: boolean;
 }) {
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
       <SelectTrigger>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent searchable={searchable} searchPlaceholder={searchable ? "Search centre…" : undefined}>
         {options
           .filter(([v]) => v)
           .map(([v, label]) => (

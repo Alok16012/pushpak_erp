@@ -690,7 +690,7 @@ export default function AdmissionLeads() {
                   <Label>Branch *</Label>
                   <Select value={leadBranchId} onValueChange={setLeadBranchId}>
                     <SelectTrigger aria-label="Branch"><SelectValue placeholder="Select branch" /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable searchPlaceholder="Search centre…">
                       {inBlock.map((b) => (
                         <SelectItem key={b.id} value={b.id}>{b.district && !leadDistrict ? `${b.name} · ${b.district}` : b.name}</SelectItem>
                       ))}

@@ -489,7 +489,7 @@ export default function DueFeeCollection() {
             {showBranch && (
               <Select value={branchFilter} onValueChange={setBranchFilter}>
                 <SelectTrigger className="w-full sm:w-56" aria-label="Branch"><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="Search centre…">
                   <SelectItem value="all">All branches</SelectItem>
                   {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                 </SelectContent>

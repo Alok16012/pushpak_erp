@@ -396,7 +396,7 @@ export default function BranchNoticeBoard() {
                     <SelectTrigger>
                       <SelectValue placeholder="Select branch" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable searchPlaceholder="Search centre…">
                       <SelectItem value={ALL_BRANCHES}>All branches</SelectItem>
                       {branches.map((branch) => (
                         <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
@@ -431,7 +431,7 @@ export default function BranchNoticeBoard() {
                       <SelectTrigger>
                         <SelectValue placeholder="Select branch" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent searchable searchPlaceholder="Search centre…">
                         {branches.map((branch) => (
                           <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
                         ))}

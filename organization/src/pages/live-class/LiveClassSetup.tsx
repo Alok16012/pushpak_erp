@@ -351,7 +351,7 @@ export default function LiveClassSetup() {
                     <SelectTrigger id="branch">
                       <SelectValue placeholder={branches.length ? "Select branch" : "Loading..."} />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable searchPlaceholder="Search centre…">
                       {branches.map((b) => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}
                     </SelectContent>
                   </Select>

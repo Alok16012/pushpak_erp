@@ -667,7 +667,7 @@ export default function AssignCourseToBatch() {
                   <SelectTrigger>
                     <SelectValue placeholder={loading ? "Loading branches…" : "Choose a branch"} />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent searchable searchPlaceholder="Search centre…">
                     {branchOptions.map((branch) => (
                       <SelectItem key={branch.id} value={branch.id}>
                         {branch.name}{branch.code ? ` (${branch.code})` : ""}

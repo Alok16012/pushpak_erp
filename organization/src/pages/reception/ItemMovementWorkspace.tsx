@@ -388,7 +388,7 @@ export default function ItemMovementWorkspace() {
                     <SelectTrigger className="md:w-52">
                       <SelectValue placeholder="Branch" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable searchPlaceholder="Search centre…">
                       <SelectItem value="all">All branches</SelectItem>
                       {branches.map((branch) => (
                         <SelectItem key={branch.id} value={branch.id}>
@@ -577,7 +577,7 @@ export default function ItemMovementWorkspace() {
                       <SelectTrigger>
                         <SelectValue placeholder="Select branch" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent searchable searchPlaceholder="Search centre…">
                         <SelectItem value="none">Not a branch</SelectItem>
                         {branches.map((branch) => (
                           <SelectItem key={branch.id} value={branch.id}>
