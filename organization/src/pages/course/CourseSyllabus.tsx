@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatsCard } from "@/components/ui/StatsCard";
@@ -112,6 +113,8 @@ export default function CourseSyllabus() {
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [courseId, setCourseId] = useState("");
+  const [searchParams] = useSearchParams();
+  const askedCourse = searchParams.get("course");
   const [modules, setModules] = useState<SyllabusModule[]>([]);
   const [chapters, setChapters] = useState<SyllabusChapter[]>([]);
   const [ready, setReady] = useState(true);
@@ -139,7 +142,8 @@ export default function CourseSyllabus() {
       .then((result) => {
         const list = result.data as Course[];
         setCourses(list);
-        setCourseId((current) => current || list[0]?.id || "");
+        // Course Subjects' "Update syllabus" opens on its course.
+        setCourseId((current) => current || (askedCourse && list.some((c) => c.id === askedCourse) ? askedCourse : "") || list[0]?.id || "");
       })
       .catch((error) =>
         toast({
@@ -148,7 +152,7 @@ export default function CourseSyllabus() {
           variant: "destructive",
         }),
       );
-  }, [user?.organizationId, user?.branchId, toast]);
+  }, [user?.organizationId, user?.branchId, toast, askedCourse]);
 
   const load = useCallback(async () => {
     if (!courseId) {
@@ -345,7 +349,10 @@ export default function CourseSyllabus() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Course selection</CardTitle>
-          <p className="text-xs text-muted-foreground">Pick a course to manage its syllabus.</p>
+          <p className="text-xs text-muted-foreground">
+            Pick a course to manage its syllabus. To print its modules on the marksheet, add them under{" "}
+            <Link to="/course/subjects" className="font-medium text-primary underline">Course Subjects</Link>.
+          </p>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">

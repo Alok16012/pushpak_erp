@@ -11,6 +11,7 @@ const toast = vi.fn();
 let walletBalance = 500;
 const issueCertificate = vi.fn((..._args: unknown[]) => Promise.resolve({ charged: true, alreadyIssued: false, amount: 150, certificateNo: "CERT-E001" }));
 const printFromTemplate = vi.fn((..._args: unknown[]) => Promise.resolve(true));
+const saveCourseSubject = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("@/components/layout/AppLayout", () => ({
@@ -35,6 +36,20 @@ vi.mock("@/lib/supabase/data", () => ({
   getCertificateFees: () => Promise.resolve(new Map([["b1", 150]])),
   getWallet: () => Promise.resolve({ success: true, data: { balance: walletBalance } }),
   issueCertificate: (...a: unknown[]) => issueCertificate(...a),
+  // The course's syllabus: "Web Design" is already a subject, the other two are not.
+  getCourseSyllabus: () =>
+    Promise.resolve({
+      success: true,
+      data: {
+        ready: true,
+        chapters: [],
+        modules: [
+          { id: "m1", courseId: "c1", name: "Web Design", description: "", sortOrder: 1, status: "Active" },
+          { id: "m2", courseId: "c1", name: "MS Office", description: "Word, Excel", sortOrder: 2, status: "Active" },
+          { id: "m3", courseId: "c1", name: "Tally Prime", description: "", sortOrder: 3, status: "Active" },
+        ],
+      },
+    }),
 }));
 vi.mock("@/lib/supabase/examWorkflow", () => ({
   getExamCentres: () => Promise.resolve([{ id: "ec1", name: "Main Hall", code: "MH", address: "Begusarai" }]),
@@ -42,7 +57,7 @@ vi.mock("@/lib/supabase/examWorkflow", () => ({
   deleteExamCentre: vi.fn(),
   getCourseSubjects: () =>
     Promise.resolve([{ id: "x1", courseId: "c1", term: 1, code: "A01", name: "Web Design", subjectType: "BOTH", theoryMax: 100, theoryMin: 35, practicalMax: 50, practicalMin: 20, sortOrder: 1 }]),
-  saveCourseSubject: vi.fn(),
+  saveCourseSubject: (...a: unknown[]) => saveCourseSubject(...a),
   deleteCourseSubject: vi.fn(),
   reorderCourseSubjects: vi.fn(),
   setCourseTerms: vi.fn(),
@@ -67,6 +82,7 @@ beforeEach(() => {
   toast.mockClear();
   issueCertificate.mockClear();
   printFromTemplate.mockClear();
+  saveCourseSubject.mockClear();
 });
 
 describe("exam workflow pages", () => {
@@ -100,9 +116,33 @@ describe("exam workflow pages", () => {
     await waitFor(() => expect(within(label.parentElement!).getByRole("combobox")).toBeInTheDocument());
     fireEvent.keyDown(within(label.parentElement!).getByRole("combobox"), { key: "Enter" });
     fireEvent.click(await screen.findByRole("option", { name: /ADCA/ }));
-    expect(await screen.findByText("Web Design")).toBeInTheDocument();
+    // In the syllabus list and in the subjects table.
+    expect((await screen.findAllByText("Web Design")).length).toBe(2);
     expect(screen.getByText("35 / 100")).toBeInTheDocument();
     expect(screen.getByText("20 / 50")).toBeInTheDocument();
+  });
+
+  it("shows the course's syllabus and adds its missing modules to the marksheet", async () => {
+    const CourseSubjects = await page("@/pages/exam/CourseSubjects");
+    render(<MemoryRouter><CourseSubjects /></MemoryRouter>);
+    const label = Array.from(document.querySelectorAll("label")).find((el) => el.textContent === "Course")!;
+    await waitFor(() => expect(within(label.parentElement!).getByRole("combobox")).toBeInTheDocument());
+    fireEvent.keyDown(within(label.parentElement!).getByRole("combobox"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: /ADCA/ }));
+    expect(await screen.findByText("ADCA syllabus")).toBeInTheDocument();
+    expect(screen.getByText("3 modules · 1 on the Full Course marksheet")).toBeInTheDocument();
+    expect(screen.getByText("On marksheet")).toBeInTheDocument();
+    expect(screen.getAllByText("Not added")).toHaveLength(2);
+    expect(screen.getByRole("link", { name: /Update syllabus/ })).toHaveAttribute("href", "/course/syllabus?course=c1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 modules to marksheet" }));
+    fireEvent.change(await screen.findByLabelText("Theory max marks"), { target: { value: "80" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add 2 subjects" }));
+    await waitFor(() => expect(saveCourseSubject).toHaveBeenCalledTimes(2));
+    expect(saveCourseSubject.mock.calls.map(([s]) => s)).toEqual([
+      expect.objectContaining({ courseId: "c1", term: 1, name: "MS Office", code: "M-01", theoryMax: 80, theoryMin: 35, sortOrder: 2 }),
+      expect.objectContaining({ name: "Tally Prime", code: "M-02", sortOrder: 3 }),
+    ]);
   });
 
   it("issues a certificate on the passed final result and prints it", async () => {

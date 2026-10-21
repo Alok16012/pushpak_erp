@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -15,11 +16,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Check, ListPlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { canManageCourses } from "@/lib/roles";
-import { getCourses } from "@/lib/supabase/data";
+import { getCourseSyllabus, getCourses, type SyllabusModule } from "@/lib/supabase/data";
 import {
   deleteCourseSubject,
   getCourseSubjects,
@@ -29,7 +30,17 @@ import {
   subjectProblem,
   type SubjectInput,
 } from "@/lib/supabase/examWorkflow";
-import { hasPractical, hasTheory, termPlan, termsOf, type CourseSubject, type SubjectType } from "@/lib/examWorkflow";
+import {
+  hasPractical,
+  hasTheory,
+  moduleOnMarksheet,
+  subjectsFromModules,
+  termPlan,
+  termsOf,
+  type CourseSubject,
+  type SubjectDefaults,
+  type SubjectType,
+} from "@/lib/examWorkflow";
 
 type Course = {
   id: string;
@@ -77,6 +88,11 @@ export default function CourseSubjects() {
   const [draft, setDraft] = useState<SubjectInput | null>(null);
   const [saving, setSaving] = useState(false);
   const [termDraft, setTermDraft] = useState<{ type: string; count: string }>({ type: "AUTO", count: "" });
+  // The course's syllabus (Course Syllabus page): its modules are what the
+  // marksheet prints once they are added here as subjects.
+  const [modules, setModules] = useState<SyllabusModule[]>([]);
+  const [importing, setImporting] = useState<SubjectDefaults | null>(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     getCourses(user?.organizationId ?? null)
@@ -93,10 +109,23 @@ export default function CourseSubjects() {
   }, [course]);
 
   const load = useCallback(async () => {
-    if (!courseId) return setSubjects([]);
+    if (!courseId) {
+      setSubjects([]);
+      setModules([]);
+      return;
+    }
     setLoading(true);
     try {
-      setSubjects(await getCourseSubjects(courseId));
+      const [list, syllabus] = await Promise.all([
+        getCourseSubjects(courseId),
+        getCourseSyllabus(courseId).catch(() => ({ data: { modules: [] as SyllabusModule[] } })),
+      ]);
+      setSubjects(list);
+      setModules(
+        syllabus.data.modules
+          .filter((m) => m.status !== "Inactive")
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+      );
     } catch (e) {
       toast({ title: "Could not load subjects", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {
@@ -108,6 +137,27 @@ export default function CourseSubjects() {
   }, [load]);
 
   const inTerm = subjects.filter((s) => s.term === term);
+  const missing = modules.filter((m) => !moduleOnMarksheet(m.name, inTerm));
+
+  const addModules = async () => {
+    if (!course || !importing) return;
+    const fresh = subjectsFromModules(modules, inTerm, { courseId: course.id, courseCode: course.code, term, defaults: importing });
+    if (!fresh.length) return setImporting(null);
+    const problem = subjectProblem({ ...fresh[0] });
+    if (problem) return toast({ title: "Check the marks", description: problem, variant: "destructive" });
+    setAdding(true);
+    try {
+      for (const subject of fresh) await saveCourseSubject(subject);
+      toast({ title: `${fresh.length} module(s) added as subjects`, description: "They now print on this term's marksheet. Edit any one to change its marks." });
+      setImporting(null);
+      await load();
+    } catch (e) {
+      toast({ title: "Could not add the modules", description: e instanceof Error ? e.message : "", variant: "destructive" });
+      await load();
+    } finally {
+      setAdding(false);
+    }
+  };
   const termMax = inTerm.reduce((sum, s) => sum + (hasTheory(s) ? s.theoryMax : 0) + (hasPractical(s) ? s.practicalMax : 0), 0);
 
   const save = async () => {
@@ -245,6 +295,58 @@ export default function CourseSubjects() {
       </Card>
 
       {course && (
+        <Card className="mb-4">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2"><BookOpen className="h-5 w-5" /> {course.name} syllabus</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                {modules.length
+                  ? `${modules.length} module${modules.length === 1 ? "" : "s"} · ${modules.length - missing.length} on the ${terms.find((t) => t.term === term)?.label} marksheet`
+                  : "No modules in this course's syllabus yet."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {canEdit && (
+                <Button variant="outline" asChild>
+                  <Link to={`/course/syllabus?course=${course.id}`}><Pencil className="mr-1.5 h-4 w-4" />Update syllabus</Link>
+                </Button>
+              )}
+              {canEdit && missing.length > 0 && (
+                <Button
+                  onClick={() => setImporting({ subjectType: "BOTH", theoryMax: 100, theoryMin: 35, practicalMax: 100, practicalMin: 35 })}
+                >
+                  <ListPlus className="mr-1.5 h-4 w-4" />Add {missing.length} module{missing.length === 1 ? "" : "s"} to marksheet
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          {modules.length > 0 && (
+            <CardContent>
+              <ol className="grid gap-2 sm:grid-cols-2">
+                {modules.map((m, i) => {
+                  const on = moduleOnMarksheet(m.name, inTerm);
+                  return (
+                    <li key={m.id} className="flex items-start gap-2 rounded-lg border p-2.5 text-sm">
+                      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold">{i + 1}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">{m.name}</span>
+                        {m.description && <span className="block truncate text-xs text-muted-foreground">{m.description}</span>}
+                      </span>
+                      {on ? (
+                        <Badge variant="secondary" className="shrink-0 gap-1"><Check className="h-3 w-3" />On marksheet</Badge>
+                      ) : (
+                        <Badge variant="outline" className="shrink-0 text-muted-foreground">Not added</Badge>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {course && (
         <Card>
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
             <div>
@@ -305,6 +407,58 @@ export default function CourseSubjects() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={!!importing} onOpenChange={(open) => !open && setImporting(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Add syllabus modules to the marksheet</DialogTitle>
+            <DialogDescription>
+              {missing.length} module{missing.length === 1 ? "" : "s"} of {course?.name} become {terms.find((t) => t.term === term)?.label} subjects with these marks. Each can be edited afterwards.
+            </DialogDescription>
+          </DialogHeader>
+          {importing && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Paper type</Label>
+                <Select value={importing.subjectType} onValueChange={(v) => setImporting({ ...importing, subjectType: v as SubjectType })}>
+                  <SelectTrigger aria-label="Paper type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {TYPES.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {(
+                [
+                  ["theoryMax", "Theory max marks", importing.subjectType !== "PRACTICAL"],
+                  ["theoryMin", "Theory min (pass) marks", importing.subjectType !== "PRACTICAL"],
+                  ["practicalMax", "Practical max marks", importing.subjectType !== "THEORY"],
+                  ["practicalMin", "Practical min (pass) marks", importing.subjectType !== "THEORY"],
+                ] as Array<[keyof SubjectDefaults, string, boolean]>
+              )
+                .filter(([, , shown]) => shown)
+                .map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <Label>{label}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      aria-label={label}
+                      value={String(importing[key])}
+                      onChange={(e) => setImporting({ ...importing, [key]: e.target.value === "" ? 0 : Number(e.target.value) })}
+                    />
+                  </div>
+                ))}
+              <ol className="max-h-40 list-decimal space-y-0.5 overflow-y-auto rounded-lg bg-muted/40 py-2 pl-8 pr-3 text-xs sm:col-span-2">
+                {missing.map((m) => <li key={m.id}>{m.name}</li>)}
+              </ol>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImporting(null)}>Cancel</Button>
+            <Button onClick={addModules} disabled={adding}>{adding ? "Adding…" : `Add ${missing.length} subject${missing.length === 1 ? "" : "s"}`}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!draft} onOpenChange={(open) => !open && setDraft(null)}>
         <DialogContent className="max-w-xl">

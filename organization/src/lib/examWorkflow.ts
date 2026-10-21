@@ -219,3 +219,62 @@ export function asExamResults(
       }),
     );
 }
+
+/** The marks every subject made from the syllabus starts with; edited one by one afterwards. */
+export interface SubjectDefaults {
+  subjectType: SubjectType;
+  theoryMax: number;
+  theoryMin: number;
+  practicalMax: number;
+  practicalMin: number;
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** Whether a syllabus module already has its subject in this term. */
+export const moduleOnMarksheet = (moduleName: string, termSubjects: Array<Pick<CourseSubject, "name">>) =>
+  termSubjects.some((s) => sameName(s.name, moduleName));
+
+/**
+ * A course's syllabus modules as the subjects its marksheet prints, for one
+ * term: one subject per active module not already there (matched by name), in
+ * the syllabus's order after the subjects the term has, coded `<course>-01`….
+ */
+export function subjectsFromModules(
+  modules: Array<{ name: string; sortOrder: number; status?: string }>,
+  termSubjects: Array<Pick<CourseSubject, "name" | "code">>,
+  options: { courseId: string; courseCode?: string; term: number; defaults: SubjectDefaults },
+): Array<Omit<CourseSubject, "id">> {
+  const prefix = (options.courseCode || "M").trim().toUpperCase().replace(/\s+/g, "");
+  const usedCodes = new Set(termSubjects.map((s) => s.code.trim().toUpperCase()).filter(Boolean));
+  const { defaults } = options;
+  const theory = defaults.subjectType !== "PRACTICAL";
+  const practical = defaults.subjectType !== "THEORY";
+  const fresh = modules
+    .filter((m) => m.status !== "Inactive" && m.name.trim())
+    .slice()
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+    .filter((m, i, list) => !moduleOnMarksheet(m.name, termSubjects) && list.findIndex((x) => sameName(x.name, m.name)) === i);
+  let n = 0;
+  const nextCode = () => {
+    let code = "";
+    do {
+      n += 1;
+      code = `${prefix}-${String(n).padStart(2, "0")}`;
+    } while (usedCodes.has(code));
+    usedCodes.add(code);
+    return code;
+  };
+  return fresh.map((m, i) => ({
+    courseId: options.courseId,
+    term: options.term,
+    code: nextCode(),
+    name: m.name.trim(),
+    subjectType: defaults.subjectType,
+    theoryMax: theory ? defaults.theoryMax : 0,
+    theoryMin: theory ? defaults.theoryMin : 0,
+    practicalMax: practical ? defaults.practicalMax : 0,
+    practicalMin: practical ? defaults.practicalMin : 0,
+    sortOrder: termSubjects.length + i + 1,
+  }));
+}
