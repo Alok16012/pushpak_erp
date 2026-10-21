@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 import { viewForRole } from "@/lib/roles";
 import { getUserModules } from "@/lib/supabase/data";
 import { allows, type Action, type Permissions } from "@/lib/permissions";
+import { permissionsForView } from "@/lib/navigation";
 import { PermissionsContext } from "./PermissionsContext";
 
 type User = { id: string; name: string; email: string; role: string; organizationId?: string; branchId?: string };
@@ -185,6 +186,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error) throw new Error(error.message);
   };
 
+  // A sibling path (`/student/add`) keeps the actions ticked for its page.
+  const pagePermissions = permissionsForView(view, rolePermissions, allowedPaths);
+
   return (
     <Context.Provider
       value={{
@@ -198,14 +202,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // A centre is shown its whole franchise menu, not the admin role's pages.
         allowedPaths: actingAs ? [] : allowedPaths,
         // Working as a centre, the head office keeps every action there too.
-        permissions: actingAs ? {} : rolePermissions,
-        can: (action: Action, path: string) => (actingAs ? true : allows(rolePermissions, path, action)),
+        permissions: actingAs ? {} : pagePermissions,
+        can: (action: Action, path: string) => (actingAs ? true : allows(pagePermissions, path, action)),
         login,
         logout,
         loading,
       }}
     >
-      <PermissionsContext.Provider value={actingAs ? null : rolePermissions}>{children}</PermissionsContext.Provider>
+      <PermissionsContext.Provider value={actingAs ? null : pagePermissions}>{children}</PermissionsContext.Provider>
     </Context.Provider>
   );
 }

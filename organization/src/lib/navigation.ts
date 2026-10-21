@@ -45,6 +45,7 @@ import {
   User,
 } from "lucide-react";
 import { VIEWS, type View } from "@/lib/roles";
+import type { Permissions } from "@/lib/permissions";
 
 export interface MenuItem {
   title: string;
@@ -284,7 +285,7 @@ const franchiseMenu: MenuItem[] = [
     "/attendance/logs",
   ]),
   ...scope("Exam & Marks", ["/exam/schedule", "/exam/admit-cards", "/exam/results", "/exam/marks-list"]),
-  ...scope("Live Class", ["/live-class/view", "/tools/code-lab", "/tools/whiteboard"]),
+  ...scope("Live Class", ["/live-class/view", "/live-class/setup", "/tools/code-lab", "/tools/whiteboard"]),
   ...scope("Certificate & Marksheet", [
     "/certificate/issue",
     "/certificate/generate",
@@ -347,31 +348,78 @@ const MENUS: Record<View, MenuItem[]> = {
 
 export const menuForView = (view: View): MenuItem[] => MENUS[view];
 
-/**
- * Routes a view may open that its sidebar does not list — sibling URLs of a
- * page it already has (the reception, admissions and assessments workspaces
- * each answer to several paths) plus the view's landing page.
- */
-const EXTRA_PATHS: Record<View, string[]> = {
+/** A view's landing page, which every role of it keeps. */
+const LANDING: Record<View, string[]> = {
   admin: ["/"],
-  franchise: [
-    "/",
-    "/reception/visitors",
-    "/reception/receive",
-    "/student/add",
-    "/exam/create",
-    "/exam/schedule",
-    "/exam/assign-marks",
-    "/exam/grade-management",
-    "/certificate/template",
-    "/marksheet/template",
-    "/documents/designer",
-    "/marksheet/generate",
-  ],
+  franchise: ["/"],
   // "/" is allowed so a student who lands on the root is redirected to their
   // own dashboard rather than told they are not authorised for it.
   student: ["/", "/me"],
 };
+
+/**
+ * Routes a view may open that its sidebar does not list, each mapped to the
+ * menu page it belongs to: `/student/add` is what Admission Form's New
+ * admission button opens, `/exam/create` a tab of Exam Schedule. A role gets
+ * one of these only when its page was ticked, and keeps that page's actions
+ * on it -- so no URL opens more than the Super Admin granted.
+ */
+const SHARED_SIBLINGS: Record<string, string | string[]> = {
+  "/reception/visitors": "/reception/enquiry",
+  "/reception/receive": "/reception/dispatch",
+  // New admission, and Edit on View Students: either page's tick opens it.
+  "/student/add": ["/student/admission-form", "/student/view"],
+  "/exam/create": "/exam/schedule",
+  "/exam/assign-marks": "/exam/results",
+  "/exam/grade-management": "/exam/results",
+  "/marksheet/generate": "/exam/results",
+};
+const SIBLINGS: Record<View, Record<string, string | string[]>> = {
+  admin: {
+    ...SHARED_SIBLINGS,
+    "/cards/id-template": "/cards/generate-id",
+    "/cards/admit-template": "/cards/generate-admit",
+  },
+  franchise: {
+    ...SHARED_SIBLINGS,
+    // The organisation's formats, which a branch opens from Student Documents.
+    "/certificate/template": "/certificate/generate",
+    "/marksheet/template": "/certificate/generate",
+    "/documents/designer": "/certificate/generate",
+  },
+  student: {},
+};
+
+const normalise = (pathname: string) => (pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname);
+
+/** The menu pages whose tick and actions a path follows: itself, or its parents. */
+export const pagePermissionPaths = (view: View, pathname: string): string[] => {
+  const path = normalise(pathname);
+  const parent = SIBLINGS[view][path];
+  return parent ? [parent].flat() : [path];
+};
+
+/**
+ * The role's action limits with every sibling path carrying its page's, so a
+ * button on `/exam/create` obeys what was ticked for Exam Schedule. A sibling
+ * of two pages gets whatever either granted page allows.
+ */
+export function permissionsForView(
+  view: View,
+  permissions: Permissions,
+  allowed?: string[] | null,
+): Permissions {
+  const out: Permissions = { ...permissions };
+  for (const path of Object.keys(SIBLINGS[view])) {
+    if (permissions[path]) continue;
+    const parents = pagePermissionPaths(view, path).filter((p) => !allowed?.length || allowed.includes(p));
+    if (!parents.length) continue;
+    // A parent with no entry keeps every action, and so does the sibling.
+    if (parents.some((p) => !permissions[p])) continue;
+    out[path] = [...new Set(parents.flatMap((p) => permissions[p]))];
+  }
+  return out;
+}
 
 /** Every path that is a menu item of a view, which is what a tick refers to. */
 const MENU_PATHS: Record<View, Set<string>> = {
@@ -392,7 +440,10 @@ const ALLOWED: Record<View, Set<string>> = {
       MENU_PATHS[view].add(item.url);
     }),
   );
-  EXTRA_PATHS[view].forEach((path) => ALLOWED[view].add(path));
+  LANDING[view].forEach((path) => ALLOWED[view].add(path));
+  Object.keys(SIBLINGS[view]).forEach((path) => {
+    if (pagePermissionPaths(view, path).some((parent) => MENU_PATHS[view].has(parent))) ALLOWED[view].add(path);
+  });
 });
 
 /**
@@ -401,7 +452,7 @@ const ALLOWED: Record<View, Set<string>> = {
  * has the staff-side equivalent of every one of them.
  */
 export function canAccess(view: View, pathname: string): boolean {
-  const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  const path = normalise(pathname);
   if (view === "admin") return !path.startsWith("/me");
   return ALLOWED[view].has(path);
 }
@@ -441,9 +492,10 @@ export function menuFor(view: View, allowed?: string[] | null): MenuItem[] {
  *
  * The view is still the outer boundary: a role cannot be granted a page its
  * view was never authorised for, because that is the line the database keeps
- * too. Within the view, an empty list means everything -- the behaviour before
- * roles existed -- and a list means exactly what it says, plus the view's
- * landing and sibling paths, which are not menu items anyone can tick.
+ * too. Within the view, a role that was never given a list keeps the whole
+ * view -- the behaviour before roles existed. Once it has a list, it opens
+ * exactly the pages ticked there (and their sibling paths), plus its landing
+ * page: nothing reaches a page by knowing the URL.
  */
 export function canAccessWithRole(
   view: View,
@@ -452,20 +504,9 @@ export function canAccessWithRole(
 ): boolean {
   if (!canAccess(view, pathname)) return false;
   if (!allowed || allowed.length === 0) return true;
-
-  const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-  const granted = new Set(allowed);
-  if (granted.has(path) || EXTRA_PATHS[view].includes(path)) return true;
-
-  // A page that IS a menu item and was not ticked is refused, or the tick
-  // would mean nothing to anyone who knows the URL.
-  if (MENU_PATHS[view].has(path)) return false;
-
-  // What is left is a path no picker can offer: `/student/add` behind the New
-  // admission button, the workspaces that answer to several URLs. Those follow
-  // the section they belong to, so granting a section's page carries them.
-  const section = path.split("/")[1] ?? "";
-  return [...granted].some((url) => url.split("/")[1] === section);
+  const path = normalise(pathname);
+  if (LANDING[view].includes(path)) return true;
+  return pagePermissionPaths(view, path).some((page) => allowed.includes(page));
 }
 
 /** Where a module opens: its list or overview page, else its first page. */

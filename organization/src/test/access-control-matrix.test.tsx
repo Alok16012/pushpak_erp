@@ -43,8 +43,9 @@ beforeEach(() => {
 describe("Access Control matrix", () => {
   it("narrows one page to view and print, and saves it", async () => {
     render(<MemoryRouter initialEntries={["/user/access-control?role=r1"]}><AccessControl /></MemoryRouter>);
-    const view = await screen.findByLabelText("View Results & Marksheets", {}, { timeout: 5000 });
-    expect(view).toBeChecked();
+    await screen.findByLabelText("View Results & Marksheets", {}, { timeout: 5000 });
+    // The ticks follow the role once it has loaded.
+    await waitFor(() => expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked(), { timeout: 5000 });
     expect(screen.getByLabelText("Delete on Results & Marksheets")).toBeChecked();
 
     for (const action of ["Create", "Edit", "Delete", "Export", "Approve"]) {
@@ -63,7 +64,7 @@ describe("Access Control matrix", () => {
 
   it("ticks View along with an action on a page the role could not open", async () => {
     render(<MemoryRouter initialEntries={["/user/access-control?role=r1"]}><AccessControl /></MemoryRouter>);
-    await screen.findByLabelText("View Results & Marksheets", {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked(), { timeout: 5000 });
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(screen.getByLabelText("View Results & Marksheets")).not.toBeChecked();
     const create = screen.getByLabelText("Create on Results & Marksheets");
@@ -73,9 +74,20 @@ describe("Access Control matrix", () => {
     expect(screen.getByLabelText("Create on Results & Marksheets")).toBeChecked();
   });
 
+  it("saves a role with nothing ticked as no pages, not as every page", async () => {
+    render(<MemoryRouter initialEntries={["/user/access-control?role=r1"]}><AccessControl /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked(), { timeout: 5000 });
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: /Save permissions/ }));
+    await waitFor(() => expect(updateRole).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    const [, input] = updateRole.mock.calls[0] as [string, { modules: string[] }];
+    // An empty list is how a role never narrowed is stored -- it means every page.
+    expect(input.modules).toEqual(["/"]);
+  });
+
   it("makes a role view-only across the board", async () => {
     render(<MemoryRouter initialEntries={["/user/access-control?role=r1"]}><AccessControl /></MemoryRouter>);
-    await screen.findByLabelText("View Results & Marksheets", {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked(), { timeout: 5000 });
     fireEvent.click(screen.getByRole("button", { name: "View only" }));
     expect(screen.getByLabelText("Create on Results & Marksheets")).not.toBeChecked();
     expect(screen.getByLabelText("View Results & Marksheets")).toBeChecked();

@@ -33,8 +33,9 @@ import { viewForRole, type View } from "@/lib/roles";
  *
  * Granting is bounded by the role's own level: a branch role cannot be handed
  * an organisation page, because the database would refuse the data behind it
- * anyway. Nothing ticked means the whole menu for that level, which is how
- * every account behaved before roles existed.
+ * anyway. A role that was never given a list keeps the whole menu for its
+ * level, which is how every account behaved before roles existed; once saved,
+ * it opens exactly what is ticked -- and with nothing ticked, nothing.
  */
 export default function AccessControl() {
   const { toast } = useToast();
@@ -90,8 +91,9 @@ export default function AccessControl() {
 
   // The ticks follow whichever role is being looked at.
   useEffect(() => {
-    // Nothing ticked has always meant "every page"; show it as every page ticked.
-    setGranted(role ? (role.modules.length && !isSuperAdminRole(role) ? role.modules : everyPath) : []);
+    // A role never given a list has every page; show it as every page ticked.
+    // ["/"] -- the landing page alone -- is how a role with nothing ticked is stored.
+    setGranted(role ? (role.modules.length && !isSuperAdminRole(role) ? role.modules.filter((url) => everyPath.includes(url)) : everyPath) : []);
     setPerms(role && !isSuperAdminRole(role) ? role.permissions : {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role?.id, role?.modules, role?.permissions]);
@@ -136,7 +138,10 @@ export default function AccessControl() {
     try {
       // Everything ticked is stored as nothing: "the whole menu" should keep
       // meaning the whole menu even after a page is added to the app later.
-      const modules = granted.length === everyPath.length ? [] : granted;
+      // Nothing ticked is stored as the landing page alone, not as nothing --
+      // nothing would hand the role every page.
+      const ticked = granted.filter((url) => everyPath.includes(url));
+      const modules = ticked.length === everyPath.length ? [] : ticked.length ? ticked : ["/"];
       // Only pages the role can open carry action limits.
       const permissions = Object.fromEntries(
         Object.entries(perms).filter(([url]) => granted.includes(url) && everyPath.includes(url)),
@@ -148,7 +153,7 @@ export default function AccessControl() {
         description:
           modules.length === 0
             ? `${role.name} gets every page for its level.`
-            : `${role.name} gets ${modules.length} page(s). Anyone signed in sees the change within a minute.`,
+            : `${role.name} gets ${ticked.length} page(s). Anyone signed in sees the change within a minute.`,
       });
     } catch (error) {
       toast({
