@@ -4467,7 +4467,7 @@ export interface SystemUserRow {
 /** The scope columns arrive with user-management.sql; until it is run the
  *  table has no `organizationId`, and PostgREST answers 42703. */
 const isMissingUserScope = (error: { code?: string; message?: string }) =>
-  error?.code === "42703" || /column users\.(organizationId|branchId) does not exist/i.test(error?.message || "");
+  error?.code === "42703" || /column users\.(organizationId|branchId|roleId) does not exist/i.test(error?.message || "");
 
 /**
  * Staff logins, scoped to what the caller may see.
@@ -4524,7 +4524,9 @@ export async function getUsers(
     });
   }
 
-  const columns = "id,name,email,phone,role,userType,isActive,lastLoginAt,createdAt";
+  // `roleId` is the institute's own role (roles.sql); the list names it and the
+  // edit dialog opens on it.
+  const columns = "id,name,email,phone,role,userType,isActive,lastLoginAt,createdAt,roleId";
   const rows = new Map<string, Record<string, unknown>>();
 
   if (owners.size) {
