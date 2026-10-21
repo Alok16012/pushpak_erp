@@ -16,6 +16,7 @@ import { getDashboardRows, type DashboardRows } from "@/lib/supabase/dashboardCh
 import { monthlyFees, weekActivity } from "@/lib/dashboardCharts";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
+import { canAccessWithRole } from "@/lib/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { AppGreeting, HeroCard, ServicesGrid } from "@/components/home/AppHome";
 
@@ -27,7 +28,7 @@ const quickActions = [
 ];
 
 type DashboardData={students:number;courses:number;feesCollected:number;outstanding:number;attendancePercentage:number;enquiriesToday:number};
-const Index = () => { const {toast}=useToast();const navigate=useNavigate();const { user } = useAuth();const branchId = user?.branchId;const [metrics,setMetrics]=useState<DashboardData|null>(null);
+const Index = () => { const {toast}=useToast();const navigate=useNavigate();const { user, view, allowedPaths } = useAuth();const branchId = user?.branchId;const canAdmit = canAccessWithRole(view, "/student/admission-form", allowedPaths);const actions = quickActions.filter((action) => canAccessWithRole(view, action.to, allowedPaths));const [metrics,setMetrics]=useState<DashboardData|null>(null);
   const load=useCallback(()=>getDashboardStats(branchId).then(r=>{if(r.success)setMetrics(r.data)}).catch(error=>toast({title:"Live dashboard unavailable",description:error.message,variant:"destructive"})),[toast,branchId]);
   useEffect(()=>{load()},[load]);
   // The rows behind the two charts, which used to be fixed numbers.
@@ -47,7 +48,7 @@ const Index = () => { const {toast}=useToast();const navigate=useNavigate();cons
   ];
   return (
   <AppLayout>
-    <AppGreeting name={user?.name?.split(" ")[0]||"Admin"} title="What needs you today?" right={<Button asChild><Link to="/student/admission-form"><Plus/>New admission</Link></Button>}/>
+    <AppGreeting name={user?.name?.split(" ")[0]||"Admin"} title="What needs you today?" right={canAdmit ? <Button asChild><Link to="/student/admission-form"><Plus/>New admission</Link></Button> : null}/>
     <HeroCard
       badge="This month"
       headline={metrics?`${money(metrics.feesCollected)} collected`:"Fees collected"}
@@ -84,7 +85,7 @@ const Index = () => { const {toast}=useToast();const navigate=useNavigate();cons
     <section className="mb-5 grid gap-5 xl:grid-cols-[1.55fr_.9fr]">
       <Card className="overflow-hidden"><CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle>Institution pulse</CardTitle><p className="mt-1 text-xs text-muted-foreground">Attendance performance · this week</p></div><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal/></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>{load();toast({title:"Dashboard refreshed",description:"Metrics were re-fetched."})}}>Refresh metrics</DropdownMenuItem><DropdownMenuItem onSelect={()=>downloadCsv("institution-pulse-week.csv",weekly)}>Export this week (CSV)</DropdownMenuItem><DropdownMenuItem onSelect={()=>navigate("/attendance/report")}>Open attendance report</DropdownMenuItem></DropdownMenuContent></DropdownMenu></CardHeader><CardContent><div className="mb-3 flex items-end gap-2.5"><span className="metric">{weekAverage===null?"—":`${weekAverage}%`}</span><span className="mb-1.5 text-xs text-muted-foreground">{weekAverage===null?"No register taken this week":"average, days with a register"}</span></div><ResponsiveContainer width="100%" height={230}><AreaChart data={weekly} margin={{top:4,right:4,left:-18,bottom:0}}><defs><linearGradient id="attendance" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="hsl(var(--chart-2))" stopOpacity={.32}/><stop offset="100%" stopColor="hsl(var(--chart-2))" stopOpacity={0}/></linearGradient></defs><CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeDasharray="2 4"/><XAxis dataKey="day" axisLine={false} tickLine={false} fontSize={11} stroke="hsl(var(--muted-foreground))"/><YAxis domain={[0,100]} axisLine={false} tickLine={false} fontSize={11} stroke="hsl(var(--muted-foreground))"/><Tooltip cursor={{stroke:"hsl(var(--border))"}} contentStyle={{borderRadius:12,border:"1px solid hsl(var(--border))",background:"hsl(var(--popover))",color:"hsl(var(--popover-foreground))",fontSize:12}}/><Area type="monotone" dataKey="attendance" stroke="hsl(var(--chart-2))" strokeWidth={2.5} fill="url(#attendance)" dot={false} activeDot={{r:5,fill:"hsl(var(--chart-2))",stroke:"hsl(var(--card))",strokeWidth:2}}/></AreaChart></ResponsiveContainer></CardContent></Card>
 
-      <Card><CardHeader><CardTitle>Quick actions</CardTitle><p className="text-xs text-muted-foreground">Your most-used workflows, directly accessible</p></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">{quickActions.map(action=><Link key={action.label} to={action.to} className="group flex items-center gap-3 rounded-2xl border border-border/70 p-3 transition hover:border-foreground/20 hover:bg-muted/60"><span className="grid h-10 w-10 place-items-center rounded-lg bg-muted transition-colors group-hover:bg-brand group-hover:text-brand-foreground"><action.icon className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{action.label}</span><span className="block text-xs text-muted-foreground">{action.hint}</span></span><ArrowUpRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5"/></Link>)}</CardContent></Card>
+      <Card><CardHeader><CardTitle>Quick actions</CardTitle><p className="text-xs text-muted-foreground">Your most-used workflows, directly accessible</p></CardHeader><CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">{actions.map(action=><Link key={action.label} to={action.to} className="group flex items-center gap-3 rounded-2xl border border-border/70 p-3 transition hover:border-foreground/20 hover:bg-muted/60"><span className="grid h-10 w-10 place-items-center rounded-lg bg-muted transition-colors group-hover:bg-brand group-hover:text-brand-foreground"><action.icon className="h-4 w-4"/></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{action.label}</span><span className="block text-xs text-muted-foreground">{action.hint}</span></span><ArrowUpRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5"/></Link>)}</CardContent></Card>
     </section>
 
     <section className="grid gap-5 lg:grid-cols-3">

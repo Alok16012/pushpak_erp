@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { CalendarCheck, ClipboardCheck, Home, IndianRupee, LayoutGrid, UserRoundPlus, UsersRound, Video } from "lucide-react";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
+import { canAccessWithRole } from "@/lib/navigation";
 import type { View } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
@@ -35,9 +36,10 @@ const TAB = "flex flex-1 flex-col items-center justify-center gap-0.5 rounded-fu
  */
 export function MobileNav() {
   const location = useLocation();
-  const { view } = useAuth();
+  const { view, allowedPaths } = useAuth();
   const { openMobile, setOpenMobile } = useSidebar();
-  const items = NAV[view];
+  // Only the destinations this role may open; Home always stays.
+  const items = NAV[view].filter((item, i) => i === 0 || canAccessWithRole(view, item.url, allowedPaths));
   const home = items[0].url;
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3.5 pb-[calc(10px+env(safe-area-inset-bottom))] md:hidden">

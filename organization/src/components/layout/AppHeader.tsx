@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { menuFor } from "@/lib/navigation";
+import { canAccessWithRole, menuFor } from "@/lib/navigation";
 import { VIEWS } from "@/lib/roles";
 import { useAuth } from "@/contexts/AuthContext";
 import { getNotices } from "@/lib/supabase/data";
@@ -85,7 +85,7 @@ export function AppHeader() {
         {/* A persistent shortcut everywhere except the dashboard, which already
             offers it as its own primary action — outline so that when a page
             does have a filled button, there is still only one focal point. */}
-        {!onDashboard && view !== "student" && <Button asChild size="sm" variant="outline" className="hidden sm:flex"><Link to="/student/admission-form"><Plus />New admission</Link></Button>}
+        {!onDashboard && view !== "student" && canAccessWithRole(view, "/student/admission-form", allowedPaths) && <Button asChild size="sm" variant="outline" className="hidden sm:flex"><Link to="/student/admission-form"><Plus />New admission</Link></Button>}
         <Button variant="ghost" size="icon" className={`h-10 w-10 rounded-xl bg-card text-muted-foreground shadow-card md:hidden ${onDashboard ? "" : "hidden"}`} aria-label="Search" onClick={()=>setSearchOpen(true)}><Search/></Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

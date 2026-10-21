@@ -12,6 +12,7 @@ import { getDashboardRows, type DashboardRows } from "@/lib/supabase/dashboardCh
 import { admissionFunnel, belowAttendance, monthlyFees, todaysBatches } from "@/lib/dashboardCharts";
 import { downloadCsv } from "@/lib/export";
 import { useAuth } from "@/contexts/AuthContext";
+import { canAccessWithRole } from "@/lib/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { AppGreeting, HeroCard, ServicesGrid } from "@/components/home/AppHome";
 
@@ -29,7 +30,10 @@ type DashboardData = { students: number; courses: number; feesCollected: number;
 
 export default function FranchiseDashboard() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, view, allowedPaths } = useAuth();
+  // Only what this role may open: the admission shortcuts and quick actions.
+  const canAdmit = canAccessWithRole(view, "/student/admission-form", allowedPaths);
+  const actions = quickActions.filter((action) => canAccessWithRole(view, action.to, allowedPaths));
   const branchId = user?.branchId;
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<DashboardData | null>(null);
@@ -106,7 +110,7 @@ export default function FranchiseDashboard() {
 
   return (
     <AppLayout>
-      <AppGreeting name={user?.name?.split(" ")[0] || "there"} title={branch || "Your branch today"} right={<Button asChild><Link to="/student/admission-form"><Plus />New admission</Link></Button>} />
+      <AppGreeting name={user?.name?.split(" ")[0] || "there"} title={branch || "Your branch today"} right={canAdmit ? <Button asChild><Link to="/student/admission-form"><Plus />New admission</Link></Button> : null} />
       <HeroCard
         badge="This month"
         headline={metrics ? `${money(metrics.feesCollected)} collected` : "Fees collected"}
@@ -118,7 +122,7 @@ export default function FranchiseDashboard() {
           { value: wallet === null ? "—" : money(wallet), label: "Wallet", to: "/branch/wallet" },
         ]}
         primary={{ label: "Collect fee", to: "/fee/collection" }}
-        secondary={{ label: "New admission", to: "/student/admission-form" }}
+        secondary={canAdmit ? { label: "New admission", to: "/student/admission-form" } : undefined}
       />
       <ServicesGrid />
 
@@ -179,7 +183,7 @@ export default function FranchiseDashboard() {
           <Card>
             <CardHeader><CardTitle>Quick actions</CardTitle></CardHeader>
             <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              {quickActions.map((action) => (
+              {actions.map((action) => (
                 <Link key={action.label} to={action.to} className="group flex items-center gap-3 rounded-2xl border border-border/70 p-3 transition hover:border-foreground/20 hover:bg-muted/60">
                   <span className="grid h-10 w-10 place-items-center rounded-lg bg-muted transition-colors group-hover:bg-brand group-hover:text-brand-foreground"><action.icon className="h-4 w-4" /></span>
                   <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{action.label}</span><span className="block text-xs text-muted-foreground">{action.hint}</span></span>
