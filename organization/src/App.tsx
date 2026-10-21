@@ -76,6 +76,7 @@ const ExamSchedule = lazy(() => import("./pages/exam/ExamSchedule"));
 const AdmitCards = lazy(() => import("./pages/exam/AdmitCards"));
 const Results = lazy(() => import("./pages/exam/Results"));
 const Certificates = lazy(() => import("./pages/exam/Certificates"));
+const CentreCharges = lazy(() => import("./pages/branch/CentreCharges"));
 
 // Online Exam
 const CreateOnlineExam = lazy(() => import("./pages/online-exam/CreateOnlineExam"));
@@ -191,6 +192,7 @@ const App = () => (
           <Route path="/branch/create" element={<CreateBranch />} />
           <Route path="/branch/view" element={<ViewBranch />} />
           <Route path="/branch/wallet" element={<WalletRecharge />} />
+          <Route path="/branch/charges" element={<CentreCharges />} />
           <Route path="/branch/transactions" element={<BranchTransactions />} />
           <Route path="/branch/notice-board" element={<BranchNoticeBoard />} />
           <Route path="/branch/website-settings" element={<BranchWebsiteSettings />} />

@@ -18,10 +18,16 @@ const missingRelation = (error: { code?: string; message?: string } | null) =>
   /does not exist|schema cache/i.test(error?.message || "");
 
 function fail(error: { code?: string; message?: string }): never {
+  const low = /INSUFFICIENT_BALANCE:\s*(.*)/.exec(error.message || "");
+  if (low) throw new Error(`Centre wallet balance is too low: ${low[1]} Recharge the wallet, then try again.`);
   throw new Error(missingRelation(error) ? SETUP_HINT : error.message || "Request failed");
 }
 
 const num = (v: unknown) => Number(v) || 0;
+/** The header re-reads the centre's wallet after anything that may have charged it. */
+const walletMayHaveMoved = () => {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("wallet:changed"));
+};
 const text = (v: unknown) => (v == null ? "" : String(v));
 const now = () => new Date().toISOString();
 
@@ -302,6 +308,7 @@ export async function saveAdmitCard(input: Omit<AdmitCardRecord, "id" | "issuedA
     { onConflict: "studentId,term" },
   );
   if (error) fail(error);
+  walletMayHaveMoved();
 }
 
 export async function deleteAdmitCard(id: string) {
@@ -415,6 +422,7 @@ export async function saveMarksheet(input: MarksheetInput, createdBy?: string | 
     { onConflict: "studentId,term" },
   );
   if (error) fail(error);
+  walletMayHaveMoved();
   return summary;
 }
 

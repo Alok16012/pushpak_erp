@@ -66,7 +66,7 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
   const issuedFor = (sid: string) => issued.find((c) => c.studentId === sid);
   const candidates = students.filter((s) => !branchId || s.branchId === branchId);
   const student = studentOf.get(studentId) || null;
-  const fee = student ? fees.get(student.branchId) || 0 : 0;
+  const fee = student ? fees.get(student.branchId) ?? fees.get("*") ?? 0 : 0;
   const sheet = student ? finalPass(student.id) : undefined;
   const already = student ? issuedFor(student.id) : undefined;
 

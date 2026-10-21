@@ -76,6 +76,7 @@ export const menuItems: MenuItem[] = [
       { title: "Branch Leads", url: "/branch/leads", icon: Building2 },
       { title: "View Branch", url: "/branch/view", icon: Building2 },
       { title: "Wallet Recharge", url: "/branch/wallet", icon: Wallet },
+      { title: "Centre Charges", url: "/branch/charges", icon: Wallet },
       { title: "Branch Transactions", url: "/branch/transactions", icon: Receipt },
       { title: "Notice Board", url: "/branch/notice-board", icon: Bell },
       { title: "Website Settings", url: "/branch/website-settings", icon: Globe },
@@ -295,6 +296,7 @@ const franchiseMenu: MenuItem[] = [
   ]),
   ...scope("Branch Management", [
     "/branch/wallet",
+    "/branch/charges",
     "/branch/transactions",
     "/branch/notice-board",
     "/branch/website-settings",

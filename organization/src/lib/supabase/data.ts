@@ -479,7 +479,11 @@ export async function createStudent(branchId: string, input: Record<string, unkn
       .insert({ ...body, applicationNo, branchId })
       .select("*")
       .single();
-    if (!error) return { success: true, data };
+    if (!error) {
+      // An admission may have been charged to the centre's wallet.
+      announceWalletChange();
+      return { success: true, data };
+    }
     // 23505 is a unique violation - the number is already issued, by another
     // admission saved in the same instant or by a branch this account cannot see.
     const raced = error.code === "23505" && !body.applicationNo;
@@ -495,6 +499,7 @@ export async function createStudent(branchId: string, input: Record<string, unkn
       continue;
     }
     // A typed gender reaches the Gender enum until free-text-choices.sql is run.
+    if (/INSUFFICIENT_BALANCE/.test(error.message || "")) throw new Error(friendlyChargeError(error.message));
     throw new Error(describeEnumRejection(error, "Could not save the student"));
   }
   throw new Error("Could not allocate an application number");
@@ -5563,44 +5568,122 @@ const missingRelation = (error: { code?: string; message?: string } | null) =>
   error?.code === "42P01" || error?.code === "PGRST205" || error?.code === "PGRST202" ||
   /does not exist|schema cache/i.test(error?.message || "");
 
-/** Every centre's certificate price, keyed by branch id. Empty until migrated. */
-export async function getCertificateFees(): Promise<Map<string, number>> {
-  const { data, error } = await supabase.from("branch_certificate_fees").select("branchId, amount");
+/* ---------------------------------------------------------------------------
+ * Centre charges (centre-charges.sql): what the head office takes from a
+ * centre's wallet for an admission, an admit card, a marksheet and a
+ * certificate. A rate is set for every centre ("*") and may be overridden for
+ * one; the database charges each thing once, as it is made.
+ * ------------------------------------------------------------------------- */
+
+export const CHARGE_ITEMS = ["ADMISSION", "ADMIT_CARD", "MARKSHEET", "CERTIFICATE"] as const;
+export type ChargeItem = (typeof CHARGE_ITEMS)[number];
+export const CHARGE_LABELS: Record<ChargeItem, string> = {
+  ADMISSION: "Admission",
+  ADMIT_CARD: "Admit Card",
+  MARKSHEET: "Marksheet",
+  CERTIFICATE: "Certificate",
+};
+
+/** scope ("*" or a branch id) -> item -> amount. */
+export type CentreRates = Map<string, Partial<Record<ChargeItem, number>>>;
+
+/** What a centre pays for an item: its own rate, else the all-centres one, else 0. */
+export const effectiveRate = (rates: CentreRates, branchId: string | null | undefined, item: ChargeItem) =>
+  (branchId ? rates.get(branchId)?.[item] : undefined) ?? rates.get("*")?.[item] ?? 0;
+
+const RATES_HINT = "Centre charges are not set up yet. Run supabase/schema/centre-charges.sql in Supabase.";
+
+export async function getCentreRates(): Promise<CentreRates> {
+  const rates: CentreRates = new Map();
+  const { data, error } = await supabase.from("centre_charge_rates").select("scope, item, amount");
   if (error) {
-    if (missingRelation(error)) return new Map();
+    if (!missingRelation(error)) throw new Error(error.message);
+    // Before centre-charges.sql: the per-centre certificate fees it replaces.
+    const old = await supabase.from("branch_certificate_fees").select("branchId, amount");
+    for (const row of old.data || []) rates.set(String(row.branchId), { CERTIFICATE: Number(row.amount) || 0 });
+    return rates;
+  }
+  for (const row of data || []) {
+    const scope = String(row.scope);
+    rates.set(scope, { ...(rates.get(scope) || {}), [row.item as ChargeItem]: Number(row.amount) || 0 });
+  }
+  return rates;
+}
+
+/**
+ * Saves rates. A null amount on a centre removes its own rate, so the
+ * all-centres one applies again.
+ */
+export async function saveCentreRates(
+  changes: Array<{ scope: string; item: ChargeItem; amount: number | null }>,
+  updatedBy?: string | null,
+) {
+  const upserts = changes
+    .filter((c) => c.amount !== null)
+    .map((c) => ({ scope: c.scope, item: c.item, amount: Math.max(0, Number(c.amount) || 0), updatedBy: updatedBy || null, updatedAt: new Date().toISOString() }));
+  if (upserts.length) {
+    const { error } = await supabase.from("centre_charge_rates").upsert(upserts, { onConflict: "scope,item" });
+    if (error) throw new Error(missingRelation(error) ? RATES_HINT : error.message);
+  }
+  for (const c of changes.filter((x) => x.amount === null && x.scope !== "*")) {
+    const { error } = await supabase.from("centre_charge_rates").delete().eq("scope", c.scope).eq("item", c.item);
+    if (error) throw new Error(missingRelation(error) ? RATES_HINT : error.message);
+  }
+}
+
+export interface CentreChargeRow {
+  id: string;
+  branchId: string;
+  item: ChargeItem;
+  amount: number;
+  chargedAt: string;
+  chargedBy: string;
+  refKey: string;
+}
+
+/** What has been charged, newest first (the centre's own, or every centre's). */
+export async function getCentreCharges(branchId: string | null, limit = 500): Promise<CentreChargeRow[]> {
+  let query = supabase.from("centre_charges").select("*").order("chargedAt", { ascending: false }).limit(limit);
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
+  if (error) {
+    if (missingRelation(error)) return [];
     throw new Error(error.message);
   }
-  return new Map((data || []).map((row) => [String(row.branchId), Number(row.amount) || 0]));
+  return (data || []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    branchId: String(row.branchId),
+    item: String(row.item) as ChargeItem,
+    amount: Number(row.amount) || 0,
+    chargedAt: String(row.chargedAt || ""),
+    chargedBy: String(row.chargedBy || ""),
+    refKey: String(row.refKey || ""),
+  }));
+}
+
+/** Every centre's certificate price, keyed by branch id, with "*" for all centres. */
+export async function getCertificateFees(): Promise<Map<string, number>> {
+  const rates = await getCentreRates();
+  const fees = new Map<string, number>();
+  for (const [scope, items] of rates) if (items.CERTIFICATE !== undefined) fees.set(scope, items.CERTIFICATE);
+  return fees;
 }
 
 /** One centre's certificate price; 0 when none is set. */
 export async function getCertificateFee(branchId: string | null): Promise<number> {
   if (!branchId) return 0;
-  const { data, error } = await supabase
-    .from("branch_certificate_fees")
-    .select("amount")
-    .eq("branchId", branchId)
-    .maybeSingle();
-  if (error) {
-    if (missingRelation(error)) return 0;
-    throw new Error(error.message);
-  }
-  return Number(data?.amount) || 0;
+  return effectiveRate(await getCentreRates(), branchId, "CERTIFICATE");
 }
 
+/** A centre's own certificate price (kept for callers that set one rate). */
 export async function setCertificateFee(branchId: string, amount: number, updatedBy?: string | null) {
-  const { error } = await supabase.from("branch_certificate_fees").upsert({
-    branchId,
-    amount: Math.max(0, Number(amount) || 0),
-    updatedBy: updatedBy || null,
-    updatedAt: new Date().toISOString(),
-  });
-  if (error) {
-    if (missingRelation(error)) {
-      throw new Error("Certificate fees are not set up yet. Run supabase/schema/certificate-wallet-charge.sql in Supabase.");
-    }
-    throw new Error(error.message);
-  }
+  await saveCentreRates([{ scope: branchId, item: "CERTIFICATE", amount }], updatedBy);
+}
+
+/** A wallet refusal from the database, said plainly. */
+export function friendlyChargeError(message: string): string {
+  const low = /INSUFFICIENT_BALANCE:\s*(.*)/.exec(message || "");
+  return low ? `Centre wallet balance is too low: ${low[1]} Recharge the wallet, then try again.` : message;
 }
 
 export interface CertificateIssue {
