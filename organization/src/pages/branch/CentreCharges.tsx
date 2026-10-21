@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Save, Wallet } from "lucide-react";
+import { Save, Search, Wallet, X } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, type Column } from "@/components/ui/DataTable";
@@ -8,13 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { canonicalState } from "@/data/indianStates";
 import {
   CHARGE_ITEMS,
   CHARGE_LABELS,
   effectiveRate,
-  getBranches,
+  getBranchDirectory,
   getCentreCharges,
   getCentreRates,
   getWalletsByOrg,
@@ -26,6 +28,12 @@ import {
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 type Draft = Record<string, Partial<Record<ChargeItem, string>>>;
+type Centre = { id: string; name: string; code: string; state: string; district: string; block: string };
+
+/** Radix Select needs a non-empty value for "no filter". */
+const ALL = "all";
+const distinct = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
  * What each centre pays from its wallet, decided by the head office in one
@@ -36,7 +44,13 @@ export default function CentreCharges() {
   const { user, view, branchId } = useAuth();
   const { toast } = useToast();
   const isAdmin = view === "admin";
-  const [branches, setBranches] = useState<Array<{ id: string; name: string; code?: string }>>([]);
+  const [branches, setBranches] = useState<Centre[]>([]);
+  // Narrowing the centre-wise table only hides rows: every centre's typed
+  // rate is still saved.
+  const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState(ALL);
+  const [districtFilter, setDistrictFilter] = useState(ALL);
+  const [blockFilter, setBlockFilter] = useState(ALL);
   const [balances, setBalances] = useState<Map<string, number>>(new Map());
   const [rates, setRates] = useState<CentreRates>(new Map());
   const [draft, setDraft] = useState<Draft>({});
@@ -48,12 +62,12 @@ export default function CentreCharges() {
     setLoading(true);
     try {
       const [b, w, r, c] = await Promise.all([
-        getBranches(user?.organizationId ?? null),
+        getBranchDirectory(user?.organizationId ?? null),
         getWalletsByOrg(user?.organizationId ?? null).catch(() => ({ data: [] as unknown[] })),
         getCentreRates(),
         getCentreCharges(isAdmin ? null : branchId),
       ]);
-      const list = (b.data as Array<{ id: string; name: string; code?: string }>).filter((x) => isAdmin || x.id === branchId);
+      const list = (b.data as Centre[]).filter((x) => isAdmin || x.id === branchId);
       setBranches(list);
       setBalances(new Map((w.data as Array<{ branchId: string; balance: number }>).map((x) => [String(x.branchId), Number(x.balance) || 0])));
       setRates(r);
@@ -107,6 +121,38 @@ export default function CentreCharges() {
   };
 
   const branchName = useMemo(() => new Map(branches.map((b) => [b.id, b.name])), [branches]);
+
+  // State, then district, then block: each list offers only the places some
+  // centre is recorded under, narrowed by the one above it.
+  const states = useMemo(() => distinct(branches.map((b) => canonicalState(b.state))), [branches]);
+  const inState = branches.filter((b) => stateFilter === ALL || canonicalState(b.state) === stateFilter);
+  const districts = distinct(inState.map((b) => b.district));
+  const inDistrict = inState.filter((b) => districtFilter === ALL || same(b.district, districtFilter));
+  const blocks = distinct(inDistrict.map((b) => b.block));
+  const inBlock = inDistrict.filter((b) => blockFilter === ALL || same(b.block, blockFilter));
+  const needle = query.trim().toLowerCase();
+  const shownCentres = inBlock.filter(
+    (b) => !needle || [b.name, b.code, b.state, b.district, b.block].some((v) => v.toLowerCase().includes(needle)),
+  );
+  const filtering = Boolean(needle) || stateFilter !== ALL || districtFilter !== ALL || blockFilter !== ALL;
+  const clearFilters = () => {
+    setQuery("");
+    setStateFilter(ALL);
+    setDistrictFilter(ALL);
+    setBlockFilter(ALL);
+  };
+  const place = (b: Centre) => [b.block, b.district, canonicalState(b.state)].filter(Boolean).join(", ");
+  const placeSelect = (label: string, value: string, options: string[], onChange: (v: string) => void, all: string) => (
+    <Select value={value} onValueChange={onChange} disabled={!options.length}>
+      <SelectTrigger aria-label={label} className="h-9 min-w-0 text-xs sm:text-sm">
+        <SelectValue placeholder={all} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL}>{all}</SelectItem>
+        {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  );
   type Row = CentreChargeRow & { centre: string; what: string };
   const rows: Row[] = charges.map((c) => ({ ...c, centre: branchName.get(c.branchId) || "—", what: CHARGE_LABELS[c.item] || c.item }));
   const columns: Column<Row>[] = [
@@ -167,6 +213,31 @@ export default function CentreCharges() {
           <CardHeader>
             <CardTitle>Centre-wise rates</CardTitle>
             <p className="text-xs text-muted-foreground">Leave a box empty to use the rate for every centre (shown in grey).</p>
+            <div className="grid gap-2 pt-2 sm:grid-cols-4">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search centre, code, place…"
+                  aria-label="Search centres"
+                  className="h-9 pl-9"
+                />
+              </div>
+              <div className="grid min-w-0 grid-cols-3 gap-2 sm:col-span-3">
+                {placeSelect("Filter by state", stateFilter, states, (v) => { setStateFilter(v); setDistrictFilter(ALL); setBlockFilter(ALL); }, "All states")}
+                {placeSelect("Filter by district", districtFilter, districts, (v) => { setDistrictFilter(v); setBlockFilter(ALL); }, "All districts")}
+                {placeSelect("Filter by block", blockFilter, blocks, setBlockFilter, "All blocks")}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
+              <span>Showing {shownCentres.length} of {branches.length} centre{branches.length === 1 ? "" : "s"}</span>
+              {filtering && (
+                <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={clearFilters}>
+                  <X className="h-3.5 w-3.5" /> Clear filters
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="overflow-x-auto p-0">
             <table className="w-full min-w-[760px] text-sm">
@@ -178,11 +249,11 @@ export default function CentreCharges() {
                 </tr>
               </thead>
               <tbody>
-                {branches.map((b) => (
+                {shownCentres.map((b) => (
                   <tr key={b.id} className="border-b last:border-0">
                     <td className="p-3">
                       <p className="font-medium">{b.name}</p>
-                      {b.code && <p className="text-xs text-muted-foreground">{b.code}</p>}
+                      <p className="text-xs text-muted-foreground">{[b.code, place(b)].filter(Boolean).join(" · ") || "—"}</p>
                     </td>
                     <td className="p-3 text-right">
                       <span className="inline-flex items-center gap-1 font-semibold tabular-nums"><Wallet className="h-3.5 w-3.5 text-primary" />{inr(balances.get(b.id) ?? 0)}</span>
@@ -192,7 +263,13 @@ export default function CentreCharges() {
                     ))}
                   </tr>
                 ))}
-                {!branches.length && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">{loading ? "Loading…" : "No centres yet."}</td></tr>}
+                {!shownCentres.length && (
+                  <tr>
+                    <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                      {loading ? "Loading…" : branches.length ? "No centre matches these filters." : "No centres yet."}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </CardContent>

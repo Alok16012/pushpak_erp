@@ -24,7 +24,15 @@ vi.mock("@/lib/supabase/data", async () => {
     CHARGE_ITEMS: actual.CHARGE_ITEMS,
     CHARGE_LABELS: actual.CHARGE_LABELS,
     effectiveRate: actual.effectiveRate,
-    getBranches: () => Promise.resolve({ success: true, data: [{ id: "b1", name: "Begusarai Centre", code: "BGS" }, { id: "b2", name: "Patna Centre" }] }),
+    getBranchDirectory: () =>
+      Promise.resolve({
+        success: true,
+        data: [
+          { id: "b1", name: "Begusarai Centre", code: "BGS", state: "Bihar", district: "Begusarai", block: "Teghra" },
+          { id: "b2", name: "Patna Centre", code: "", state: "bihar", district: "Patna", block: "Danapur" },
+          { id: "b3", name: "Ranchi Centre", code: "RNC", state: "Jharkhand", district: "Ranchi", block: "Kanke" },
+        ],
+      }),
     getWalletsByOrg: () => Promise.resolve({ success: true, data: [{ branchId: "b1", balance: 750 }] }),
     getCentreRates: () =>
       Promise.resolve(new Map([["*", { CERTIFICATE: 100, MARKSHEET: 50 }], ["b1", { CERTIFICATE: 150 }]])),
@@ -70,6 +78,44 @@ describe("Centre Charges", () => {
     );
     expect(changes).toHaveLength(3);
     expect(screen.getAllByText("−₹150").length).toBeGreaterThan(0);
+  });
+
+  it("narrows the centre-wise rates by search, state, district and block, and still saves every centre", async () => {
+    auth = { view: "admin", branchId: null, user: { name: "Head Office", organizationId: "org1" } };
+    render(<MemoryRouter><CentreCharges /></MemoryRouter>);
+    await screen.findByLabelText("Certificate rate for Ranchi Centre", {}, { timeout: 5000 });
+    expect(screen.getByText("Showing 3 of 3 centres")).toBeInTheDocument();
+    // The row reads where the centre is.
+    expect(screen.getByText("BGS · Teghra, Begusarai, Bihar")).toBeInTheDocument();
+
+    // A typed rate on a row that a filter later hides is still saved.
+    fireEvent.change(screen.getByLabelText("Admit Card rate for Ranchi Centre"), { target: { value: "25" } });
+
+    fireEvent.change(screen.getByLabelText("Search centres"), { target: { value: "danapur" } });
+    expect(screen.getByText("Showing 1 of 3 centres")).toBeInTheDocument();
+    expect(screen.getByLabelText("Certificate rate for Patna Centre")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Certificate rate for Begusarai Centre")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Clear filters/ }));
+    expect(screen.getByText("Showing 3 of 3 centres")).toBeInTheDocument();
+
+    // State, then district: "bihar" and "Bihar" are one state.
+    fireEvent.click(screen.getByLabelText("Filter by state"));
+    fireEvent.click(await screen.findByRole("option", { name: "Bihar" }));
+    expect(screen.getByText("Showing 2 of 3 centres")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Certificate rate for Ranchi Centre")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Filter by district"));
+    expect(screen.queryByRole("option", { name: "Ranchi" })).toBeNull();
+    fireEvent.click(await screen.findByRole("option", { name: "Begusarai" }));
+    expect(screen.getByText("Showing 1 of 3 centres")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Filter by block"));
+    expect(await screen.findByRole("option", { name: "Teghra" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Danapur" })).toBeNull();
+    fireEvent.keyDown(document.activeElement || document.body, { key: "Escape" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save charges/ }));
+    await waitFor(() => expect(saveCentreRates).toHaveBeenCalledTimes(1));
+    const [changes] = saveCentreRates.mock.calls[0] as [Array<Record<string, unknown>>];
+    expect(changes).toEqual([{ scope: "b3", item: "ADMIT_CARD", amount: 25 }]);
   });
 
   it("shows a centre its own rates, read-only", async () => {

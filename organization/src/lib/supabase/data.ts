@@ -2301,6 +2301,7 @@ export async function getBranchDirectory(organizationId: string | null) {
     data: rows.map((b) => ({
       id: String(b.id),
       name: String(b.name ?? ""),
+      code: String(b.code ?? ""),
       state: placeFor.get(String(b.id))?.state || "",
       district: placeFor.get(String(b.id))?.district || "",
       block: placeFor.get(String(b.id))?.block || "",
