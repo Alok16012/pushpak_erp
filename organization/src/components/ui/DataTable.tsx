@@ -290,7 +290,7 @@ export function DataTable<T extends { id: string | number }>({
                 {columns.slice(1,5).map(column => <div key={String(column.key)} className="min-w-0"><dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{column.header}</dt><dd className="mt-1 break-words text-sm">{column.cell ? column.cell(item) : String((item as Record<string,unknown>)[String(column.key)] ?? "-")}</dd></div>)}
               </dl>
             </div>
-            {actions && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="-mr-2 -mt-2 h-10 w-10 shrink-0"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{rowActions!(item).map((action,index)=><DropdownMenuItem key={index} onClick={action.onClick} className={action.destructive?"text-destructive":""}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>}
+            {actions && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="Row actions" className="-mr-2 -mt-2 h-10 w-10 shrink-0"><MoreHorizontal className="h-4 w-4"/></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{rowActions!(item).map((action,index)=><DropdownMenuItem key={index} onClick={action.onClick} className={action.destructive?"text-destructive":""}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>}
           </div>
         </article>)}
       </div>
@@ -356,7 +356,7 @@ export function DataTable<T extends { id: string | number }>({
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button variant="ghost" size="icon" aria-label="Row actions" className="h-8 w-8">
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>

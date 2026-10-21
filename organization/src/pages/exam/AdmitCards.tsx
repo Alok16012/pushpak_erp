@@ -185,14 +185,14 @@ export default function AdmitCards() {
         // upload); it comes with the card's own document record.
         const docRecord = card.studentId === records[0].studentId ? first : await getStudentDocument(card.studentId, ownBranch);
         const student: AdmitCardStudent = {
-          id: st?.enrollmentNo || card.studentId,
+          id: st?.enrollmentNo || st?.applicationNo || card.rollNo,
           name: studentName(st),
           class: c?.name || "",
           section: termLabel(termPlan(c).type, card.term),
           rollNo: card.rollNo,
           feeStatus: "paid",
           photo: docRecord.data.photo || undefined,
-          qr: await QRCode.toDataURL(`admit:${st?.enrollmentNo || card.rollNo}`, { margin: 1, width: 128 }),
+          qr: await QRCode.toDataURL(`admit:${st?.enrollmentNo || st?.applicationNo || card.rollNo}`, { margin: 1, width: 128 }),
         };
         sheets.push(admitCardSheetHtml({ ...template, liveExam: exam, institute }, [student]));
       }
@@ -219,7 +219,7 @@ export default function AdmitCards() {
     return {
       ...c,
       name: studentName(st) || "—",
-      enrollmentNo: st?.enrollmentNo || "—",
+      enrollmentNo: st?.enrollmentNo || st?.applicationNo || "—",
       courseName: co?.name || "—",
       termName: termLabel(termPlan(co).type, c.term),
       centre: branchOf.get(c.branchId)?.name || "—",

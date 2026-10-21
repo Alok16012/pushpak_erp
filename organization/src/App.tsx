@@ -27,6 +27,8 @@ const MyClasses = lazy(() => import("./pages/portal/MyClasses"));
 const MyCourses = lazy(() => import("./pages/portal/MyCourses"));
 const MyDocuments = lazy(() => import("./pages/portal/MyDocuments"));
 const MyProfile = lazy(() => import("./pages/portal/MyProfile"));
+const MyExams = lazy(() => import("./pages/portal/MyExams"));
+const TakeExam = lazy(() => import("./pages/portal/TakeExam"));
 
 // Reception
 const EnquiriesWorkspace = lazy(() => import("./pages/reception/EnquiriesWorkspace"));
@@ -72,6 +74,7 @@ const AcademicsWorkspace = lazy(() => import("./pages/course/AcademicsWorkspace"
 const AssessmentsWorkspace = lazy(() => import("./pages/exam/AssessmentsWorkspace"));
 const CourseSubjects = lazy(() => import("./pages/exam/CourseSubjects"));
 const ExamCentres = lazy(() => import("./pages/exam/ExamCentres"));
+const ExamGuide = lazy(() => import("./pages/exam/ExamGuide"));
 const ExamSchedule = lazy(() => import("./pages/exam/ExamSchedule"));
 const AdmitCards = lazy(() => import("./pages/exam/AdmitCards"));
 const Results = lazy(() => import("./pages/exam/Results"));
@@ -82,6 +85,7 @@ const CentreCharges = lazy(() => import("./pages/branch/CentreCharges"));
 const CreateOnlineExam = lazy(() => import("./pages/online-exam/CreateOnlineExam"));
 const QuestionPaperBuilder = lazy(() => import("./pages/online-exam/QuestionPaperBuilder"));
 const AddQuestions = lazy(() => import("./pages/online-exam/AddQuestions"));
+const AssignExam = lazy(() => import("./pages/online-exam/AssignExam"));
 const OnlineExamMarks = lazy(() => import("./pages/online-exam/OnlineExamMarks"));
 
 // Live Class
@@ -96,7 +100,6 @@ const IDCardTemplate = lazy(() => import("./pages/cards/IDCardTemplate"));
 const GenerateIDCards = lazy(() => import("./pages/cards/GenerateIDCards"));
 const AdmitCardTemplate = lazy(() => import("./pages/cards/AdmitCardTemplate"));
 const DocumentDesigner = lazy(() => import("./pages/documents/DocumentDesigner"));
-const GenerateAdmitCards = lazy(() => import("./pages/cards/GenerateAdmitCards"));
 
 // Settings
 const GeneralSettings = lazy(() => import("./pages/settings/GeneralSettings"));
@@ -181,6 +184,8 @@ const App = () => (
           <Route path="/me/results" element={<MyResults />} />
           <Route path="/me/documents" element={<MyDocuments />} />
           <Route path="/me/profile" element={<MyProfile />} />
+          <Route path="/me/exams" element={<MyExams />} />
+          <Route path="/me/exams/:examId" element={<TakeExam />} />
 
           {/* Reception Management */}
           <Route path="/reception/enquiry" element={<EnquiriesWorkspace />} />
@@ -229,6 +234,7 @@ const App = () => (
           <Route path="/course/subjects" element={<CourseSubjects />} />
 
           {/* Exam Management */}
+          <Route path="/exam/guide" element={<ExamGuide />} />
           <Route path="/exam/create" element={<AssessmentsWorkspace />} />
           <Route path="/exam/schedule" element={<ExamSchedule />} />
           <Route path="/exam/centres" element={<ExamCentres />} />
@@ -242,6 +248,7 @@ const App = () => (
           <Route path="/online-exam/create" element={<CreateOnlineExam />} />
           <Route path="/online-exam/question-paper-builder" element={<QuestionPaperBuilder />} />
           <Route path="/online-exam/add-questions" element={<AddQuestions />} />
+          <Route path="/online-exam/assign" element={<AssignExam />} />
           <Route path="/online-exam/marks" element={<OnlineExamMarks />} />
 
           {/* Live Class */}
@@ -255,7 +262,8 @@ const App = () => (
           <Route path="/cards/generate-id" element={<GenerateIDCards />} />
           <Route path="/cards/admit-template" element={<AdmitCardTemplate />} />
           <Route path="/documents/designer" element={<DocumentDesigner />} />
-          <Route path="/cards/generate-admit" element={<GenerateAdmitCards />} />
+          {/* Admit cards are issued from the exam schedule now; the old bulk page redirects there. */}
+          <Route path="/cards/generate-admit" element={<Navigate to="/exam/admit-cards" replace />} />
 
           {/* Certificates */}
           <Route path="/certificate/template" element={<DocumentDesigner />} />

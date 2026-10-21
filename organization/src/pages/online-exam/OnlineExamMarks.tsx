@@ -1,374 +1,154 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Award, CheckCircle2, Clock, Users } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, Column } from "@/components/ui/DataTable";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { DataTable, type Column } from "@/components/ui/DataTable";
 import { StatsCard } from "@/components/ui/StatsCard";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Download, Users, Award, Clock, AlertCircle } from "lucide-react";
-import { useState } from "react";
-import { downloadCsv, downloadHtml, printHtml } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
-import { getExams } from "@/lib/supabase/data";
+import { downloadCsv } from "@/lib/export";
+import { whenShown, type OnlineExam } from "@/lib/onlineExam";
+import { deleteExamAttempt, getExamAttempts, getOnlineExams, submitOnlineExam, type ExamAttempt } from "@/lib/supabase/onlineExams";
+import { studentName, useExamData } from "../exam/useExamData";
 
-interface OnlineExamResult {
-  id: string;
-  studentName: string;
-  rollNo: string;
-  examTitle: string;
-  startTime: string;
-  submitTime: string;
-  totalQuestions: number;
-  attempted: number;
-  correct: number;
-  wrong: number;
-  score: number;
-  maxScore: number;
-  percentage: number;
-  status: "completed" | "in_progress" | "absent";
-}
+type Status = "Submitted" | "In progress" | "Time over";
 
-const resultsData: OnlineExamResult[] = [
-  { id: "1", studentName: "Alice Johnson", rollNo: "CS2024001", examTitle: "Mid-Term Online Test", startTime: "10:00 AM", submitTime: "10:45 AM", totalQuestions: 50, attempted: 48, correct: 42, wrong: 6, score: 84, maxScore: 100, percentage: 84, status: "completed" },
-  { id: "2", studentName: "Bob Smith", rollNo: "CS2024002", examTitle: "Mid-Term Online Test", startTime: "10:00 AM", submitTime: "10:58 AM", totalQuestions: 50, attempted: 50, correct: 38, wrong: 12, score: 76, maxScore: 100, percentage: 76, status: "completed" },
-  { id: "3", studentName: "Charlie Brown", rollNo: "CS2024003", examTitle: "Mid-Term Online Test", startTime: "10:00 AM", submitTime: "-", totalQuestions: 50, attempted: 25, correct: 0, wrong: 0, score: 0, maxScore: 100, percentage: 0, status: "in_progress" },
-  { id: "4", studentName: "Diana Ross", rollNo: "CS2024004", examTitle: "Mid-Term Online Test", startTime: "-", submitTime: "-", totalQuestions: 50, attempted: 0, correct: 0, wrong: 0, score: 0, maxScore: 100, percentage: 0, status: "absent" },
-  { id: "5", studentName: "Edward Wilson", rollNo: "CS2024005", examTitle: "Mid-Term Online Test", startTime: "10:00 AM", submitTime: "10:52 AM", totalQuestions: 50, attempted: 50, correct: 45, wrong: 5, score: 90, maxScore: 100, percentage: 90, status: "completed" },
-];
+const statusOf = (a: ExamAttempt, now = Date.now()): Status =>
+  a.submittedAt ? "Submitted" : new Date(a.expiresAt).getTime() < now ? "Time over" : "In progress";
 
-const columns: Column<OnlineExamResult>[] = [
-  {
-    key: "studentName",
-    header: "Student",
-    sortable: true,
-    cell: (result) => (
-      <div className="flex items-center gap-3">
-        <Avatar className="h-8 w-8">
-          <AvatarFallback className="text-xs">
-            {result.studentName.split(" ").map(n => n[0]).join("")}
-          </AvatarFallback>
-        </Avatar>
-        <div>
-          <p className="font-medium">{result.studentName}</p>
-          <p className="text-xs text-muted-foreground">{result.rollNo}</p>
-        </div>
-      </div>
-    ),
-  },
-  {
-    key: "attempted",
-    header: "Progress",
-    cell: (result) => (
-      <div className="space-y-1">
-        <div className="flex justify-between text-xs">
-          <span>{result.attempted}/{result.totalQuestions}</span>
-          <span>{Math.round((result.attempted / result.totalQuestions) * 100)}%</span>
-        </div>
-        <Progress value={(result.attempted / result.totalQuestions) * 100} className="h-2" />
-      </div>
-    ),
-  },
-  {
-    key: "correct",
-    header: "Correct/Wrong",
-    cell: (result) => (
-      <div className="flex gap-2">
-        <Badge variant="outline" className="bg-success/10 text-success border-success/20">
-          ✓ {result.correct}
-        </Badge>
-        <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/20">
-          ✗ {result.wrong}
-        </Badge>
-      </div>
-    ),
-  },
-  {
-    key: "score",
-    header: "Score",
-    sortable: true,
-    cell: (result) => (
-      <span className="font-medium">{result.score}/{result.maxScore}</span>
-    ),
-  },
-  {
-    key: "percentage",
-    header: "Percentage",
-    sortable: true,
-    cell: (result) => (
-      <Badge 
-        variant="secondary"
-        className={
-          result.percentage >= 80 ? "bg-success/10 text-success" :
-          result.percentage >= 60 ? "bg-info/10 text-info" :
-          result.percentage >= 40 ? "bg-warning/10 text-warning" :
-          "bg-destructive/10 text-destructive"
-        }
-      >
-        {result.percentage}%
-      </Badge>
-    ),
-  },
-  {
-    key: "submitTime",
-    header: "Timing",
-    cell: (result) => (
-      <div className="text-sm">
-        <p>Start: {result.startTime}</p>
-        <p className="text-muted-foreground">Submit: {result.submitTime}</p>
-      </div>
-    ),
-  },
-  {
-    key: "status",
-    header: "Status",
-    cell: (result) => <StatusBadge status={result.status} />,
-  },
-];
+/**
+ * Every student's sitting of an online exam: when they sat it, how many they
+ * answered, right and wrong, their score and PASS / FAIL -- for every centre
+ * at the head office, for its own at a centre.
+ */
+export default function StudentExams() {
+  const { toast } = useToast();
+  const [params] = useSearchParams();
+  const { ownBranch, studentOf, branchOf } = useExamData();
+  const [exams, setExams] = useState<OnlineExam[]>([]);
+  const [attempts, setAttempts] = useState<ExamAttempt[]>([]);
+  const examFilter = params.get("exam") || "";
 
-/** A deterministic per-question breakdown, so "View Answers" shows a real sheet. */
-const answerSheet = (result: OnlineExamResult) =>
-  Array.from({ length: result.totalQuestions }, (_, index) => {
-    const attempted = index < result.attempted;
-    const correct = attempted && index < result.correct;
+  const load = useCallback(async () => {
+    try {
+      const [e, a] = await Promise.all([getOnlineExams(), getExamAttempts({ branchId: ownBranch, examId: examFilter || null })]);
+      setExams(e);
+      setAttempts(a);
+    } catch (e) {
+      toast({ title: "Could not load student exams", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  }, [ownBranch, examFilter, toast]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const examOf = useMemo(() => new Map(exams.map((e) => [e.id, e])), [exams]);
+
+  const close = async (a: ExamAttempt) => {
+    try {
+      const r = await submitOnlineExam(a.id);
+      toast({ title: "Sitting closed and marked", description: `${r.score}/${r.maxScore} · ${r.percentage}% · ${r.result}` });
+      await load();
+    } catch (e) {
+      toast({ title: "Could not close the sitting", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
+  const reattempt = async (a: ExamAttempt) => {
+    if (!window.confirm("Remove this sitting so the student can sit the exam again? Its marks are lost.")) return;
+    try {
+      await deleteExamAttempt(a.id);
+      await load();
+    } catch (e) {
+      toast({ title: "Could not remove the sitting", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
+  type Row = ExamAttempt & { name: string; enrollmentNo: string; examTitle: string; centre: string; status: Status; outcome: string };
+  const rows: Row[] = attempts.map((a) => {
+    const st = studentOf.get(a.studentId);
     return {
-      question: index + 1,
-      response: attempted ? String.fromCharCode(65 + ((index * 3 + result.rollNo.length) % 4)) : "—",
-      verdict: !attempted ? ("skipped" as const) : correct ? ("correct" as const) : ("wrong" as const),
-      marks: correct ? result.maxScore / result.totalQuestions : 0,
+      ...a,
+      name: studentName(st) || "—",
+      enrollmentNo: st?.enrollmentNo || st?.applicationNo || "—",
+      examTitle: examOf.get(a.examId)?.title || "—",
+      centre: branchOf.get(a.branchId)?.name || "—",
+      status: statusOf(a),
+      outcome: a.submittedAt ? a.result : "—",
     };
   });
 
-const reportHtml = (result: OnlineExamResult) => `
-  <p><strong>${result.studentName}</strong> · ${result.rollNo}</p>
-  <table>
-    <tr><td>Exam</td><td>${result.examTitle}</td></tr>
-    <tr><td>Started</td><td>${result.startTime}</td></tr>
-    <tr><td>Submitted</td><td>${result.submitTime}</td></tr>
-    <tr><td>Attempted</td><td>${result.attempted} of ${result.totalQuestions}</td></tr>
-    <tr><td>Correct / Wrong</td><td>${result.correct} / ${result.wrong}</td></tr>
-    <tr><td>Score</td><td>${result.score} / ${result.maxScore} (${result.percentage}%)</td></tr>
-    <tr><td>Status</td><td>${result.status.replace("_", " ")}</td></tr>
-  </table>`;
+  const submitted = rows.filter((r) => r.submittedAt);
+  const passed = submitted.filter((r) => r.result === "PASS").length;
+  const average = submitted.length ? Math.round((submitted.reduce((s, r) => s + r.percentage, 0) / submitted.length) * 10) / 10 : 0;
 
-export default function OnlineExamMarks() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [details, setDetails] = useState<OnlineExamResult | null>(null);
-  const [answers, setAnswers] = useState<OnlineExamResult | null>(null);
-
-  const downloadReport = (result: OnlineExamResult) => {
-    downloadHtml(
-      `result-${result.rollNo}.html`,
-      `${result.examTitle} — ${result.studentName}`,
-      reportHtml(result),
-    );
-    toast({ title: "Report downloaded", description: `result-${result.rollNo}.html` });
-  };
-
-  const exportResults = () => {
-    downloadCsv(
-      "online-exam-results.csv",
-      resultsData.map((result) => ({
-        Student: result.studentName,
-        "Roll No": result.rollNo,
-        Exam: result.examTitle,
-        Attempted: result.attempted,
-        Correct: result.correct,
-        Wrong: result.wrong,
-        Score: result.score,
-        "Max Score": result.maxScore,
-        Percentage: result.percentage,
-        Status: result.status,
-      })),
-    );
-    toast({ title: "Results exported", description: `${resultsData.length} rows written to CSV.` });
-  };
-
-  const handleActions = (result: OnlineExamResult) => [
-    { label: "View Details", onClick: () => setDetails(result) },
-    {
-      label: "View Answers",
-      onClick: () => {
-        if (result.status === "absent") {
-          toast({
-            title: "No answer sheet",
-            description: `${result.studentName} did not attempt this exam.`,
-            variant: "destructive",
-          });
-          return;
-        }
-        setAnswers(result);
-      },
-    },
-    { label: "Download Report", onClick: () => downloadReport(result) },
-    { label: "Print Report", onClick: () => printHtml(`${result.examTitle} — ${result.studentName}`, reportHtml(result)) },
+  const columns: Column<Row>[] = [
+    { key: "name", header: "Student", sortable: true, cell: (r) => <span><span className="font-medium">{r.name}</span><span className="block font-mono text-[11px] text-muted-foreground">{r.enrollmentNo}</span></span> },
+    { key: "examTitle", header: "Exam", sortable: true },
+    { key: "centre", header: "Centre" },
+    { key: "startedAt", header: "Sat on", sortable: true, cell: (r) => <span className="text-xs">{whenShown(r.startedAt)}{r.submittedAt ? <span className="block text-muted-foreground">handed in {whenShown(r.submittedAt)}</span> : null}</span> },
+    { key: "status", header: "Status", cell: (r) => <Badge variant={r.status === "Submitted" ? "default" : r.status === "Time over" ? "destructive" : "secondary"}>{r.status}</Badge> },
+    { key: "attempted", header: "Answered", cell: (r) => (r.submittedAt ? `${r.attempted} / ${r.totalQuestions}` : `— / ${r.totalQuestions}`) },
+    { key: "correct", header: "Right / Wrong", cell: (r) => (r.submittedAt ? <span><span className="text-success">✓ {r.correct}</span> <span className="ml-2 text-destructive">✗ {r.wrong}</span></span> : "—") },
+    { key: "percentage", header: "Score", sortable: true, cell: (r) => (r.submittedAt ? <span className="text-xs"><b>{r.score}</b> / {r.maxScore} · {r.percentage}%</span> : "—") },
+    { key: "outcome", header: "Result", cell: (r) => (r.submittedAt ? <Badge variant={r.result === "PASS" ? "default" : "destructive"}>{r.result}</Badge> : "—") },
   ];
 
-  const completed = resultsData.filter((r) => r.status === "completed");
-  const sheet = answers ? answerSheet(answers) : [];
+  const exportCsv = () =>
+    downloadCsv(
+      "online-exam-results",
+      rows.map((r) => ({
+        student: r.name,
+        enrollment: r.enrollmentNo,
+        exam: r.examTitle,
+        centre: r.centre,
+        satOn: r.startedAt,
+        submittedAt: r.submittedAt,
+        status: r.status,
+        answered: r.attempted,
+        total: r.totalQuestions,
+        correct: r.correct,
+        wrong: r.wrong,
+        score: r.score,
+        maxScore: r.maxScore,
+        percentage: r.percentage,
+        result: r.outcome,
+      })),
+    );
 
   return (
     <AppLayout>
       <PageHeader
-        title="Online Exam Marks"
-        description="View and analyze online examination results"
-        breadcrumbs={[
-          { label: "Online Exam", href: "/online-exam/create" },
-          { label: "Exam Marks" },
-        ]}
-        actions={
-          <Button variant="outline" className="gap-2" onClick={exportResults}>
-            <Download className="h-4 w-4" />
-            Export Results
-          </Button>
-        }
+        title="Student Exams"
+        description={examFilter && examOf.get(examFilter) ? `Sittings of ${examOf.get(examFilter)?.title}` : "Every student's sitting of an online exam, with the marks worked out on submission"}
+        breadcrumbs={[{ label: "Online Exam" }, { label: "Student Exams" }]}
+        actions={<Button variant="outline" onClick={exportCsv} disabled={!rows.length}>Download CSV</Button>}
       />
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-6">
-        <StatsCard title="Total Students" value={resultsData.length} subtitle="Registered for exam" icon={Users} variant="primary" />
-        <StatsCard title="Completed" value={completed.length} subtitle="Submitted successfully" icon={Award} variant="success" />
-        <StatsCard
-          title="In Progress"
-          value={resultsData.filter((r) => r.status === "in_progress").length}
-          subtitle="Currently attempting"
-          icon={Clock}
-          variant="info"
-        />
-        <StatsCard
-          title="Absent"
-          value={resultsData.filter((r) => r.status === "absent").length}
-          subtitle="Did not attempt"
-          icon={AlertCircle}
-          variant="warning"
-        />
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatsCard title="Sittings" value={rows.length} icon={Users} />
+        <StatsCard title="Submitted" value={submitted.length} icon={CheckCircle2} variant="info" subtitle={`${rows.length - submitted.length} still open`} />
+        <StatsCard title="Passed" value={passed} icon={Award} variant="success" subtitle={submitted.length ? `${submitted.length - passed} failed` : undefined} />
+        <StatsCard title="Average score" value={`${average}%`} icon={Clock} variant="primary" />
       </div>
-
       <Card>
-        <CardHeader>
-          <CardTitle>Mid-Term Online Test Results</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Sittings</CardTitle></CardHeader>
         <CardContent>
           <DataTable
-            data={resultsData}
+            data={rows}
             columns={columns}
-            searchPlaceholder="Search students..."
-            actions={handleActions}
+            searchPlaceholder="Search student, enrollment, exam…"
+            filters={[{ label: "Exam", key: "examTitle" }, { label: "Centre", key: "centre" }, { label: "Status", key: "status" }, { label: "Result", key: "outcome" }]}
+            actions={(r) => [
+              ...(r.status === "Time over" ? [{ label: "Close and mark", onClick: () => void close(r) }] : []),
+              { label: "Allow re-attempt", onClick: () => void reattempt(r), destructive: true },
+            ]}
+            emptyMessage="No student has sat an online exam yet."
           />
         </CardContent>
       </Card>
-
-      <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{details?.studentName}</DialogTitle>
-            <DialogDescription>{details?.rollNo} · {details?.examTitle}</DialogDescription>
-          </DialogHeader>
-          {details && (
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-              {[
-                ["Started", details.startTime],
-                ["Submitted", details.submitTime],
-                ["Attempted", `${details.attempted} of ${details.totalQuestions}`],
-                ["Correct / Wrong", `${details.correct} / ${details.wrong}`],
-                ["Score", `${details.score} / ${details.maxScore}`],
-                ["Percentage", `${details.percentage}%`],
-                ["Status", details.status.replace("_", " ")],
-                [
-                  "Accuracy",
-                  details.attempted ? `${Math.round((details.correct / details.attempted) * 100)}%` : "—",
-                ],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <dt className="text-xs text-muted-foreground">{label}</dt>
-                  <dd className="font-medium capitalize">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => details && downloadReport(details)}>Download report</Button>
-            <Button
-              onClick={() => {
-                setAnswers(details);
-                setDetails(null);
-              }}
-              disabled={details?.status === "absent"}
-            >
-              View answers
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!answers} onOpenChange={(open) => !open && setAnswers(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Answer sheet — {answers?.studentName}</DialogTitle>
-            <DialogDescription>
-              {answers?.attempted} of {answers?.totalQuestions} attempted · {answers?.correct} correct
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-80 overflow-y-auto rounded-lg border">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-muted text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="p-2 text-left">Q</th>
-                  <th className="p-2 text-left">Response</th>
-                  <th className="p-2 text-left">Result</th>
-                  <th className="p-2 text-right">Marks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sheet.map((row) => (
-                  <tr key={row.question} className="border-t">
-                    <td className="p-2">{row.question}</td>
-                    <td className="p-2">{row.response}</td>
-                    <td className="p-2">
-                      <Badge
-                        variant="outline"
-                        className={
-                          row.verdict === "correct"
-                            ? "bg-success/10 text-success border-success/20"
-                            : row.verdict === "wrong"
-                              ? "bg-destructive/10 text-destructive border-destructive/20"
-                              : ""
-                        }
-                      >
-                        {row.verdict}
-                      </Badge>
-                    </td>
-                    <td className="p-2 text-right">{row.marks.toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAnswers(null)}>Close</Button>
-            <Button
-              onClick={() =>
-                answers &&
-                downloadCsv(
-                  `answers-${answers.rollNo}.csv`,
-                  sheet.map((row) => ({
-                    Question: row.question,
-                    Response: row.response,
-                    Result: row.verdict,
-                    Marks: row.marks.toFixed(1),
-                  })),
-                )
-              }
-            >
-              Export sheet
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </AppLayout>
   );
 }

@@ -120,7 +120,7 @@ describe("exam workflow pages", () => {
     expect(studentId).toBe("s1");
     expect(by).toBe("Head Office");
     expect(dates.examConductedDate).toBe("2026-11-20");
-    await waitFor(() => expect(printFromTemplate).toHaveBeenCalledWith("certificate", expect.anything(), "org1", "b1", { certificate_no: "CERT-E001" }));
+    await waitFor(() => expect(printFromTemplate).toHaveBeenCalledWith("certificate", expect.anything(), "org1", "b1", { certificate_no: "CERT-E001", certificate_id: "CERT-E001" }));
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Certificate issued" })));
   });
 

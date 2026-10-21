@@ -335,7 +335,7 @@ export default function AccessControl() {
           </Card>
 
           {role && (
-            <p className="text-xs text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               View decides the menu and the pages this role can open; the other columns decide which
               buttons work there — anything unticked is greyed out and refused with a message. The database keeps its own
               rules on top — a branch role cannot read another branch's records whatever is ticked
@@ -343,7 +343,7 @@ export default function AccessControl() {
               <Badge variant="outline" className="ml-1">
                 {role.isSystem ? "Built-in role" : "Custom role"}
               </Badge>
-            </p>
+            </div>
           )}
         </div>
       )}

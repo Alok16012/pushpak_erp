@@ -29,9 +29,13 @@ import {
 } from "@/lib/examWorkflow";
 import {
   deleteMarksheet,
+  getAdmitCards,
   getCourseSubjects,
+  getExamSchedules,
   getMarksheets,
   saveMarksheet,
+  type AdmitCardRecord,
+  type ExamSchedule,
   type MarksheetRecord,
 } from "@/lib/supabase/examWorkflow";
 import { studentName, useExamData } from "./useExamData";
@@ -54,6 +58,10 @@ export default function Results() {
   const [lines, setLines] = useState<MarkLine[]>([]);
   const [subjects, setSubjects] = useState<CourseSubject[]>([]);
   const [sheets, setSheets] = useState<MarksheetRecord[]>([]);
+  // The exam schedules, so a printed marksheet can say when the exam was held.
+  const [schedules, setSchedules] = useState<ExamSchedule[]>([]);
+  // The admit cards, for the roll number the marksheet prints.
+  const [cards, setCards] = useState<AdmitCardRecord[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -62,7 +70,14 @@ export default function Results() {
 
   const load = useCallback(async () => {
     try {
-      setSheets(await getMarksheets({ branchId: ownBranch }));
+      const [m, s, a] = await Promise.all([
+        getMarksheets({ branchId: ownBranch }),
+        getExamSchedules(ownBranch).catch(() => [] as ExamSchedule[]),
+        getAdmitCards({ branchId: ownBranch }).catch(() => [] as AdmitCardRecord[]),
+      ]);
+      setSheets(m);
+      setSchedules(s);
+      setCards(a);
     } catch (e) {
       toast({ title: "Could not load results", description: e instanceof Error ? e.message : "", variant: "destructive" });
     }
@@ -138,13 +153,25 @@ export default function Results() {
     }
   };
 
+  /** When the term's exam was held: the last paper of its schedule, else the result's date. */
+  const examDateOf = (sheet: MarksheetRecord) => {
+    const schedule = schedules.find(
+      (s) => s.branchId === sheet.branchId && s.courseId === sheet.courseId && s.term === sheet.term && (!sheet.session || s.session === sheet.session),
+    );
+    const dates = (schedule?.items || []).map((i) => i.date).filter(Boolean).sort();
+    return dates[dates.length - 1] || sheet.issueDate;
+  };
+
   const print = async (sheet: MarksheetRecord) => {
     try {
       const { data } = await getStudentDocument(sheet.studentId, ownBranch);
       const c = courseOf.get(sheet.courseId);
+      const roll = cards.find((c) => c.studentId === sheet.studentId && c.term === sheet.term)?.rollNo;
       const doc = {
         ...data,
+        rollNo: roll || data.rollNo,
         issueDate: sheet.issueDate,
+        examinationDate: examDateOf(sheet),
         session: sheet.session || data.session,
         examResults: asExamResults([sheet], termPlan(c).type),
       };
@@ -184,7 +211,7 @@ export default function Results() {
     return {
       ...s,
       name: studentName(st) || "—",
-      enrollmentNo: st?.enrollmentNo || "—",
+      enrollmentNo: st?.enrollmentNo || st?.applicationNo || "—",
       courseName: c?.name || "—",
       termName: termLabel(termPlan(c).type, s.term),
       centre: branchOf.get(s.branchId)?.name || "—",
@@ -250,7 +277,7 @@ export default function Results() {
               <p className="text-sm text-muted-foreground">
                 {course.name} · {terms.find((t) => t.term === term)?.label}
                 {isFinalTerm(course, term) ? " · final term (the certificate is issued on this result)" : ""}
-                {session ? ` · Session ${session}` : ""}
+                {session ? ` · ${/^session/i.test(session) ? session : `Session ${session}`}` : ""}
               </p>
               <div className="overflow-x-auto rounded-xl border">
                 <table className="w-full text-sm">

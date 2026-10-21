@@ -131,7 +131,10 @@ export const menuItems: MenuItem[] = [
   {
     title: "Exam & Marks",
     icon: ClipboardList,
+    // In the order the work happens; the guide at the top walks a new office
+    // or centre through it.
     items: [
+      { title: "How Exams Work", url: "/exam/guide", icon: BookOpen },
       { title: "Exam Centres", url: "/exam/centres", icon: School },
       { title: "Exam Schedule", url: "/exam/schedule", icon: Calendar },
       { title: "Admit Cards", url: "/exam/admit-cards", icon: IdCard },
@@ -143,10 +146,11 @@ export const menuItems: MenuItem[] = [
     title: "Online Exam",
     icon: Monitor,
     items: [
-      { title: "Create Exam", url: "/online-exam/create", icon: PenTool },
+      { title: "Exams", url: "/online-exam/create", icon: PenTool },
+      { title: "Assign Exam", url: "/online-exam/assign", icon: ListChecks },
+      { title: "Student Exams", url: "/online-exam/marks", icon: FileCheck },
+      { title: "Question Bank", url: "/online-exam/add-questions", icon: ListChecks },
       { title: "Question Paper Builder", url: "/online-exam/question-paper-builder", icon: FileText },
-      { title: "Add Questions", url: "/online-exam/add-questions", icon: ListChecks },
-      { title: "Online Exam Marks", url: "/online-exam/marks", icon: FileCheck },
     ],
   },
   {
@@ -162,17 +166,18 @@ export const menuItems: MenuItem[] = [
   {
     title: "Certificate & Marksheet",
     icon: Award,
+    // Issuing first, designing second: the pages used every day sit above the
+    // ones set up once. Admit cards are issued under Exam & Marks.
     items: [
+      { title: "Certificates", url: "/certificate/issue", icon: Award },
+      { title: "Centre Certificate", url: "/certificate/centre", icon: Award },
       { title: "Document Designer", url: "/documents/designer", icon: LayoutTemplate },
       { title: "Certificate Format", url: "/certificate/template", icon: LayoutTemplate },
       { title: "Marksheet Format", url: "/marksheet/template", icon: LayoutTemplate },
-      { title: "Certificates", url: "/certificate/issue", icon: Award },
-      { title: "Student Documents", url: "/certificate/generate", icon: Printer },
-      { title: "Centre Certificate", url: "/certificate/centre", icon: Award },
-      // ID and admit card layouts are drawn in the Document Designer above, so
-      // they no longer need a module of their own; printing them lives here.
       { title: "Generate ID Cards", url: "/cards/generate-id", icon: IdCard },
-      { title: "Generate Admit Cards", url: "/cards/generate-admit", icon: Printer },
+      // The older class-test documents, kept for records made before the
+      // Results & Marksheets flow.
+      { title: "Student Documents", url: "/certificate/generate", icon: Printer },
     ],
   },
   {
@@ -285,14 +290,16 @@ const franchiseMenu: MenuItem[] = [
     "/attendance/report",
     "/attendance/logs",
   ]),
-  ...scope("Exam & Marks", ["/exam/schedule", "/exam/admit-cards", "/exam/results", "/exam/marks-list"]),
+  ...scope("Exam & Marks", ["/exam/guide", "/exam/schedule", "/exam/admit-cards", "/exam/results", "/exam/marks-list"]),
+  // A centre sees the exams the head office gave it, puts its own students
+  // on them and reads their results; the exams themselves are set upstairs.
+  ...scope("Online Exam", ["/online-exam/create", "/online-exam/assign", "/online-exam/marks"]),
   ...scope("Live Class", ["/live-class/view", "/live-class/setup", "/tools/code-lab", "/tools/whiteboard"]),
   ...scope("Certificate & Marksheet", [
     "/certificate/issue",
-    "/certificate/generate",
     "/certificate/centre",
     "/cards/generate-id",
-    "/cards/generate-admit",
+    "/certificate/generate",
   ]),
   ...scope("Branch Management", [
     "/branch/wallet",
@@ -323,7 +330,10 @@ const studentMenu: MenuItem[] = [
   {
     title: "Assessments",
     icon: ClipboardList,
-    items: [{ title: "Results & Marksheets", url: "/me/results", icon: FileCheck }],
+    items: [
+      { title: "Results & Marksheets", url: "/me/results", icon: FileCheck },
+      { title: "Online Exams", url: "/me/exams", icon: Monitor },
+    ],
   },
   {
     title: "Fees",
@@ -380,7 +390,9 @@ const SIBLINGS: Record<View, Record<string, string | string[]>> = {
   admin: {
     ...SHARED_SIBLINGS,
     "/cards/id-template": "/cards/generate-id",
-    "/cards/admit-template": "/cards/generate-admit",
+    "/cards/admit-template": "/exam/admit-cards",
+    // The older admit card page now opens the Admit Cards page.
+    "/cards/generate-admit": "/exam/admit-cards",
   },
   franchise: {
     ...SHARED_SIBLINGS,
@@ -394,11 +406,25 @@ const SIBLINGS: Record<View, Record<string, string | string[]>> = {
 
 const normalise = (pathname: string) => (pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname);
 
+/**
+ * The menu page a nested path belongs to: `/me/exams/<id>` (the exam room)
+ * is a page of `/me/exams`. Only one level, and only when that page is in
+ * the view's menu, so no URL reaches a page by looking like one.
+ */
+const parentMenuPath = (view: View, path: string): string | null => {
+  const cut = path.lastIndexOf("/");
+  if (cut <= 0) return null;
+  const parent = path.slice(0, cut);
+  return MENU_PATHS[view].has(parent) ? parent : null;
+};
+
 /** The menu pages whose tick and actions a path follows: itself, or its parents. */
 export const pagePermissionPaths = (view: View, pathname: string): string[] => {
   const path = normalise(pathname);
   const parent = SIBLINGS[view][path];
-  return parent ? [parent].flat() : [path];
+  if (parent) return [parent].flat();
+  const nested = parentMenuPath(view, path);
+  return nested ? [nested] : [path];
 };
 
 /**
@@ -456,7 +482,7 @@ const ALLOWED: Record<View, Set<string>> = {
 export function canAccess(view: View, pathname: string): boolean {
   const path = normalise(pathname);
   if (view === "admin") return !path.startsWith("/me");
-  return ALLOWED[view].has(path);
+  return ALLOWED[view].has(path) || parentMenuPath(view, path) !== null;
 }
 
 export const homeFor = (view: View) => VIEWS[view].home;

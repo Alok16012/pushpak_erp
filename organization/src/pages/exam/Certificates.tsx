@@ -13,7 +13,7 @@ import { certificatePdf, marksheetSummary } from "@/lib/documents";
 import { printFromTemplate } from "@/lib/studentTemplateDocument";
 import { Link } from "react-router-dom";
 import { getCertificateFees, getStudentDocument, getWallet, issueCertificate } from "@/lib/supabase/data";
-import { getIssuedCertificates, getMarksheets, type IssuedCertificate, type MarksheetRecord } from "@/lib/supabase/examWorkflow";
+import { getAdmitCards, getIssuedCertificates, getMarksheets, type AdmitCardRecord, type IssuedCertificate, type MarksheetRecord } from "@/lib/supabase/examWorkflow";
 import { studentName, useExamData } from "./useExamData";
 
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -34,6 +34,8 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
   const [examDate, setExamDate] = useState("");
   const [issued, setIssued] = useState<IssuedCertificate[]>([]);
   const [sheets, setSheets] = useState<MarksheetRecord[]>([]);
+  // The roll numbers issued on admit cards, which the certificate prints.
+  const [cards, setCards] = useState<AdmitCardRecord[]>([]);
   const [fees, setFees] = useState<Map<string, number>>(new Map());
   const [busy, setBusy] = useState(false);
   // The paying centre's wallet, read when its student is picked.
@@ -45,14 +47,16 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
 
   const load = useCallback(async () => {
     try {
-      const [c, m, f] = await Promise.all([
+      const [c, m, f, a] = await Promise.all([
         getIssuedCertificates(ownBranch),
         getMarksheets({ branchId: ownBranch }),
         getCertificateFees().catch(() => new Map<string, number>()),
+        getAdmitCards({ branchId: ownBranch }).catch(() => [] as AdmitCardRecord[]),
       ]);
       setIssued(c);
       setSheets(m);
       setFees(f);
+      setCards(a);
     } catch (e) {
       toast({ title: "Could not load certificates", description: e instanceof Error ? e.message : "", variant: "destructive" });
     }
@@ -90,9 +94,12 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
 
   const printFor = async (sid: string, dates: { issueDate: string; examConductedDate: string; certificateNo?: string }) => {
     const { data } = await getStudentDocument(sid, ownBranch);
-    const doc = { ...data, issueDate: dates.issueDate, examinationDate: dates.examConductedDate };
+    // The final term's roll number, else the latest one issued.
+    const roll = cards.filter((c) => c.studentId === sid).sort((a, b) => b.term - a.term)[0]?.rollNo;
+    const doc = { ...data, rollNo: roll || data.rollNo, issueDate: dates.issueDate, examinationDate: dates.examConductedDate };
     if (!doc.course?.name) throw new Error("Assign the student's course first.");
-    const extra = { certificate_no: dates.certificateNo || "" };
+    // The designer's {{certificate_id}} shows the certificate's own number once issued.
+    const extra = { certificate_no: dates.certificateNo || "", ...(dates.certificateNo ? { certificate_id: dates.certificateNo } : {}) };
     const printed = await printFromTemplate("certificate", doc, user?.organizationId ?? null, data.branchId || ownBranch, extra);
     if (!printed) await certificatePdf(doc);
   };
@@ -138,7 +145,7 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
     return {
       ...c,
       name: studentName(st) || "—",
-      enrollmentNo: st?.enrollmentNo || "—",
+      enrollmentNo: st?.enrollmentNo || st?.applicationNo || "—",
       courseName: courseOf.get(st?.courseId || "")?.name || "—",
       centre: branchOf.get(c.branchId)?.name || "—",
       phone: st?.phone || "",

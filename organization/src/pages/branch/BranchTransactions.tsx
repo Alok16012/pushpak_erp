@@ -286,21 +286,21 @@ export default function BranchTransactions() {
             />
             <StatsCard
               title="Total Credits"
-              value={`₹${(totalCredits / 1000).toFixed(0)}K`}
+              value={`₹${Math.round(totalCredits).toLocaleString("en-IN")}`}
               subtitle="Incoming funds"
               icon={TrendingUp}
               trend={{ value: 12, isPositive: true }}
             />
             <StatsCard
               title="Total Debits"
-              value={`₹${(totalDebits / 1000).toFixed(0)}K`}
+              value={`₹${Math.round(totalDebits).toLocaleString("en-IN")}`}
               subtitle="Outgoing funds"
               icon={TrendingDown}
               trend={{ value: 5, isPositive: false }}
             />
             <StatsCard
               title="Net Balance"
-              value={`₹${((totalCredits - totalDebits) / 1000).toFixed(0)}K`}
+              value={`₹${Math.round(totalCredits - totalDebits).toLocaleString("en-IN")}`}
               subtitle="Credits - Debits"
               icon={IndianRupee}
               trend={{ value: 8, isPositive: true }}

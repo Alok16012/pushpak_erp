@@ -30,7 +30,7 @@ import {
   fieldValue,
   idCardSheetHtml,
 } from "@/data/id-card-templates";
-import { getStudents } from "@/lib/supabase/data";
+import { getBatches, getCourses, getStudents } from "@/lib/supabase/data";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface IdCardStudent {
@@ -82,18 +82,25 @@ export default function GenerateIDCards() {
     let cancelled = false;
     setLoading(true);
     const branchId = user?.branchId || "";
-    getStudents(branchId, 1, 100)
-      .then((result) => {
+    Promise.all([
+      getStudents(branchId, 1, 100),
+      getCourses(user?.organizationId ?? null).catch(() => ({ data: [] as Array<{ id: string; name: string }> })),
+      getBatches(branchId || null).catch(() => ({ data: [] as Array<{ id: string; name: string }> })),
+    ])
+      .then(([result, coursesRes, batchesRes]) => {
         if (cancelled) return;
+        // The card shows the course and batch by name, not by their ids.
+        const courseName = new Map(((coursesRes.data || []) as Array<{ id: string; name: string }>).map((c) => [c.id, c.name]));
+        const batchName = new Map(((batchesRes.data || []) as Array<{ id: string; name: string }>).map((b) => [b.id, b.name]));
         // `getStudents` resolves to `{ success, data, meta }` - mapping over the
         // envelope threw, so this list was always empty.
         setRecords((result.data ?? []) as StudentRecord[]);
         const mapped: IdCardStudent[] = (result.data ?? []).map((s: StudentRecord & Record<string, string>) => ({
           id: s.id,
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
-          class: s.courseId ? String(s.courseId).slice(0, 8) : "—",
-          section: s.batchId ? String(s.batchId).slice(0, 8) : "—",
-          rollNo: s.enrollmentNo ?? s.id.slice(0, 8),
+          class: (s.courseId && courseName.get(String(s.courseId))) || "—",
+          section: (s.batchId && batchName.get(String(s.batchId))) || "—",
+          rollNo: s.enrollmentNo || s.applicationNo || "—",
           // The admission's passport photograph, where there is one.
           photo: Boolean(photoOf(s as StudentRecord)),
           dob: s.dateOfBirth ? new Date(s.dateOfBirth).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—",
@@ -114,7 +121,7 @@ export default function GenerateIDCards() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, user?.branchId, user?.organizationId]);
 
   const template = templates.find((item) => item.id === templateId) ?? null;
   const classes = Array.from(new Set(students.map((s) => s.class))).sort();

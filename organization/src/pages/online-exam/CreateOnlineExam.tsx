@@ -1,465 +1,368 @@
-import { DateTimePicker } from "@/components/ui/date-picker";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Plus, Trash2, Upload, Download } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { DataTable, type Column } from "@/components/ui/DataTable";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Save, RotateCcw, Monitor, Clock, Shield, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { Textarea } from "@/components/ui/textarea";
+import { DateTimePicker } from "@/components/ui/date-picker";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getExams, createExam, updateExam, getCourses, getBatches } from "@/lib/supabase/data";
+import { downloadCsv, parseCsv, pickFile } from "@/lib/export";
+import { richTextToPlain } from "@/lib/rich-text";
+import { termLabel, termPlan, termsOf } from "@/lib/examWorkflow";
+import {
+  PHASE_LABELS,
+  blankQuestion,
+  examPhase,
+  examProblem,
+  maxScore,
+  newQuestionId,
+  optionLetter,
+  questionCount,
+  questionsFromRows,
+  whenShown,
+  type ExamQuestion,
+  type ExamStatus,
+  type OnlineExam,
+} from "@/lib/onlineExam";
+import {
+  deleteOnlineExam,
+  getOnlineExams,
+  saveOnlineExam,
+  setOnlineExamStatus,
+  type OnlineExamInput,
+} from "@/lib/supabase/onlineExams";
+import { QUESTION_BANK_KEY, type Question as BankQuestion } from "./AddQuestions";
+import { useExamData } from "../exam/useExamData";
 
-type Course = { id: string; name: string; code?: string };
-type Batch = { id: string; name: string; code?: string; course?: { id: string; name: string } };
-
-interface Exam {
-  id: string;
-  name: string;
-  subject: string;
-  examDate: string;
-  maxMarks: number;
-  passMarks: number;
-  course?: { name: string };
-  batch?: { name: string };
-  /** Only present once add-online-exam-fields.sql has been run. */
-  duration?: number | null;
-}
-
-const BLANK = {
+const blankExam = (): OnlineExamInput => ({
   title: "",
-  course: "",
-  batch: "",
   description: "",
-  startDate: "",
-  endDate: "",
-  duration: "",
-  totalQuestions: "",
-  totalMarks: "",
-  passingMarks: "",
-  negativeMarking: "",
+  courseId: "",
+  term: 1,
+  totalQuestions: 0,
+  marksPerQuestion: 1,
+  negativeMarks: 0,
+  passPercentage: 40,
+  durationMinutes: 60,
+  startAt: "",
+  endAt: "",
   shuffleQuestions: true,
-  shuffleOptions: true,
-  preventTabSwitch: false,
-  fullScreen: false,
-  webcam: false,
-  questionPaper: "",
   showResult: true,
-  showAnswers: false,
-  allowReview: true,
-  autoSubmit: true,
+  status: "PUBLISHED",
+  questions: [],
+});
+
+/** An ISO instant as the date-time picker holds it: local "yyyy-mm-ddThh:mm". */
+const toLocalInput = (iso: string) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}T${two(d.getHours())}:${two(d.getMinutes())}`;
 };
 
-export default function CreateOnlineExam() {
-  const { user } = useAuth();
-  const orgId = user?.organizationId || null;
-  const branchId = user?.branchId || null;
+/** The multiple-choice questions saved in the question bank, as exam questions. */
+const bankQuestions = (): ExamQuestion[] => {
+  try {
+    const raw = localStorage.getItem(QUESTION_BANK_KEY);
+    const bank = raw ? (JSON.parse(raw) as BankQuestion[]) : [];
+    return bank
+      .filter((q) => q.type === "mcq" && Array.isArray(q.options) && q.options.length >= 2)
+      .map((q) => ({
+        id: newQuestionId(),
+        text: richTextToPlain(q.text || ""),
+        options: (q.options || []).map((o) => richTextToPlain(o)),
+        answer: Number(q.answer) || 0,
+        marks: Number(q.marks) > 0 ? Number(q.marks) : null,
+      }));
+  } catch {
+    return [];
+  }
+};
+
+const PHASE_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  LIVE: "default",
+  UPCOMING: "secondary",
+  DRAFT: "outline",
+  ENDED: "outline",
+  CLOSED: "destructive",
+};
+
+/**
+ * The head office's online exams: a multiple-choice paper with its marks,
+ * timing and window, and the questions themselves. Saved exams are assigned
+ * to centres and students under Assign Exam, and sat from the student portal.
+ */
+export default function OnlineExams() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user, isAdmin, courses, courseOf } = useExamData();
+  const [exams, setExams] = useState<OnlineExam[]>([]);
+  const [draft, setDraft] = useState<OnlineExamInput>(blankExam);
+  const [saving, setSaving] = useState(false);
 
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [form, setForm] = useState(BLANK);
-
+  const load = useCallback(async () => {
+    try {
+      setExams(await getOnlineExams());
+    } catch (e) {
+      toast({ title: "Could not load exams", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  }, [toast]);
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      getCourses(user?.organizationId, branchId),
-      getBatches(user?.branchId),
-      getExams(user?.branchId),
-    ])
-      .then(([coursesRes, batchesRes, examsRes]) => {
-        if (cancelled) return;
-        setCourses(coursesRes.data as Course[]);
-        setBatches(batchesRes.data as Batch[]);
-        setExams(examsRes.data as unknown as Exam[]);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        toast({
-          title: "Failed to load data",
-          description: error instanceof Error ? error.message : "Could not fetch courses, batches, or exams.",
-          variant: "destructive",
-        });
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [toast, user?.organizationId, user?.branchId]);
+    void load();
+  }, [load]);
 
-  const set = <K extends keyof typeof BLANK>(key: K, value: (typeof BLANK)[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  const course = courseOf.get(draft.courseId) || null;
+  const terms = useMemo(() => termsOf(course), [course]);
+  const set = <K extends keyof OnlineExamInput>(key: K, value: OnlineExamInput[K]) => setDraft((d) => ({ ...d, [key]: value }));
+  const setQuestion = (index: number, patch: Partial<ExamQuestion>) =>
+    setDraft((d) => ({ ...d, questions: d.questions.map((q, i) => (i === index ? { ...q, ...patch } : q)) }));
+  const setOption = (index: number, option: number, value: string) =>
+    setDraft((d) => ({
+      ...d,
+      questions: d.questions.map((q, i) => (i === index ? { ...q, options: q.options.map((o, n) => (n === option ? value : o)) } : q)),
+    }));
+  const addQuestions = (list: ExamQuestion[]) => setDraft((d) => ({ ...d, questions: [...d.questions, ...list] }));
+  const removeQuestion = (index: number) => setDraft((d) => ({ ...d, questions: d.questions.filter((_, i) => i !== index) }));
 
-  const create = async () => {
-    const required: Array<[keyof typeof BLANK, string]> = [
-      ["title", "Exam Title"],
-      ["course", "Course"],
-      ["batch", "Batch"],
-      ["startDate", "Start Date & Time"],
-      ["endDate", "End Date & Time"],
-      ["duration", "Duration"],
-      ["totalQuestions", "Total Questions"],
-      ["totalMarks", "Total Marks"],
-      ["passingMarks", "Passing Marks"],
-    ];
-    const missing = required.filter(([key]) => !String(form[key]).trim()).map(([, label]) => label);
-    if (missing.length) {
-      toast({ title: "Missing required fields", description: missing.join(", "), variant: "destructive" });
-      return;
-    }
-    if (new Date(form.endDate) <= new Date(form.startDate)) {
-      toast({ title: "Check the schedule", description: "The exam must end after it starts.", variant: "destructive" });
-      return;
-    }
-    if (Number(form.passingMarks) > Number(form.totalMarks)) {
-      toast({ title: "Check the marks", description: "Passing marks cannot exceed total marks.", variant: "destructive" });
-      return;
-    }
-    if (exams.some((e) => e.name.toLowerCase() === form.title.trim().toLowerCase())) {
-      toast({ title: "Duplicate exam name", description: `${form.title} is already in use.`, variant: "destructive" });
-      return;
-    }
+  const importBank = () => {
+    const list = bankQuestions();
+    if (!list.length) return toast({ title: "No multiple-choice questions in the question bank", description: "Add some under Question Bank first." });
+    addQuestions(list);
+    toast({ title: `${list.length} question(s) added from the question bank` });
+  };
+
+  const importCsv = async () => {
+    const file = await pickFile(".csv,text/csv");
+    if (!file) return;
+    const { questions, problems } = questionsFromRows(parseCsv(file.text));
+    if (questions.length) addQuestions(questions);
+    toast({
+      title: questions.length ? `${questions.length} question(s) added from ${file.name}` : "Nothing could be read",
+      description: problems.length ? `${problems.length} row(s) skipped: ${problems.slice(0, 3).join(" ")}` : undefined,
+      variant: questions.length ? "default" : "destructive",
+    });
+  };
+
+  const sampleCsv = () =>
+    downloadCsv("online-exam-questions-sample", [
+      { question: "Which key copies the selected text?", option1: "Ctrl+C", option2: "Ctrl+V", option3: "Ctrl+X", option4: "Ctrl+Z", answer: "A", marks: "1" },
+      { question: "HTML stands for?", option1: "Hyper Text Markup Language", option2: "High Text Machine Language", option3: "Hyperlinks Text Mark Language", option4: "None", answer: "1", marks: "" },
+    ]);
+
+  const save = async () => {
+    const problem = examProblem(draft);
+    if (problem) return toast({ title: "Could not save exam", description: problem, variant: "destructive" });
+    setSaving(true);
     try {
-      const subject = courses.find((c) => c.id === form.course)?.name ?? form.course;
-      const maxMarks = Number(form.totalMarks);
-      const passMarks = Number(form.passingMarks);
-      const examDate = new Date(form.startDate);
-      await createExam(user?.branchId, {
-          courseId: form.course,
-          batchId: form.batch || undefined,
-          name: form.title,
-          subject,
-          examDate: examDate.toISOString(),
-          maxMarks,
-          passMarks,
-          description: form.description || null,
-          endDate: form.endDate ? new Date(form.endDate).toISOString() : null,
-          duration: form.duration ? Number(form.duration) : null,
-          totalQuestions: form.totalQuestions ? Number(form.totalQuestions) : null,
-          negativeMarking: form.negativeMarking ? Number(form.negativeMarking) : null,
-          shuffleQuestions: form.shuffleQuestions,
-          shuffleOptions: form.shuffleOptions,
-          preventTabSwitch: form.preventTabSwitch,
-          fullScreen: form.fullScreen,
-          webcam: form.webcam,
-          showResult: form.showResult,
-          showAnswers: form.showAnswers,
-          allowReview: form.allowReview,
-          autoSubmit: form.autoSubmit,
-        });
-      const updated = await getExams(user?.branchId);
-      setExams(updated.data as unknown as Exam[]);
-      setForm(BLANK);
-      toast({ title: "Exam created", description: `${form.title} is scheduled and ready.` });
-    } catch (error) {
-      toast({
-        title: "Failed to create exam",
-        description: error instanceof Error ? error.message : "Please try again.",
-        variant: "destructive",
-      });
+      await saveOnlineExam(draft, { name: user?.name, organizationId: user?.organizationId });
+      toast({ title: draft.id ? "Exam updated" : "Exam saved", description: `${draft.title} · ${draft.questions.length} question(s)` });
+      setDraft(blankExam());
+      await load();
+    } catch (e) {
+      toast({ title: "Could not save exam", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const remove = async (id: string) => {
-    const paper = exams.find((e) => e.id === id);
-    if (!paper) return;
+  const edit = (exam: OnlineExam) => {
+    setDraft({ ...exam, startAt: toLocalInput(exam.startAt), endAt: toLocalInput(exam.endAt) });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const setStatus = async (exam: OnlineExam, status: ExamStatus) => {
     try {
-      await updateExam(id, user?.branchId, {
-          status: "archived",
-        });
-      setExams((prev) => prev.filter((e) => e.id !== id));
-      toast({ title: "Exam archived", description: `${paper.name} has been archived.` });
-    } catch {
-      toast({ title: "Failed to archive", description: "Please try again.", variant: "destructive" });
+      await setOnlineExamStatus(exam.id, status);
+      await load();
+    } catch (e) {
+      toast({ title: "Could not change the exam", description: e instanceof Error ? e.message : "", variant: "destructive" });
     }
   };
 
-  const reset = () => {
-    setForm(BLANK);
-    toast({ title: "Form reset", description: "Every field is back to its default." });
+  const remove = async (exam: OnlineExam) => {
+    if (!window.confirm(`Delete "${exam.title}"? Students' sittings of it will no longer be listed.`)) return;
+    try {
+      await deleteOnlineExam(exam.id);
+      if (draft.id === exam.id) setDraft(blankExam());
+      await load();
+    } catch (e) {
+      toast({ title: "Could not delete", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
   };
 
-  const batchLabel = (batch: Batch) => batch.code ?? batch.name;
+  type Row = OnlineExam & { courseName: string; termName: string; phase: string; questionsShown: string; window: string; marks: number };
+  const rows: Row[] = exams.map((e) => {
+    const c = courseOf.get(e.courseId);
+    return {
+      ...e,
+      courseName: c?.name || "Any course",
+      termName: c ? termLabel(termPlan(c).type, e.term) : "",
+      phase: PHASE_LABELS[examPhase(e)],
+      questionsShown: `${questionCount(e)} of ${e.questions.length}`,
+      window: e.startAt || e.endAt ? `${whenShown(e.startAt)} → ${whenShown(e.endAt)}` : "Any time",
+      marks: maxScore(e),
+    };
+  });
+  const columns: Column<Row>[] = [
+    { key: "title", header: "Exam", sortable: true, cell: (r) => <span className="font-medium">{r.title}</span> },
+    { key: "courseName", header: "Course", cell: (r) => <span>{r.courseName}{r.termName ? <span className="block text-xs text-muted-foreground">{r.termName}</span> : null}</span> },
+    { key: "questionsShown", header: "Questions", cell: (r) => <span className="text-xs">{r.questionsShown} · {r.marks} marks</span> },
+    { key: "durationMinutes", header: "Duration", cell: (r) => `${r.durationMinutes} min` },
+    { key: "window", header: "Window", cell: (r) => <span className="text-xs">{r.window}</span> },
+    { key: "phase", header: "Status", cell: (r) => <Badge variant={PHASE_VARIANT[examPhase(r)]}>{r.phase}</Badge> },
+  ];
+
+  const field = (label: string, child: React.ReactNode, span = "") => (
+    <div className={`space-y-2 ${span}`}>
+      <Label>{label}</Label>
+      {child}
+    </div>
+  );
+  const number = (key: "totalQuestions" | "marksPerQuestion" | "negativeMarks" | "passPercentage" | "durationMinutes", label: string, step = 1, min = 0) =>
+    field(label, <Input type="number" min={min} step={step} aria-label={label} value={draft[key]} onChange={(e) => set(key, Number(e.target.value))} />);
 
   return (
     <AppLayout>
       <PageHeader
-        title="Create Online Exam"
-        description="Set up a new online examination"
-        breadcrumbs={[
-          { label: "Online Exam", href: "/online-exam/create" },
-          { label: "Create Exam" },
-        ]}
+        title="Online Exams"
+        description="Set multiple-choice exams with their timing and marks; assign them to centres and students, who sit them in their portal"
+        breadcrumbs={[{ label: "Online Exam" }, { label: "Exams" }]}
       />
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Monitor className="h-5 w-5" />
-                Exam Details
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="examTitle">Exam Title *</Label>
-                  <Input id="examTitle" placeholder="e.g., Online Mid-Term Test" value={form.title} onChange={(e) => set("title", e.target.value)} />
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="course">Course *</Label>
-                  <Select value={form.course} onValueChange={(v) => set("course", v)}>
-                    <SelectTrigger id="course">
-                      <SelectValue placeholder="Select course" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {courses.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="batch">Batch *</Label>
-                  <Select value={form.batch} onValueChange={(v) => set("batch", v)}>
-                    <SelectTrigger id="batch">
-                      <SelectValue placeholder="Select batch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {batches.map((b) => (
-                        <SelectItem key={b.id} value={b.id}>{batchLabel(b)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Enter exam description and instructions..."
-                  rows={3}
-                  value={form.description}
-                  onChange={(e) => set("description", e.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Schedule & Duration
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Start Date & Time *</Label>
-                  <DateTimePicker id="startDate" value={form.startDate} onChange={(v) => set("startDate", v)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="endDate">End Date & Time *</Label>
-                  <DateTimePicker id="endDate" value={form.endDate} onChange={(v) => set("endDate", v)} min={form.startDate} defaultTime="17:00" />
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="duration">Duration (minutes) *</Label>
-                  <Input id="duration" type="number" placeholder="60" value={form.duration} onChange={(e) => set("duration", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="totalQuestions">Total Questions *</Label>
-                  <Input id="totalQuestions" type="number" placeholder="50" value={form.totalQuestions} onChange={(e) => set("totalQuestions", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="totalMarks">Total Marks *</Label>
-                  <Input id="totalMarks" type="number" placeholder="100" value={form.totalMarks} onChange={(e) => set("totalMarks", e.target.value)} />
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="passingMarks">Passing Marks *</Label>
-                  <Input id="passingMarks" type="number" placeholder="35" value={form.passingMarks} onChange={(e) => set("passingMarks", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="negativeMarking">Negative Marking</Label>
-                  <Input id="negativeMarking" type="number" placeholder="0.25" step="0.25" value={form.negativeMarking} onChange={(e) => set("negativeMarking", e.target.value)} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
-                Security Settings
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Shuffle Questions</Label>
-                  <p className="text-sm text-muted-foreground">Randomize question order for each student</p>
-                </div>
-                <Switch checked={form.shuffleQuestions} onCheckedChange={(v) => set("shuffleQuestions", v)} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Shuffle Options</Label>
-                  <p className="text-sm text-muted-foreground">Randomize answer options</p>
-                </div>
-                <Switch checked={form.shuffleOptions} onCheckedChange={(v) => set("shuffleOptions", v)} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Prevent Tab Switch</Label>
-                  <p className="text-sm text-muted-foreground">Warn or submit if student switches tabs</p>
-                </div>
-                <Switch checked={form.preventTabSwitch} onCheckedChange={(v) => set("preventTabSwitch", v)} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Full Screen Mode</Label>
-                  <p className="text-sm text-muted-foreground">Force full screen during exam</p>
-                </div>
-                <Switch checked={form.fullScreen} onCheckedChange={(v) => set("fullScreen", v)} />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Webcam Proctoring</Label>
-                  <p className="text-sm text-muted-foreground">Enable webcam monitoring</p>
-                </div>
-                <Switch checked={form.webcam} onCheckedChange={(v) => set("webcam", v)} />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Question Paper</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Question Paper</Label>
-                <Select
-                  value={form.questionPaper}
-                  onValueChange={(value) =>
-                    value === "new" ? navigate("/online-exam/question-paper-builder") : set("questionPaper", value)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select question paper" />
-                  </SelectTrigger>
+      {isAdmin && (
+        <Card className="mb-4">
+          <CardHeader><CardTitle>{draft.id ? "Edit exam" : "Create exam"}</CardTitle></CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {field("Exam title *", <Input aria-label="Exam title" value={draft.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. ADCA 1st Year Online Test" />, "lg:col-span-2")}
+              {field(
+                "Course",
+                <Select value={draft.courseId || "any"} onValueChange={(v) => setDraft((d) => ({ ...d, courseId: v === "any" ? "" : v, term: 1 }))}>
+                  <SelectTrigger aria-label="Course"><SelectValue placeholder="Any course" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="qp1">QP-2024-CS-001</SelectItem>
-                    <SelectItem value="qp2">QP-2024-CS-002</SelectItem>
-                    <SelectItem value="new">Create New</SelectItem>
+                    <SelectItem value="any">Any course</SelectItem>
+                    {courses.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                   </SelectContent>
-                </Select>
-              </div>
-              <Button variant="outline" className="w-full" onClick={() => navigate("/online-exam/question-paper-builder")}>
-                Build Question Paper
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Exam Options</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox id="showResult" checked={form.showResult} onCheckedChange={(v) => set("showResult", v === true)} />
-                <Label htmlFor="showResult" className="font-normal">Show result after submission</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="showAnswers" checked={form.showAnswers} onCheckedChange={(v) => set("showAnswers", v === true)} />
-                <Label htmlFor="showAnswers" className="font-normal">Show correct answers</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="allowReview" checked={form.allowReview} onCheckedChange={(v) => set("allowReview", v === true)} />
-                <Label htmlFor="allowReview" className="font-normal">Allow question review</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox id="autoSubmit" checked={form.autoSubmit} onCheckedChange={(v) => set("autoSubmit", v === true)} />
-                <Label htmlFor="autoSubmit" className="font-normal">Auto-submit on timeout</Label>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Button className="w-full gap-2" onClick={create}>
-                <Save className="h-4 w-4" />
-                Create Exam
-              </Button>
-              <Button variant="outline" className="w-full gap-2" onClick={reset}>
-                <RotateCcw className="h-4 w-4" />
-                Reset Form
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Scheduled Exams ({exams.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {loading && <p className="text-sm text-muted-foreground">Loading exams...</p>}
-              {!loading && exams.length === 0 && (
-                <p className="text-sm text-muted-foreground">No online exams created yet.</p>
+                </Select>,
               )}
-              {exams.map((exam) => (
-                <div key={exam.id} className="flex items-center justify-between gap-2 border rounded-lg p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{exam.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {exam.course?.name ?? "—"} • {exam.batch?.name ?? "—"}
-                      {exam.examDate ? ` • ${new Date(exam.examDate).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}
-                    </p>
+              {field(
+                "Year / Semester",
+                <Select value={String(draft.term)} onValueChange={(v) => set("term", Number(v))} disabled={!course}>
+                  <SelectTrigger aria-label="Year / Semester"><SelectValue /></SelectTrigger>
+                  <SelectContent>{terms.map((t) => <SelectItem key={t.term} value={String(t.term)}>{t.label}</SelectItem>)}</SelectContent>
+                </Select>,
+              )}
+              {number("durationMinutes", "Duration (minutes) *", 1, 1)}
+              {number("totalQuestions", "Questions per student (0 = all)")}
+              {number("marksPerQuestion", "Marks per question", 0.5)}
+              {number("negativeMarks", "Negative marks per wrong answer", 0.25)}
+              {number("passPercentage", "Pass percentage")}
+              {field("Opens at", <DateTimePicker id="exam-opens" value={draft.startAt} onChange={(v) => set("startAt", v)} />)}
+              {field("Closes at", <DateTimePicker id="exam-closes" value={draft.endAt} onChange={(v) => set("endAt", v)} defaultTime="18:00" />)}
+              {field(
+                "Status",
+                <Select value={draft.status} onValueChange={(v) => set("status", v as ExamStatus)}>
+                  <SelectTrigger aria-label="Status"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PUBLISHED">Published — students may sit it</SelectItem>
+                    <SelectItem value="DRAFT">Draft — not shown to students</SelectItem>
+                    <SelectItem value="CLOSED">Closed — no new sittings</SelectItem>
+                  </SelectContent>
+                </Select>,
+              )}
+              {field("Instructions", <Textarea rows={2} aria-label="Instructions" value={draft.description} onChange={(e) => set("description", e.target.value)} placeholder="Shown to the student before they start" />, "sm:col-span-2 lg:col-span-4")}
+            </div>
+            <div className="flex flex-wrap gap-6 text-sm">
+              <label className="flex items-center gap-2"><Switch checked={draft.shuffleQuestions} onCheckedChange={(v) => set("shuffleQuestions", v)} aria-label="Shuffle questions" /> Shuffle questions for each student</label>
+              <label className="flex items-center gap-2"><Switch checked={draft.showResult} onCheckedChange={(v) => set("showResult", v)} aria-label="Show result to student" /> Show the result to the student on submission</label>
+            </div>
+
+            <div className="space-y-3 rounded-xl border p-3 sm:p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="font-semibold">
+                  Questions <Badge variant="secondary" className="ml-1">{draft.questions.length}</Badge>
+                  <span className="ml-2 text-xs font-normal text-muted-foreground">A student gets {draft.totalQuestions > 0 ? Math.min(draft.totalQuestions, draft.questions.length) : draft.questions.length} of them · {maxScore(draft)} marks</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => addQuestions([blankQuestion()])}><Plus className="mr-1 h-4 w-4" /> Add question</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={importBank}>Add from question bank</Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void importCsv()}><Upload className="mr-1 h-4 w-4" /> Upload CSV</Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={sampleCsv}><Download className="mr-1 h-4 w-4" /> Sample CSV</Button>
+                </div>
+              </div>
+              {!draft.questions.length && <p className="text-sm text-muted-foreground">No questions yet. Add them one by one, from the question bank, or upload a CSV with columns question, option1–option4, answer (A–D or 1–4) and marks.</p>}
+              {draft.questions.map((q, i) => (
+                <div key={q.id} className="space-y-2 rounded-lg bg-muted/40 p-3">
+                  <div className="flex items-start gap-2">
+                    <span className="mt-2 w-7 shrink-0 text-sm font-semibold text-muted-foreground">{i + 1}.</span>
+                    <Textarea rows={2} aria-label={`Question ${i + 1}`} value={q.text} onChange={(e) => setQuestion(i, { text: e.target.value })} placeholder="Question wording" className="bg-background" />
+                    <div className="w-24 shrink-0 space-y-1">
+                      <Input type="number" min={0} step={0.5} aria-label={`Question ${i + 1} marks`} value={q.marks ?? ""} placeholder={String(draft.marksPerQuestion)} onChange={(e) => setQuestion(i, { marks: e.target.value === "" ? null : Number(e.target.value) })} className="bg-background" />
+                      <span className="block text-[10px] text-muted-foreground">marks</span>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Remove question ${i + 1}`} onClick={() => removeQuestion(i)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Badge variant="secondary">{exam.duration || "?"} min</Badge>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-7 w-7 text-destructive"
-                      onClick={() => remove(exam.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                  <div className="grid gap-2 pl-9 sm:grid-cols-2">
+                    {q.options.map((o, n) => (
+                      <label key={n} className={`flex items-center gap-2 rounded-md border bg-background px-2 ${q.answer === n ? "border-primary" : ""}`}>
+                        <input
+                          type="radio"
+                          name={`answer-${q.id}`}
+                          aria-label={`Question ${i + 1} option ${optionLetter(n)} is correct`}
+                          checked={q.answer === n}
+                          onChange={() => setQuestion(i, { answer: n })}
+                        />
+                        <span className="text-xs font-semibold text-muted-foreground">{optionLetter(n)}</span>
+                        <Input aria-label={`Question ${i + 1} option ${optionLetter(n)}`} value={o} onChange={(e) => setOption(i, n, e.target.value)} className="border-0 px-1 shadow-none focus-visible:ring-0" placeholder={`Option ${optionLetter(n)}`} />
+                      </label>
+                    ))}
                   </div>
+                  <p className="pl-9 text-[11px] text-muted-foreground">Tick the circle beside the right option.</p>
                 </div>
               ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={save} disabled={saving}>{saving ? "Saving…" : draft.id ? "Update exam" : "Save exam"}</Button>
+              {draft.id && <Button variant="outline" onClick={() => setDraft(blankExam())}>Cancel</Button>}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader><CardTitle>Exams <Badge variant="secondary" className="ml-2">{rows.length}</Badge></CardTitle></CardHeader>
+        <CardContent>
+          <DataTable
+            data={rows}
+            columns={columns}
+            searchPlaceholder="Search exam, course…"
+            filters={[{ label: "Course", key: "courseName" }, { label: "Status", key: "phase" }]}
+            actions={(r) => [
+              ...(isAdmin ? [{ label: "Edit", onClick: () => edit(r) }] : []),
+              { label: "Assign", onClick: () => navigate(`/online-exam/assign?exam=${r.id}`) },
+              { label: "Student results", onClick: () => navigate(`/online-exam/marks?exam=${r.id}`) },
+              ...(isAdmin
+                ? [
+                    r.status === "CLOSED"
+                      ? { label: "Reopen", onClick: () => void setStatus(r, "PUBLISHED") }
+                      : { label: "Close exam", onClick: () => void setStatus(r, "CLOSED") },
+                    { label: "Delete", onClick: () => void remove(r), destructive: true },
+                  ]
+                : []),
+            ]}
+            emptyMessage={isAdmin ? "No online exams yet. Create one above." : "No online exams have been assigned to this centre yet."}
+          />
+        </CardContent>
+      </Card>
     </AppLayout>
   );
 }
