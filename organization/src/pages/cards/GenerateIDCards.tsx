@@ -15,7 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Printer, Download, Eye, Search, Users, CreditCard, Image as ImageIcon, QrCode } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
 import {
@@ -30,11 +30,13 @@ import {
   fieldValue,
   idCardSheetHtml,
 } from "@/data/id-card-templates";
-import { getBatches, getCourses, getStudents } from "@/lib/supabase/data";
+import { getBatches, getBranches, getCourses, getStudents } from "@/lib/supabase/data";
+import { matchesSearch } from "@/lib/search";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface IdCardStudent {
   id: string;
+  courseId: string;
   name: string;
   class: string;
   section: string;
@@ -48,18 +50,24 @@ interface IdCardStudent {
 
 const STORAGE_KEY = ID_CARD_TEMPLATES_KEY;
 
+const ALL_COURSES = "all";
+
 export default function GenerateIDCards() {
-  const { user } = useAuth();
+  // `view`, not the role: the office working as a centre sees that centre only.
+  const { user, view } = useAuth();
+  const ownBranch = view === "admin" ? null : user?.branchId || null;
   const { toast } = useToast();
   const [templates, setTemplates] = useState<IdCardTemplate[]>([]);
   /** The student rows as the database returns them, for the branch's template. */
   const [records, setRecords] = useState<StudentRecord[]>([]);
-  const [students, setStudents] = useState<IdCardStudent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rawStudents, setStudents] = useState<IdCardStudent[]>([]);
+  const [loading, setLoading] = useState(false);
   const [templateId, setTemplateId] = useState("");
-  const [classFilter, setClassFilter] = useState("all");
-  const [sectionFilter, setSectionFilter] = useState("all");
-  const [academicYear, setAcademicYear] = useState("2024-25");
+  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
+  const [courses, setCourses] = useState<Array<{ id: string; name: string }>>([]);
+  const [pickedBranch, setPickedBranch] = useState("");
+  const branchId = ownBranch || pickedBranch;
+  const [courseId, setCourseId] = useState(ALL_COURSES);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -80,25 +88,44 @@ export default function GenerateIDCards() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    const branchId = user?.branchId || "";
     Promise.all([
-      getStudents(branchId, 1, 100),
-      getCourses(user?.organizationId ?? null).catch(() => ({ data: [] as Array<{ id: string; name: string }> })),
-      getBatches(branchId || null).catch(() => ({ data: [] as Array<{ id: string; name: string }> })),
+      ownBranch ? Promise.resolve({ data: [] }) : getBranches(user?.organizationId ?? null).catch(() => ({ data: [] })),
+      getCourses(user?.organizationId ?? null).catch(() => ({ data: [] })),
+    ]).then(([branchesRes, coursesRes]) => {
+      if (cancelled) return;
+      setBranches((branchesRes.data || []) as Array<{ id: string; name: string }>);
+      setCourses((coursesRes.data || []) as Array<{ id: string; name: string }>);
+    });
+    return () => { cancelled = true; };
+  }, [ownBranch, user?.organizationId]);
+
+  // A branch's students, once the branch is known.
+  useEffect(() => {
+    let cancelled = false;
+    setSelectedStudents([]);
+    setCourseId(ALL_COURSES);
+    if (!branchId) {
+      setRecords([]);
+      setStudents([]);
+      return;
+    }
+    setLoading(true);
+    Promise.all([
+      getStudents(branchId, 1, 2000),
+      getBatches(branchId).catch(() => ({ data: [] as Array<{ id: string; name: string }> })),
     ])
-      .then(([result, coursesRes, batchesRes]) => {
+      .then(([result, batchesRes]) => {
         if (cancelled) return;
         // The card shows the course and batch by name, not by their ids.
-        const courseName = new Map(((coursesRes.data || []) as Array<{ id: string; name: string }>).map((c) => [c.id, c.name]));
         const batchName = new Map(((batchesRes.data || []) as Array<{ id: string; name: string }>).map((b) => [b.id, b.name]));
         // `getStudents` resolves to `{ success, data, meta }` - mapping over the
         // envelope threw, so this list was always empty.
         setRecords((result.data ?? []) as StudentRecord[]);
         const mapped: IdCardStudent[] = (result.data ?? []).map((s: StudentRecord & Record<string, string>) => ({
           id: s.id,
+          courseId: String(s.courseId || ""),
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
-          class: (s.courseId && courseName.get(String(s.courseId))) || "—",
+          class: "",
           section: (s.batchId && batchName.get(String(s.batchId))) || "—",
           rollNo: s.enrollmentNo || s.applicationNo || "—",
           // The admission's passport photograph, where there is one.
@@ -121,18 +148,26 @@ export default function GenerateIDCards() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast, user?.branchId, user?.organizationId]);
+  }, [toast, branchId]);
+
+  // The card shows the course by name; the names may arrive after the students.
+  const students = useMemo(() => {
+    const courseName = new Map(courses.map((c) => [c.id, c.name]));
+    return rawStudents.map((s) => ({ ...s, class: courseName.get(s.courseId) || "—" }));
+  }, [rawStudents, courses]);
 
   const template = templates.find((item) => item.id === templateId) ?? null;
-  const classes = Array.from(new Set(students.map((s) => s.class))).sort();
-  const sections = Array.from(new Set(students.map((s) => s.section))).sort();
+  const branchName = branches.find((b) => b.id === branchId)?.name || "";
+  // Only the courses this branch's students are on, each with its head count.
+  const branchCourses = courses
+    .map((c) => ({ ...c, count: students.filter((s) => s.courseId === c.id).length }))
+    .filter((c) => c.count > 0);
+  const runName = [branchName, courseId !== ALL_COURSES ? courses.find((c) => c.id === courseId)?.name : ""].filter(Boolean).join(" - ") || "students";
 
   const filteredStudents = students.filter(
     (s) =>
-      (classFilter === "all" || s.class === classFilter) &&
-      (sectionFilter === "all" || s.section === sectionFilter) &&
-      (s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.id.toLowerCase().includes(searchTerm.toLowerCase())),
+      (courseId === ALL_COURSES || s.courseId === courseId) &&
+      matchesSearch(`${s.name} ${s.rollNo}`, searchTerm),
   );
 
   /** Rows hidden by the filters are not printed, even if they were ticked. */
@@ -185,20 +220,20 @@ export default function GenerateIDCards() {
       "student-id",
       picked,
       user?.organizationId ?? null,
-      user?.branchId ?? null,
+      branchId || null,
     ).catch(() => false);
     if (printed) return;
 
     if (!ready() || !template) return;
     printHtml(
-      `ID Cards - ${template.name} - ${academicYear}`,
+      `ID Cards - ${template.name} - ${runName}`,
       idCardSheetHtml(template, chosen),
     );
   };
 
   const downloadPdf = () => {
     if (!ready() || !template) return;
-    const { pages } = idCardsPdf(template, chosen, `id-cards-${academicYear}.pdf`);
+    const { pages } = idCardsPdf(template, chosen, `id-cards-${runName}.pdf`);
     toast({
       title: "PDF generated",
       description: `${chosen.length} card${chosen.length === 1 ? "" : "s"} across ${pages} page${pages === 1 ? "" : "s"} - check your Downloads.`,
@@ -231,6 +266,37 @@ export default function GenerateIDCards() {
             <CardTitle className="text-lg">Filters & Options</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {!ownBranch && (
+              <div className="space-y-2">
+                <Label>Branch</Label>
+                <Select value={pickedBranch} onValueChange={setPickedBranch}>
+                  <SelectTrigger aria-label="Branch">
+                    <SelectValue placeholder="Select branch" />
+                  </SelectTrigger>
+                  <SelectContent searchable searchPlaceholder="Search branch…">
+                    {branches.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Course</Label>
+              <Select value={courseId} onValueChange={(v) => { setCourseId(v); setSelectedStudents([]); }} disabled={!branchId}>
+                <SelectTrigger aria-label="Course">
+                  <SelectValue placeholder="All courses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_COURSES}>All courses ({students.length})</SelectItem>
+                  {branchCourses.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name} ({c.count})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Select Template</Label>
               <Select value={templateId} onValueChange={setTemplateId}>
@@ -252,49 +318,6 @@ export default function GenerateIDCards() {
               )}
             </div>
 
-            <div className="space-y-2">
-              <Label>Class</Label>
-              <Select value={classFilter} onValueChange={setClassFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Classes" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Classes</SelectItem>
-                  {classes.map((value) => (
-                    <SelectItem key={value} value={value}>{value}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Section</Label>
-              <Select value={sectionFilter} onValueChange={setSectionFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All Sections" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Sections</SelectItem>
-                  {sections.map((value) => (
-                    <SelectItem key={value} value={value}>Section {value}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Academic Year</Label>
-              <Select value={academicYear} onValueChange={setAcademicYear}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="2024-25">2024-25</SelectItem>
-                  <SelectItem value="2023-24">2023-24</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="pt-4 border-t space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <Users className="h-4 w-4 text-muted-foreground" />
@@ -312,13 +335,13 @@ export default function GenerateIDCards() {
             </div>
 
             <div className="flex flex-col gap-2 pt-4">
-              <Button className="w-full" disabled={!template || chosen.length === 0} onClick={openPreview}>
+              <Button className="w-full" disabled={chosen.length === 0} onClick={printCards}>
+                <CreditCard className="h-4 w-4 mr-2" />
+                Generate ID Cards ({chosen.length})
+              </Button>
+              <Button variant="outline" className="w-full" disabled={!template || chosen.length === 0} onClick={openPreview}>
                 <Eye className="h-4 w-4 mr-2" />
                 Preview Cards
-              </Button>
-              <Button variant="outline" className="w-full" disabled={chosen.length === 0} onClick={printCards}>
-                <Printer className="h-4 w-4 mr-2" />
-                Print Cards
               </Button>
               <Button variant="outline" className="w-full" disabled={!template || chosen.length === 0} onClick={downloadPdf}>
                 <Download className="h-4 w-4 mr-2" />
@@ -332,11 +355,12 @@ export default function GenerateIDCards() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <CardTitle className="text-lg">Select Students</CardTitle>
+              <CardTitle className="text-lg">Select Students{branchId && !loading ? <Badge variant="secondary" className="ml-2">{filteredStudents.length}</Badge> : null}</CardTitle>
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search students..."
+                  placeholder="Search name or enrollment..."
+                  aria-label="Search students"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-9"
@@ -354,12 +378,11 @@ export default function GenerateIDCards() {
                 <thead className="bg-muted/50">
                   <tr>
                     <th className="p-3 text-left">
-                      <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} />
+                      <Checkbox checked={allVisibleSelected} onCheckedChange={toggleAll} aria-label="Select all students shown" />
                     </th>
-                    <th className="p-3 text-left text-sm font-medium">Student ID</th>
+                    <th className="p-3 text-left text-sm font-medium">Enrollment No</th>
                     <th className="p-3 text-left text-sm font-medium">Name</th>
-                    <th className="p-3 text-left text-sm font-medium">Class</th>
-                    <th className="p-3 text-left text-sm font-medium">Roll No</th>
+                    <th className="p-3 text-left text-sm font-medium">Course / Batch</th>
                     <th className="p-3 text-left text-sm font-medium">Photo</th>
                   </tr>
                 </thead>
@@ -370,12 +393,12 @@ export default function GenerateIDCards() {
                         <Checkbox
                           checked={selectedStudents.includes(student.id)}
                           onCheckedChange={() => toggleStudent(student.id)}
+                          aria-label={student.name}
                         />
                       </td>
-                      <td className="p-3 text-sm font-mono">{student.id}</td>
+                      <td className="p-3 text-sm font-mono">{student.rollNo}</td>
                       <td className="p-3 text-sm font-medium">{student.name}</td>
-                      <td className="p-3 text-sm">{student.class} - {student.section}</td>
-                      <td className="p-3 text-sm">{student.rollNo}</td>
+                      <td className="p-3 text-sm">{student.class}{student.section !== "—" ? ` · ${student.section}` : ""}</td>
                       <td className="p-3">
                         <Badge variant={student.photo ? "default" : "destructive"}>
                           {student.photo ? "Available" : "Missing"}
@@ -390,7 +413,7 @@ export default function GenerateIDCards() {
 
             {!loading && filteredStudents.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                No students found matching your search
+                {!branchId ? "Select a branch to list its students." : students.length ? "No students found matching your search" : "This branch has no students yet."}
               </div>
             )}
           </CardContent>
@@ -402,7 +425,7 @@ export default function GenerateIDCards() {
           <DialogHeader>
             <DialogTitle>Card preview</DialogTitle>
             <DialogDescription>
-              {template?.name} - {chosen.length} card{chosen.length === 1 ? "" : "s"} - {academicYear}
+              {template?.name} - {chosen.length} card{chosen.length === 1 ? "" : "s"} - {runName}
             </DialogDescription>
           </DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto">
