@@ -866,10 +866,10 @@ export default function Franchise() {
                       {" "}STEP 03{" "}
                     </span>
                     <h3 className="text-2xl font-black mt-1">
-                      Required Documents
+                      Documents
                     </h3>
                     <p className="text-slate-500 mt-2">
-                      Upload clear and readable copies of all required documents.
+                      Optional now: our team collects these documents from you during verification.
                     </p>
                   </div>
                   <div className="grid md:grid-cols-2 gap-6">
@@ -882,7 +882,7 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="file" name="center_head_photo" accept="image/*" required data-inline-onchange="showFile(this,'photoName')" className="w-full text-sm" />
+                      <input type="file" name="center_head_photo" accept="image/*" data-inline-onchange="showFile(this,'photoName')" className="w-full text-sm" />
                       <div id="photoName" className="file-name">
                         Recent photo required
                       </div>
@@ -896,7 +896,7 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="file" name="center_head_signature" accept="image/*" required data-inline-onchange="showFile(this,'signatureName')" className="w-full text-sm" />
+                      <input type="file" name="center_head_signature" accept="image/*" data-inline-onchange="showFile(this,'signatureName')" className="w-full text-sm" />
                       <div id="signatureName" className="file-name">
                         Signature image required
                       </div>
@@ -910,7 +910,7 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="file" name="aadhaar_front" accept="image/*,.pdf" required data-inline-onchange="showFile(this,'aadhaarFrontName')" className="w-full text-sm" />
+                      <input type="file" name="aadhaar_front" accept="image/*,.pdf" data-inline-onchange="showFile(this,'aadhaarFrontName')" className="w-full text-sm" />
                       <div id="aadhaarFrontName" className="file-name">
                         Front side
                       </div>
@@ -924,7 +924,7 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="file" name="aadhaar_back" accept="image/*,.pdf" required data-inline-onchange="showFile(this,'aadhaarBackName')" className="w-full text-sm" />
+                      <input type="file" name="aadhaar_back" accept="image/*,.pdf" data-inline-onchange="showFile(this,'aadhaarBackName')" className="w-full text-sm" />
                       <div id="aadhaarBackName" className="file-name">
                         Back side
                       </div>
@@ -938,7 +938,7 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="file" name="marksheet" accept="image/*,.pdf" required data-inline-onchange="showFile(this,'marksheetName')" className="w-full text-sm" />
+                      <input type="file" name="marksheet" accept="image/*,.pdf" data-inline-onchange="showFile(this,'marksheetName')" className="w-full text-sm" />
                       <div id="marksheetName" className="file-name">
                         DCA / ITI / Graduation / CCC / PGDCA etc.
                       </div>
@@ -952,7 +952,7 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="file" name="registration_certificate" accept="image/*,.pdf" required data-inline-onchange="showFile(this,'registrationName')" className="w-full text-sm" />
+                      <input type="file" name="registration_certificate" accept="image/*,.pdf" data-inline-onchange="showFile(this,'registrationName')" className="w-full text-sm" />
                       <div id="registrationName" className="file-name">
                         MSME / Society / Trust / LLP etc.
                       </div>
@@ -966,7 +966,7 @@ export default function Franchise() {
                         {" "}
                       </label>
                       {" "}
-                      <input type="file" name="institute_photos[]" accept="image/*" multiple required data-inline-onchange="checkPhotos(this)" className="w-full text-sm" />
+                      <input type="file" name="institute_photos[]" accept="image/*" multiple data-inline-onchange="checkPhotos(this)" className="w-full text-sm" />
                       <div id="photosName" className="file-name">
                         Please select at least 4 institute photos.
                       </div>

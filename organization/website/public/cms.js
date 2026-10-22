@@ -417,6 +417,15 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
   else run();
 
+  // Admission and franchise forms send their applications to the ERP
+  // (apply.js) -- not inside the editor, where the page is being edited.
+  if (!editing && !document.querySelector('script[src="/apply.js"]')) {
+    var applyScript = document.createElement("script");
+    applyScript.src = "/apply.js";
+    applyScript.defer = true;
+    document.head.appendChild(applyScript);
+  }
+
   // Exposed for the tests in the ERP; nothing on the site uses these.
   window.__cms = { keyOf: keyOf, find: find, clean: clean, applyAll: applyAll, outline: outline };
 })();
