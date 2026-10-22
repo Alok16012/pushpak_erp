@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatsCard } from "@/components/ui/StatsCard";
@@ -107,6 +108,7 @@ type LeadRow = AdmissionLead & { branch: string; state: string; district: string
 export default function AdmissionLeads() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const branchId = user?.branchId || null;
   const orgId = user?.organizationId || null;
   // An organisation account sees every centre's leads, so it picks the
@@ -231,6 +233,32 @@ export default function AdmissionLeads() {
     } finally {
       setSaving(false);
     }
+  };
+
+  /**
+   * Opens the admission form filled from the lead -- a website application
+   * already has the name, mobile and centre -- and, once the admission is
+   * saved there, the lead moves to Admission against the new student.
+   */
+  const convertToAdmission = (lead: AdmissionLead) => {
+    const [firstName, ...rest] = lead.studentName.trim().split(/\s+/);
+    // Only the admission form's own fields: it saves every key of its draft.
+    const draft = {
+      firstName: firstName || "",
+      lastName: rest.join(" "),
+      phone: lead.phone || "",
+      whatsappNumber: lead.whatsapp || lead.phone || "",
+      email: lead.email || "",
+      city: lead.city || "",
+      fatherName: lead.parentName || "",
+      branchId: lead.branchId || "",
+    };
+    try {
+      localStorage.setItem("admission-draft", JSON.stringify(draft));
+    } catch {
+      /* the form simply opens empty */
+    }
+    navigate(`/student/add?lead=${encodeURIComponent(lead.id)}`);
   };
 
   const moveStage = async (lead: AdmissionLead, status: LeadStage) => {
@@ -650,6 +678,7 @@ export default function AdmissionLeads() {
             actions={(lead) => [
               { label: "View details", onClick: () => void openDetail(lead) },
               { label: "Schedule follow-up", onClick: () => openFollowUp(lead) },
+              ...(lead.studentId ? [] : [{ label: "Convert to admission", onClick: () => convertToAdmission(lead) }]),
             ]}
             emptyMessage={loading ? "Loading enquiries…" : "No enquiries logged yet."}
           />

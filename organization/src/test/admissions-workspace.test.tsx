@@ -18,6 +18,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 
 const updates: Array<{ id: string; body: Record<string, unknown> }> = [];
 const created: Array<Record<string, unknown>> = [];
+const leadUpdates: Array<{ id: string; input: Record<string, unknown> }> = [];
 
 const STUDENT = {
   id: "s1",
@@ -65,7 +66,11 @@ vi.mock("@/lib/supabase/data", () => ({
   },
   createStudent: (_branchId: string, body: Record<string, unknown>) => {
     created.push(body);
-    return Promise.resolve({ success: true, data: { applicationNo: "APP-1" } });
+    return Promise.resolve({ success: true, data: { id: "new-student", applicationNo: "APP-1" } });
+  },
+  updateAdmissionLead: (id: string, input: Record<string, unknown>) => {
+    leadUpdates.push({ id, input });
+    return Promise.resolve({ success: true, data: {} });
   },
   getDropdownOptions: () => Promise.resolve({ success: true, data: {}, stored: true }),
   saveDropdownOptions: () => Promise.resolve({ success: true, stored: true }),
@@ -98,9 +103,31 @@ beforeEach(() => {
   localStorage.clear();
   updates.length = 0;
   created.length = 0;
+  leadUpdates.length = 0;
 });
 
 describe("admissions workspace", () => {
+  // Admission Leads -> "Convert to admission" opens the form filled from the
+  // lead; saving it closes the lead against the new student.
+  it("closes the admission lead it was opened from", async () => {
+    localStorage.setItem(
+      "admission-draft",
+      JSON.stringify({
+        firstName: "Rahul", lastName: "Kumar", phone: "9876543210", whatsappNumber: "9876543210", city: "Patepur",
+        fatherName: "Ram Kumar", branchId: "b1", dateOfBirth: "2008-05-01", gender: "MALE",
+        streetAddress: "Main Road", state: "Bihar", pincode: "844114", motherName: "Sita Devi",
+      }),
+    );
+    renderAt("/student/add?lead=L1");
+    expect(await screen.findByDisplayValue("Rahul")).toBeTruthy();
+    expect(screen.getAllByDisplayValue("9876543210").length).toBeGreaterThan(0);
+    step("Review");
+    fireEvent.click(await screen.findByRole("button", { name: /complete admission/i }));
+    await waitFor(() => expect(created).toHaveLength(1));
+    expect(created[0].firstName).toBe("Rahul");
+    await waitFor(() => expect(leadUpdates).toEqual([{ id: "L1", input: { status: "Admission", studentId: "new-student" } }]));
+  });
+
   it("opens as a new admission when no id is given", async () => {
     renderAt("/student/add");
     expect(await screen.findByRole("heading", { name: "New admission" })).toBeTruthy();

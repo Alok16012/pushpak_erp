@@ -27,6 +27,7 @@ import {
   createStudent,
   getStudent,
   updateStudent,
+  updateAdmissionLead,
   getBranches,
   getSessionYears,
   sessionYearsForDate,
@@ -282,6 +283,8 @@ export default function AdmissionsWorkspace() {
    * column on the record is on the page.
    */
   const editingId = params.get("id");
+  // Opened from an admission lead: the lead is closed against the new student.
+  const leadId = editingId ? null : params.get("lead");
   const organizationId = user?.organizationId;
   const branchId = user?.branchId;
   const [step, setStep] = useState(0);
@@ -677,6 +680,12 @@ export default function AdmissionsWorkspace() {
       });
       const applicationNo =
         (data as { applicationNo?: string } | null)?.applicationNo || "";
+      const studentId = (data as { id?: string } | null)?.id;
+      if (leadId && studentId) {
+        await updateAdmissionLead(leadId, { status: "Admission", studentId }).catch(() => {
+          /* the admission stands; the lead can be moved by hand */
+        });
+      }
       setIssued({
         applicationNo,
         name: [draft.firstName, draft.middleName, draft.lastName]
