@@ -197,6 +197,9 @@ export function tokensForRecord(student: StudentRecord, extra: TokenData = {}): 
     application_no: student.applicationNo || "",
     roll_no: student.rollNo || "",
     certificate_id: student.enrollmentNo || student.applicationNo || "",
+    // Names the page looked up: a raw row carries only the ids.
+    course_name: String(student.courseName ?? ""),
+    batch_name: String(student.batchName ?? ""),
     blood_group: student.bloodGroup || "",
     phone: student.phone || "",
     dob: student.dateOfBirth

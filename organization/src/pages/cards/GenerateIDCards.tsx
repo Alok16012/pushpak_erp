@@ -215,7 +215,11 @@ export default function GenerateIDCards() {
       toast({ title: "No students selected", description: "Tick at least one student.", variant: "destructive" });
       return;
     }
-    const picked = records.filter((row) => chosen.some((s) => s.id === row.id));
+    // The card prints the course and batch by name; the rows hold their ids.
+    const picked: StudentRecord[] = records.flatMap((row) => {
+      const shown = chosen.find((s) => s.id === row.id);
+      return shown ? [{ ...row, courseName: shown.class === "—" ? "" : shown.class, batchName: shown.section === "—" ? "" : shown.section }] : [];
+    });
     const printed = await printRecordsFromTemplate(
       "student-id",
       picked,

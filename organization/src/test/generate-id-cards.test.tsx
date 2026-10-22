@@ -72,7 +72,7 @@ describe("Generate ID Cards", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all students shown" }));
     fireEvent.click(screen.getByRole("button", { name: "Generate ID Cards (1)" }));
     await waitFor(() =>
-      expect(printRecordsFromTemplate).toHaveBeenCalledWith("student-id", [expect.objectContaining({ id: "s1" })], "org1", "b1"),
+      expect(printRecordsFromTemplate).toHaveBeenCalledWith("student-id", [expect.objectContaining({ id: "s1", courseName: "ADCA" })], "org1", "b1"),
     );
   });
 
