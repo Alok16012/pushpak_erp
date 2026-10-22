@@ -22,7 +22,7 @@ import {
   branchTokens,
   loadAssignedBranchDocuments,
   printBranchDocument,
-  printBranchDocuments,
+  printStandardCentreCertificate,
   standardCentreCertificateHtml,
   type BranchDetails,
   type BranchDocumentKind,
@@ -149,9 +149,7 @@ export default function CentreDocuments() {
     if (designed) return download(designed);
     if (!details) return;
     try {
-      await printBranchDocuments("centre-certificate", [details.branch], organizationId, details.institute, (branch) =>
-        standardCentreCertificateHtml(branch, details.institute),
-      );
+      printStandardCentreCertificate(details.branch, details.institute);
     } catch (error) {
       toast({
         title: "Could not print the certificate",

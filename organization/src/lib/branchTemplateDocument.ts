@@ -180,7 +180,7 @@ export function standardCentreCertificateHtml(branch: BranchDetails, institute: 
     ["Valid until", own("valid_until", branch.license?.expiryDate ?? branch.license?.validDate)],
   ].filter(([, value]) => value) as Array<[string, string]>;
   return `
-    <div style="page-break-after:always;border:6px double #173653;padding:56px 48px;text-align:center;font-family:Georgia,serif;color:#1f2937">
+    <div style="box-sizing:border-box;min-height:100%;border:6px double #173653;padding:96px 56px 64px;text-align:center;font-family:Georgia,serif;color:#1f2937;background:#fff">
       <p style="letter-spacing:.3em;font-size:13px;text-transform:uppercase;color:#a77a32;margin:0">${escapeHtml(institute)}</p>
       <h1 style="margin:18px 0 4px;font-size:34px;color:#173653">Centre Certificate</h1>
       <p style="color:#6b7280;font-size:14px;margin:0">This is to certify that the centre named below is an authorised study centre of ${escapeHtml(institute)}</p>
@@ -194,6 +194,11 @@ export function standardCentreCertificateHtml(branch: BranchDetails, institute: 
       </div>
     </div>
   `;
+}
+
+/** The standard centre certificate on an A4 sheet of its own, with no report heading over it. */
+export function printStandardCentreCertificate(branch: BranchDetails, institute: string) {
+  printDesignPages(`Centre Certificate — ${branch.name ?? ""}`, [standardCentreCertificateHtml(branch, institute)], 794, 1123);
 }
 
 /** Prints one already-drawn branch document, a sheet to itself. */
