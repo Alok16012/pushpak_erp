@@ -11,6 +11,7 @@ const toast = vi.fn();
 let walletBalance = 500;
 const issueCertificate = vi.fn((..._args: unknown[]) => Promise.resolve({ charged: true, alreadyIssued: false, amount: 150, certificateNo: "CERT-E001" }));
 const printFromTemplate = vi.fn((..._args: unknown[]) => Promise.resolve(true));
+const printMarksheetsFromTemplate = vi.fn((..._a: unknown[]) => Promise.resolve(true));
 const printManyFromTemplate = vi.fn((..._args: unknown[]) => Promise.resolve(true));
 const marksheetPdf = vi.fn((..._args: unknown[]) => Promise.resolve());
 let issuedList: unknown[] = [];
@@ -28,11 +29,13 @@ vi.mock("@/contexts/AuthContext", () => ({
 vi.mock("@/lib/studentTemplateDocument", () => ({
   printFromTemplate: (...a: unknown[]) => printFromTemplate(...a),
   printManyFromTemplate: (...a: unknown[]) => printManyFromTemplate(...a),
+  printMarksheetsFromTemplate: (...a: unknown[]) => printMarksheetsFromTemplate(...a),
   photoOf: () => "",
 }));
 vi.mock("@/lib/documents", () => ({
   certificatePdf: vi.fn(),
   certificatesPdf: vi.fn(),
+  marksheetsPdf: vi.fn(),
   marksheetPdf: (...a: unknown[]) => marksheetPdf(...a),
   marksheetSummary: () => ({ result: "Pass" }),
 }));
@@ -232,6 +235,27 @@ describe("exam workflow pages", () => {
       expect(printManyFromTemplate).toHaveBeenCalledWith("certificate", [expect.anything()], "org1", "b1", [{ certificate_no: "CERT-E001", certificate_id: "CERT-E001" }]),
     );
     await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "1 certificate(s) ready" })));
+  });
+
+  it("prints the chosen students' marksheets from the certificate form", async () => {
+    printMarksheetsFromTemplate.mockClear();
+    const Certificates = await page("@/pages/exam/Certificates");
+    render(<MemoryRouter><Certificates /></MemoryRouter>);
+    const label = () => Array.from(document.querySelectorAll("label")).find((el) => el.textContent === "Student")!;
+    await waitFor(() => expect(label()).toBeTruthy());
+    fireEvent.keyDown(within(label().parentElement!).getByRole("combobox"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: /Ram Kumar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Print marksheet" }));
+    await waitFor(() => expect(printFromTemplate).toHaveBeenCalledWith("marksheet", expect.anything(), "org1", "b1", expect.objectContaining({ marksheet_no: "MS-E001-1" })));
+
+    fireEvent.click(screen.getByRole("button", { name: "Multiple students" }));
+    const centre = Array.from(document.querySelectorAll("label")).find((el) => el.textContent === "Centre")!;
+    fireEvent.keyDown(within(centre.parentElement!).getByRole("combobox"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "Begusarai Centre" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select all students shown" }));
+    fireEvent.click(screen.getByRole("button", { name: "Print 1 marksheet" }));
+    await waitFor(() => expect(printMarksheetsFromTemplate).toHaveBeenCalledTimes(1));
+    expect((printMarksheetsFromTemplate.mock.calls[0] as unknown[])[0]).toEqual([expect.objectContaining({ branchId: "b1", extra: expect.objectContaining({ marksheet_no: "MS-E001-1" }) })]);
   });
 
   it("prints the marksheet beside an issued certificate", async () => {

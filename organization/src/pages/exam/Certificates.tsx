@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Printer } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, type Column } from "@/components/ui/DataTable";
@@ -17,7 +18,7 @@ import { printFromTemplate, printManyFromTemplate } from "@/lib/studentTemplateD
 import { Link } from "react-router-dom";
 import { getCertificateFees, getStudentDocument, getWallet, issueCertificate } from "@/lib/supabase/data";
 import { getAdmitCards, getIssuedCertificates, getMarksheets, type AdmitCardRecord, type IssuedCertificate, type MarksheetRecord } from "@/lib/supabase/examWorkflow";
-import { printMarksheet } from "./printMarksheet";
+import { printMarksheet, printMarksheets } from "./printMarksheet";
 import { studentName, useExamData } from "./useExamData";
 
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -223,26 +224,43 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
   };
 
   /** The marksheet that goes with the certificate: the final passed term, else the latest one. */
-  const printSheet = async (c: IssuedCertificate) => {
+  /** The result a student's marksheet prints: the final passed term, else the latest one. */
+  const sheetOf = (sid: string) => finalPass(sid) || sheets.filter((s) => s.studentId === sid).sort((a, b) => b.term - a.term)[0];
+  const sheetOpts = (sheet: MarksheetRecord, examDate?: string) => ({
+    course: courseOf.get(sheet.courseId),
+    rollNo: cards.find((a) => a.studentId === sheet.studentId && a.term === sheet.term)?.rollNo,
+    examinationDate: examDate || sheet.issueDate,
+  });
+
+  /** One student's marksheet, beside their certificate. */
+  const printSheetFor = async (sid: string, dates: { issueDate: string; examConductedDate: string }) => {
     try {
-      const own = sheets.filter((s) => s.studentId === c.studentId).sort((a, b) => b.term - a.term);
-      const sheet = finalPass(c.studentId) || own[0];
+      const sheet = sheetOf(sid);
       if (sheet) {
-        await printMarksheet(sheet, {
-          course: courseOf.get(sheet.courseId),
-          rollNo: cards.find((a) => a.studentId === c.studentId && a.term === sheet.term)?.rollNo,
-          examinationDate: c.examConductedDate || sheet.issueDate,
-          organizationId: user?.organizationId ?? null,
-          ownBranch,
-        });
+        await printMarksheet(sheet, { ...sheetOpts(sheet, dates.examConductedDate), organizationId: user?.organizationId ?? null, ownBranch });
         return;
       }
       // A student passed on the older per-paper exams has no term result: their published papers are the marksheet.
-      const { data } = await getStudentDocument(c.studentId, ownBranch);
+      const { data } = await getStudentDocument(sid, ownBranch);
       if (!data.examResults.length) throw new Error("This student has no result to print. Create it under Results first.");
-      await marksheetPdf({ ...data, rollNo: rollOf(c.studentId) || data.rollNo, issueDate: c.issueDate, examinationDate: c.examConductedDate });
+      await marksheetPdf({ ...data, rollNo: rollOf(sid) || data.rollNo, issueDate: dates.issueDate, examinationDate: dates.examConductedDate });
     } catch (e) {
       toast({ title: "Could not print marksheet", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+  const printSheet = (c: IssuedCertificate) => printSheetFor(c.studentId, { issueDate: c.issueDate, examConductedDate: c.examConductedDate });
+
+  /** The ticked students' marksheets, together in one print run. */
+  const printSheetsMany = async () => {
+    const withSheets = chosen.map((s) => sheetOf(s.id)).filter((s): s is MarksheetRecord => !!s);
+    if (!withSheets.length) return toast({ title: "No results to print", description: "None of the ticked students has a result yet.", variant: "destructive" });
+    setBusy(true);
+    try {
+      await printMarksheets(withSheets.map((sheet) => ({ sheet, opts: sheetOpts(sheet, examDate) })), user?.organizationId ?? null, ownBranch);
+    } catch (e) {
+      toast({ title: "Could not print marksheets", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -400,12 +418,26 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
                 <Button onClick={generateMany} disabled={busy || !chosen.length || short}>
                   {busy ? "Working…" : `Generate ${chosen.length || ""} certificate${chosen.length === 1 ? "" : "s"}`.replace("  ", " ")}
                 </Button>
+                <Button variant="outline" onClick={() => void printSheetsMany()} disabled={busy || !chosen.length}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print {chosen.length || ""} marksheet{chosen.length === 1 ? "" : "s"}
+                </Button>
                 {progress && <span className="text-sm text-muted-foreground">{progress}</span>}
               </div>
             ) : (
-              <Button onClick={generate} disabled={busy || !student || short || (hasSheets(studentId) && !sheet && !already)}>
-                {busy ? "Working…" : already ? "Reprint certificate" : "Generate certificate"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button onClick={generate} disabled={busy || !student || short || (hasSheets(studentId) && !sheet && !already)}>
+                  {busy ? "Working…" : already ? "Reprint certificate" : "Generate certificate"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => student && void printSheetFor(student.id, { issueDate: already?.issueDate || issueDate, examConductedDate: already?.examConductedDate || examDate })}
+                  disabled={busy || !student}
+                >
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print marksheet
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>
