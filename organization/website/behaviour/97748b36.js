@@ -88,7 +88,7 @@ Preferred Mode: ${mode}
 
 Please share admission details, batch timing and enrollment process.`;
 
-    const whatsappNumber = "919999999999";
+    const whatsappNumber = (window.siteWhatsapp && window.siteWhatsapp() || "919999999999");
 
     const url =
         "https://wa.me/" +

@@ -112,7 +112,7 @@ I want to join the Back Office & Computer Operator Course at PNS Academy.`;
     /* CHANGE YOUR WHATSAPP NUMBER HERE */
 
     const whatsappNumber =
-        "919999999999";
+        (window.siteWhatsapp && window.siteWhatsapp() || "919999999999");
 
 
     const url =

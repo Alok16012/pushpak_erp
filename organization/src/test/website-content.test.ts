@@ -122,6 +122,20 @@ describe("website/public/cms.js", () => {
     expect(mail.textContent).toBe("hello@idealdigiskills.com");
   });
 
+  // Enquiry forms build their WhatsApp link in the page's own script, after
+  // the settings have loaded; they ask cms.js for the number.
+  it("hands the WhatsApp number to the pages' own enquiry scripts", () => {
+    const opened: string[] = [];
+    const form = readFileSync(path.resolve(__dirname, "../../website/behaviour/97748b36.js"), "utf8");
+    expect(form).toContain("window.siteWhatsapp()");
+    cms.applyAll({ settings: { whatsapp: "7519884465" } });
+    expect((window as unknown as { siteWhatsapp: () => string }).siteWhatsapp()).toBe("917519884465");
+    // The same expression the scripts use, with the saved number and without.
+    const pick = () => (window as unknown as { siteWhatsapp?: () => string }).siteWhatsapp?.() || "919999999999";
+    opened.push(`https://wa.me/${pick()}?text=Hi`);
+    expect(opened[0]).toBe("https://wa.me/917519884465?text=Hi");
+  });
+
   it("outlines the page as header, sections and footer with their fields", () => {
     document.querySelector("section")!.insertAdjacentHTML("beforeend", '<a href="/join"><svg><path/></svg> Join now</a><p>Line one<br>line two</p>');
     const outline = cms.outline();

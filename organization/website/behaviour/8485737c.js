@@ -127,7 +127,7 @@ Please share complete admission details.`;
 
 
     const whatsappURL =
-    "https://wa.me/919999999999?text="
+    ("https://wa.me/" + (window.siteWhatsapp && window.siteWhatsapp() || "919999999999") + "?text=")
     + encodeURIComponent(message);
 
 

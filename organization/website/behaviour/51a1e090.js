@@ -147,7 +147,7 @@ Preferred Mode: ${mode}
 Message: ${message}`;
 
     const whatsappNumber =
-        "919999999999";
+        (window.siteWhatsapp && window.siteWhatsapp() || "919999999999");
 
     const url =
         "https://wa.me/" +

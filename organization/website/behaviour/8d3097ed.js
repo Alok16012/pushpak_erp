@@ -152,7 +152,7 @@ I want to join the Google Suite course at PNS Academy.`;
     /* CHANGE WHATSAPP NUMBER */
 
     const whatsappNumber =
-        "919999999999";
+        (window.siteWhatsapp && window.siteWhatsapp() || "919999999999");
 
 
     const whatsappURL =

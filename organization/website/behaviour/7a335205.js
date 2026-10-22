@@ -121,7 +121,7 @@ document.getElementById("admissionForm")
 I want to take admission in the Java Development Course at PNS Academy.`;
 
 
-    const whatsappNumber = "919999999999";
+    const whatsappNumber = (window.siteWhatsapp && window.siteWhatsapp() || "919999999999");
 
     const url =
         "https://wa.me/" +

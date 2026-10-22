@@ -112,7 +112,7 @@ Course: ${course}
 Please share course details, batch timing and admission process.`;
 
 
-      const whatsappNumber = "919999999999";
+      const whatsappNumber = (window.siteWhatsapp && window.siteWhatsapp() || "919999999999");
 
       const url =
         "https://wa.me/" +

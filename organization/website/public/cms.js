@@ -90,6 +90,11 @@
     else if (edit.hidden === false) { el.removeAttribute("data-cms-hidden"); el.style.removeProperty("display"); }
   }
 
+  // The WhatsApp number set in the ERP, for the pages' own scripts that open a
+  // chat (enquiry forms): they ask for it when a visitor submits.
+  var siteWhatsapp = "";
+  window.siteWhatsapp = function () { return siteWhatsapp; };
+
   function digits(s) { return String(s || "").replace(/[^\d]/g, ""); }
   function withCountry(s) { var d = digits(s); return d.length === 10 ? "91" + d : d; }
 
@@ -109,6 +114,7 @@
     }
     if (s.whatsapp) {
       var wa = withCountry(s.whatsapp);
+      siteWhatsapp = wa;
       document.querySelectorAll('a[href*="wa.me/"]').forEach(function (a) {
         a.setAttribute("href", a.getAttribute("href").replace(/wa\.me\/[^?"]*/, "wa.me/" + wa));
       });

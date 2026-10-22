@@ -136,7 +136,7 @@ document.getElementById("admissionForm")
 
 
     const whatsappNumber =
-        "919999999999";
+        (window.siteWhatsapp && window.siteWhatsapp() || "919999999999");
 
 
     const url =
