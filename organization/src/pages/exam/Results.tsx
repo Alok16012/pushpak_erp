@@ -294,10 +294,31 @@ export default function Results() {
                   <tbody>
                     {lines.map((l, i) => {
                       const low = (v: number | null, min: number) => v !== null && v < min;
+                      // A paper the course no longer has, kept from when this
+                      // marksheet was made: shown so its marks are not lost
+                      // silently, and removable from here.
+                      const dropped = !subjects.some((s) => s.term === term && s.id === l.subjectId);
                       return (
-                        <tr key={l.subjectId} className="border-b last:border-0">
+                        <tr key={l.subjectId} className={`border-b last:border-0 ${dropped ? "bg-muted/40" : ""}`}>
                           <td className="p-2 font-mono text-xs">{l.code || "—"}</td>
-                          <td className="p-2 font-medium">{l.name}</td>
+                          <td className="p-2 font-medium">
+                            {l.name}
+                            {dropped && (
+                              <span className="mt-1 flex flex-wrap items-center gap-2 text-xs font-normal text-muted-foreground">
+                                No longer a subject of this course.
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  aria-label={`Remove ${l.name} from this marksheet`}
+                                  onClick={() => setLines((prev) => prev.filter((_, n) => n !== i))}
+                                >
+                                  Remove
+                                </Button>
+                              </span>
+                            )}
+                          </td>
                           <td className="p-2 text-center text-muted-foreground">{hasTheory(l) ? `${l.theoryMin} / ${l.theoryMax}` : "—"}</td>
                           <td className="p-2 w-32">
                             {hasTheory(l) && (

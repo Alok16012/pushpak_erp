@@ -8,6 +8,7 @@ import { MemoryRouter } from "react-router-dom";
  * before saving -- the final term's marksheet is what a certificate rests on.
  */
 const toast = vi.fn();
+let sheets: Array<Record<string, unknown>> = [];
 const saveMarksheet = vi.fn((_input: Record<string, unknown>, _by: string) => Promise.resolve({ result: "PASS", percentage: 75, grade: "A" }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
@@ -32,7 +33,9 @@ vi.mock("@/lib/supabase/data", () => ({
 }));
 vi.mock("@/lib/supabase/examWorkflow", () => ({
   getExamCentres: () => Promise.resolve([]),
-  getMarksheets: () => Promise.resolve([]),
+  getMarksheets: () => Promise.resolve(sheets),
+  getExamSchedules: () => Promise.resolve([]),
+  getAdmitCards: () => Promise.resolve([]),
   deleteMarksheet: vi.fn(),
   saveMarksheet: (input: Record<string, unknown>, by: string) => saveMarksheet(input, by),
   getCourseSubjects: () =>
@@ -59,6 +62,7 @@ const choose = async (label: string, option: RegExp | string) => {
 };
 
 beforeEach(() => {
+  sheets = [];
   toast.mockClear();
   saveMarksheet.mockClear();
 });
@@ -97,6 +101,35 @@ describe("Results page", () => {
       ["Web Design", 80, 40],
       ["Tally", 90, null],
     ]);
+  });
+
+  it("lets a paper the course no longer has be removed from a saved marksheet", async () => {
+    // Saved when the second year still had "Old Paper"; the course has since dropped it.
+    sheets = [{
+      id: "m1", studentId: "s1", branchId: "b1", courseId: "c1", term: 2, session: "2026-2027", issueDate: "2026-10-21",
+      marks: [
+        { subjectId: "x1", code: "A01", name: "Web Design", subjectType: "BOTH", theoryMax: 100, theoryMin: 35, theory: 70, practicalMax: 50, practicalMin: 20, practical: 30 },
+        { subjectId: "gone", code: "OLD", name: "Old Paper", subjectType: "THEORY", theoryMax: 100, theoryMin: 35, theory: 60, practicalMax: 0, practicalMin: 0, practical: null },
+      ],
+      totalObtained: 160, totalMax: 250, percentage: 64, grade: "B", result: "PASS", isFinal: true, marksheetNo: "MS-E001-2", updatedAt: "",
+    }];
+    render(<MemoryRouter><Results /></MemoryRouter>);
+    await waitFor(() => expect(control("Centre")).toHaveTextContent("Begusarai Centre"));
+    await choose("Student", /Ram Kumar/);
+    await choose("Year / Semester", "2nd Year");
+
+    expect(await screen.findByText("Old Paper")).toBeInTheDocument();
+    expect(screen.getByText("No longer a subject of this course.")).toBeInTheDocument();
+    // Only the dropped paper can be removed.
+    expect(screen.queryByRole("button", { name: "Remove Web Design from this marksheet" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Old Paper from this marksheet" }));
+    expect(screen.queryByText("Old Paper")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Tally theory"), { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update result" }));
+    await waitFor(() => expect(saveMarksheet).toHaveBeenCalledTimes(1));
+    const [input] = saveMarksheet.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect((input.marks as Array<Record<string, unknown>>).map((l) => l.name)).toEqual(["Web Design", "Tally"]);
   });
 
   it("will not save a mark above the paper's maximum", async () => {
