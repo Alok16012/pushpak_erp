@@ -184,9 +184,9 @@ export function admissionPdf(s: StudentDocument) {
    so the generator lays out a marksheet rather than asserting who awarded it. */
 
 const MARKSHEET = {
-  /** A4 landscape, in mm. */
-  width: 297,
-  height: 210,
+  /** A4 portrait, in mm: the sheet an institute files and hands over. */
+  width: 210,
+  height: 297,
   margin: 12,
 } as const;
 
@@ -257,7 +257,7 @@ export function marksheetSummary(results: StudentDocument["examResults"]) {
 }
 
 /** The assessment table's column edges, left to right. */
-const MARK_COLUMNS = [12, 26, 150, 195, 240, 285];
+const MARK_COLUMNS = [12, 24, 102, 134, 166, 198];
 
 type Paper = { marks: number; max: number };
 /** One subject on the marksheet: its theory and practical papers side by side. */
@@ -338,8 +338,8 @@ function marksheetTableHeader(doc: jsPDF, y: number, outs: Array<number | null>)
 }
 
 export async function marksheetPdf(s: StudentDocument) {
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  const { width, margin } = MARKSHEET;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const { width, height, margin } = MARKSHEET;
   const centre = width / 2;
   const right = width - margin;
   const name = [s.firstName, s.lastName].filter(Boolean).join(" ") || "-";
@@ -356,10 +356,12 @@ export async function marksheetPdf(s: StudentDocument) {
     doc.setTextColor(150);
     doc.text("Photograph", margin + 13, 27, { align: "center" });
   }
+  // Under the photograph: on a portrait sheet the space beside it belongs to
+  // the centred title block.
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
+  doc.setFontSize(8);
   doc.setTextColor(20);
-  doc.text(`Roll No.: ${roll}`, margin + 31, 28);
+  doc.text(`Roll No.: ${roll}`, margin, 47);
 
   tryImage(doc, s.branch.logo, centre - 9, 8, 18, 18);
   // The QR proves the sheet against the institute's own record; without a
@@ -395,7 +397,7 @@ export async function marksheetPdf(s: StudentDocument) {
   // Floored below the photograph box, which ends at 42. An institute that has
   // configured none of the heading lines leaves the title block short, and the
   // particulars were being drawn straight through the photograph.
-  y = Math.max(y + 10, 50);
+  y = Math.max(y + 10, 56);
   particular(doc, "Name:", name, margin, y, colWidth);
   particular(doc, "Registration/Roll No.:", roll, colTwo, y, colWidth);
   y += 8;
@@ -439,12 +441,12 @@ export async function marksheetPdf(s: StudentDocument) {
     !paper ? "-" : out != null ? shownMarks(paper.marks) : `${shownMarks(paper.marks)} / ${shownMarks(paper.max)}`;
   y = header(y + 8);
   const summary = marksheetSummary(s.examResults);
-  const rowHeight = 8;
+  const rowHeight = 9;
 
   rows.forEach((row, index) => {
     // A long list runs onto a second sheet with its own header rather than off
     // the bottom edge of the first.
-    if (y > 170) {
+    if (y > height - 45) {
       doc.addPage();
       y = header(20);
     }
@@ -453,13 +455,13 @@ export async function marksheetPdf(s: StudentDocument) {
     for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + rowHeight);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text(String(index + 1), (c0 + c1) / 2, y + 5.5, { align: "center" });
+    doc.text(String(index + 1), (c0 + c1) / 2, y + 6, { align: "center" });
     doc.setFont("helvetica", "normal");
-    doc.text((doc.splitTextToSize(row.subject, c2 - c1 - 8) as string[])[0] || "-", c1 + 4, y + 5.5);
-    doc.text(cell(row.theory, outs[0]), (c2 + c3) / 2, y + 5.5, { align: "center" });
-    doc.text(cell(row.practical, outs[1]), (c3 + c4) / 2, y + 5.5, { align: "center" });
+    doc.text((doc.splitTextToSize(row.subject, c2 - c1 - 8) as string[])[0] || "-", c1 + 4, y + 6);
+    doc.text(cell(row.theory, outs[0]), (c2 + c3) / 2, y + 6, { align: "center" });
+    doc.text(cell(row.practical, outs[1]), (c3 + c4) / 2, y + 6, { align: "center" });
     doc.setFont("helvetica", "bold");
-    doc.text(cell(row.total, outs[2]), (c4 + c5) / 2, y + 5.5, { align: "center" });
+    doc.text(cell(row.total, outs[2]), (c4 + c5) / 2, y + 6, { align: "center" });
     y += rowHeight;
   });
 
@@ -469,7 +471,8 @@ export async function marksheetPdf(s: StudentDocument) {
     return papers.length ? papers.reduce((a, p) => ({ marks: a.marks + p.marks, max: a.max + p.max }), { marks: 0, max: 0 }) : undefined;
   };
   const totalCell = (p: Paper | undefined) => (p ? `${shownMarks(p.marks)} / ${shownMarks(p.max)}` : "-");
-  if (y > 178) {
+  // The totals, the result strip and the signature stay together on one sheet.
+  if (y > height - 62) {
     doc.addPage();
     y = header(20);
   }
