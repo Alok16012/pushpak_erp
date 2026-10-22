@@ -29,6 +29,9 @@ import {
   getAdmitCards,
   getCourseSubjects,
   getExamSchedules,
+  getPrintApprovals,
+  approvalFor,
+  type PrintApproval,
   getMarksheets,
   saveMarksheet,
   type AdmitCardRecord,
@@ -47,7 +50,9 @@ const today = () => new Date().toLocaleDateString("en-CA");
  */
 export default function Results() {
   const { toast } = useToast();
-  const { user, ownBranch, branches, sessions, students, courseOf, branchOf, studentOf } = useExamData();
+  const { user, isAdmin, ownBranch, branches, sessions, students, courseOf, branchOf, studentOf } = useExamData();
+  // The head office's decision on each centre-made marksheet; null when approvals are not set up.
+  const [approvals, setApprovals] = useState<PrintApproval[] | null>([]);
   const [branchId, setBranchId] = useState("");
   // Results ticked in the list, for printing their marksheets together.
   const [printIds, setPrintIds] = useState<string[]>([]);
@@ -71,11 +76,13 @@ export default function Results() {
 
   const load = useCallback(async () => {
     try {
-      const [m, s, a] = await Promise.all([
+      const [m, s, a, p] = await Promise.all([
         getMarksheets({ branchId: ownBranch }),
         getExamSchedules(ownBranch).catch(() => [] as ExamSchedule[]),
         getAdmitCards({ branchId: ownBranch }).catch(() => [] as AdmitCardRecord[]),
+        getPrintApprovals(ownBranch).catch(() => null),
       ]);
+      setApprovals(p);
       setSheets(m);
       setSchedules(s);
       setCards(a);
@@ -144,7 +151,7 @@ export default function Results() {
       );
       toast({
         title: existing ? "Result updated" : "Result saved",
-        description: `${studentName(student)} · ${result.result} · ${result.percentage}% (${result.grade})`,
+        description: `${studentName(student)} · ${result.result} · ${result.percentage}% (${result.grade})${isAdmin || approvals === null ? "" : " · sent to the head office for print approval"}`,
       });
       await load();
     } catch (e) {
@@ -169,7 +176,14 @@ export default function Results() {
     examinationDate: examDateOf(sheet),
   });
 
+  // A centre-made marksheet prints once the head office approves it; the head office prints any.
+  const approvalOf = (sheet: MarksheetRecord) => approvalFor(approvals, "MARKSHEET", sheet.id);
+  const printable = (sheet: MarksheetRecord) => isAdmin || approvalOf(sheet) === "APPROVED";
+
   const print = async (sheet: MarksheetRecord) => {
+    if (!printable(sheet)) {
+      return toast({ title: "Waiting for approval", description: "This marksheet prints once the head office approves it.", variant: "destructive" });
+    }
     try {
       await printMarksheet(sheet, { ...optsFor(sheet), organizationId: user?.organizationId ?? null, ownBranch });
     } catch (e) {
@@ -178,7 +192,11 @@ export default function Results() {
   };
 
   /** Several marksheets in one go: one print run, or one PDF with a page per student. */
-  const printMany = async (chosen: MarksheetRecord[]) => {
+  const printMany = async (all: MarksheetRecord[]) => {
+    const chosen = all.filter(printable);
+    if (all.length > chosen.length) {
+      toast({ title: `${all.length - chosen.length} marksheet(s) left out`, description: "They are waiting for the head office's approval." });
+    }
     if (!chosen.length) return;
     setPrinting(true);
     try {
@@ -207,7 +225,7 @@ export default function Results() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  type Row = MarksheetRecord & { name: string; enrollmentNo: string; courseName: string; termName: string; centre: string };
+  type Row = MarksheetRecord & { name: string; enrollmentNo: string; courseName: string; termName: string; centre: string; approval: string };
   const rows: Row[] = sheets.map((s) => {
     const st = studentOf.get(s.studentId);
     const c = courseOf.get(s.courseId);
@@ -218,6 +236,7 @@ export default function Results() {
       courseName: c?.name || "—",
       termName: termLabel(termPlan(c).type, s.term),
       centre: branchOf.get(s.branchId)?.name || "—",
+      approval: approvalOf(s) === "APPROVED" ? "Approved" : approvalOf(s) === "REJECTED" ? "Rejected" : "Awaiting approval",
     };
   });
   const columns: Column<Row>[] = [
@@ -227,6 +246,22 @@ export default function Results() {
     { key: "termName", header: "Year / Sem", cell: (r) => <span>{r.termName} {r.isFinal && <Badge variant="secondary" className="ml-1">Final</Badge>}</span> },
     { key: "percentage", header: "Marks", sortable: true, cell: (r) => <span className="text-xs">{r.totalObtained}/{r.totalMax} · {r.percentage}% · {r.grade}</span> },
     { key: "result", header: "Result", cell: (r) => <Badge variant={r.result === "PASS" ? "default" : "destructive"}>{r.result}</Badge> },
+    ...(approvals === null
+      ? []
+      : [{
+          key: "approval",
+          header: "Print approval",
+          cell: (r: Row) => {
+            const note = approvals.find((a) => a.kind === "MARKSHEET" && a.marksheetId === r.id)?.note;
+            return r.approval === "Approved" ? (
+              <Badge variant="secondary">Approved</Badge>
+            ) : r.approval === "Rejected" ? (
+              <span><Badge variant="destructive">Rejected</Badge>{note && <span className="block text-xs text-destructive">{note}</span>}</span>
+            ) : (
+              <Badge variant="outline" className="border-amber-300 text-amber-700">Awaiting approval</Badge>
+            );
+          },
+        } as Column<Row>]),
     { key: "centre", header: "Institute" },
   ];
 
@@ -400,6 +435,7 @@ export default function Results() {
               { label: "Course", key: "courseName" },
               { label: "Result", key: "result" },
               { label: "Institute", key: "centre" },
+              ...(approvals === null ? [] : [{ label: "Print approval", key: "approval" as const }]),
             ]}
             actions={(r) => [
               { label: "Edit", onClick: () => edit(r) },

@@ -5743,6 +5743,9 @@ export async function issueCertificate(
     if (/NOT_ELIGIBLE/.test(error.message)) {
       throw new Error("The student has no passed final-term marksheet yet. Create and pass the final result first.");
     }
+    if (/APPROVAL_REQUIRED/.test(error.message)) {
+      throw new Error("This certificate is waiting for the head office's approval.");
+    }
     throw new Error(error.message);
   }
   const row = (data || {}) as Partial<CertificateCharge>;

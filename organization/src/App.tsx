@@ -79,6 +79,7 @@ const ExamSchedule = lazy(() => import("./pages/exam/ExamSchedule"));
 const AdmitCards = lazy(() => import("./pages/exam/AdmitCards"));
 const Results = lazy(() => import("./pages/exam/Results"));
 const Certificates = lazy(() => import("./pages/exam/Certificates"));
+const PrintApprovals = lazy(() => import("./pages/exam/PrintApprovals"));
 const CentreCharges = lazy(() => import("./pages/branch/CentreCharges"));
 
 // Online Exam
@@ -269,6 +270,7 @@ const App = () => (
           <Route path="/certificate/template" element={<DocumentDesigner />} />
           <Route path="/certificate/generate" element={<AssessmentsWorkspace />} />
           <Route path="/certificate/issue" element={<Certificates />} />
+          <Route path="/certificate/approvals" element={<PrintApprovals />} />
           <Route path="/student/passout" element={<Certificates passoutOnly />} />
           <Route path="/certificate/centre" element={<CentreDocuments />} />
 

@@ -17,7 +17,18 @@ import { matchesSearch } from "@/lib/search";
 import { printFromTemplate, printManyFromTemplate } from "@/lib/studentTemplateDocument";
 import { Link } from "react-router-dom";
 import { getCertificateFees, getStudentDocument, getWallet, issueCertificate } from "@/lib/supabase/data";
-import { getAdmitCards, getIssuedCertificates, getMarksheets, type AdmitCardRecord, type IssuedCertificate, type MarksheetRecord } from "@/lib/supabase/examWorkflow";
+import {
+  approvalFor,
+  getAdmitCards,
+  getIssuedCertificates,
+  getMarksheets,
+  getPrintApprovals,
+  requestCertificateApproval,
+  type AdmitCardRecord,
+  type IssuedCertificate,
+  type MarksheetRecord,
+  type PrintApproval,
+} from "@/lib/supabase/examWorkflow";
 import { printMarksheet, printMarksheets } from "./printMarksheet";
 import { studentName, useExamData } from "./useExamData";
 
@@ -32,7 +43,9 @@ const shown = (iso: string) =>
  */
 export default function Certificates({ passoutOnly = false }: { passoutOnly?: boolean }) {
   const { toast } = useToast();
-  const { user, ownBranch, branches, students, courseOf, branchOf, studentOf } = useExamData();
+  const { user, isAdmin, ownBranch, branches, students, courseOf, branchOf, studentOf } = useExamData();
+  // The head office's decisions on this centre's certificates and marksheets; null when approvals are not set up.
+  const [approvals, setApprovals] = useState<PrintApproval[] | null>([]);
   const [branchId, setBranchId] = useState("");
   const [studentId, setStudentId] = useState("");
   const [issueDate, setIssueDate] = useState(today);
@@ -57,12 +70,14 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
 
   const load = useCallback(async () => {
     try {
-      const [c, m, f, a] = await Promise.all([
+      const [c, m, f, a, p] = await Promise.all([
         getIssuedCertificates(ownBranch),
         getMarksheets({ branchId: ownBranch }),
         getCertificateFees().catch(() => new Map<string, number>()),
         getAdmitCards({ branchId: ownBranch }).catch(() => [] as AdmitCardRecord[]),
+        getPrintApprovals(ownBranch).catch(() => null),
       ]);
+      setApprovals(p);
       setIssued(c);
       setSheets(m);
       setFees(f);
@@ -111,6 +126,13 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
       .catch(() => { /* the database still refuses a charge it cannot cover */ });
     return () => { cancelled = true; };
   }, [payingBranch, issued]);
+  // The head office prints what it likes; a centre waits for approval.
+  const certApproval = (sid: string) => (isAdmin ? "APPROVED" : approvalFor(approvals, "CERTIFICATE", sid));
+  const certRequest = (sid: string) => approvals?.find((a) => a.kind === "CERTIFICATE" && a.studentId === sid);
+  const sheetApproved = (sheet: MarksheetRecord) => isAdmin || approvalFor(approvals, "MARKSHEET", sheet.id) === "APPROVED";
+  const waiting = (approvals || []).filter((a) => a.kind === "CERTIFICATE" && a.status !== "APPROVED");
+  const studentApproval = student && !already ? certApproval(student.id) : null;
+
   const short = many
     ? manyCost > 0 && balance !== null && balance < manyCost
     : !already && fee > 0 && balance !== null && balance < fee;
@@ -138,17 +160,29 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
     if (!printed) await certificatePdf(doc);
   };
 
-  /** Issues each chosen student's certificate in turn, then prints them all as one run. */
+  /**
+   * Issues each chosen student's certificate in turn, then prints them all as
+   * one run. A centre's new certificates go to the head office instead, and
+   * print here once approved.
+   */
   const generateMany = async () => {
     if (!issueDate) return toast({ title: "Choose the issue date", variant: "destructive" });
     setBusy(true);
     const printable: Array<{ doc: StudentDocument; extra: Record<string, string> }> = [];
     let issuedNow = 0;
     let charged = 0;
+    let sent = 0;
     try {
       for (const [i, s] of chosen.entries()) {
         setProgress(`${i + 1} of ${chosen.length}: ${studentName(s)}`);
         const examConductedDate = examDate || finalPass(s.id)?.issueDate || "";
+        if (!issuedFor(s.id)) {
+          const status = await requestCertificateApproval(s.id, user?.name, { issueDate, examConductedDate: examConductedDate || null });
+          if (status !== "APPROVED") {
+            sent += 1;
+            continue;
+          }
+        }
         const charge = await issueCertificate(s.id, user?.name, { issueDate, examConductedDate: examConductedDate || null });
         if (!charge.alreadyIssued) issuedNow += 1;
         if (charge.charged) charged += charge.amount;
@@ -163,11 +197,12 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
       }
     } catch (e) {
       toast({
-        title: `Stopped after ${printable.length} of ${chosen.length}`,
+        title: `Stopped after ${printable.length + sent} of ${chosen.length}`,
         description: e instanceof Error ? e.message : "",
         variant: "destructive",
       });
     }
+    if (sent) toast({ title: `${sent} sent for approval`, description: "They print here once the head office approves them." });
     try {
       if (printable.length) {
         setProgress("Preparing the print…");
@@ -199,6 +234,15 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
         const { data } = await getStudentDocument(student.id, ownBranch);
         if (marksheetSummary(data.examResults).result !== "Pass") {
           throw new Error("No passed final result for this student. Create the final term result under Results first.");
+        }
+      }
+      // A centre's new certificate waits for the head office.
+      if (!already) {
+        const status = await requestCertificateApproval(student.id, user?.name, { issueDate, examConductedDate: examDate || null });
+        if (status !== "APPROVED") {
+          toast({ title: "Sent for approval", description: `${studentName(student)}'s certificate is waiting for the head office. It prints here once approved.` });
+          await load();
+          return;
         }
       }
       const charge = await issueCertificate(student.id, user?.name, { issueDate, examConductedDate: examDate || null });
@@ -236,6 +280,9 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
   const printSheetFor = async (sid: string, dates: { issueDate: string; examConductedDate: string }) => {
     try {
       const sheet = sheetOf(sid);
+      if (sheet && !sheetApproved(sheet)) {
+        throw new Error("This marksheet is waiting for the head office's approval. It prints once approved.");
+      }
       if (sheet) {
         await printMarksheet(sheet, { ...sheetOpts(sheet, dates.examConductedDate), organizationId: user?.organizationId ?? null, ownBranch });
         return;
@@ -252,8 +299,11 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
 
   /** The ticked students' marksheets, together in one print run. */
   const printSheetsMany = async () => {
-    const withSheets = chosen.map((s) => sheetOf(s.id)).filter((s): s is MarksheetRecord => !!s);
-    if (!withSheets.length) return toast({ title: "No results to print", description: "None of the ticked students has a result yet.", variant: "destructive" });
+    const all = chosen.map((s) => sheetOf(s.id)).filter((s): s is MarksheetRecord => !!s);
+    const withSheets = all.filter(sheetApproved);
+    if (!all.length) return toast({ title: "No results to print", description: "None of the ticked students has a result yet.", variant: "destructive" });
+    if (!withSheets.length) return toast({ title: "Waiting for approval", description: "None of these marksheets has been approved by the head office yet.", variant: "destructive" });
+    if (withSheets.length < all.length) toast({ title: `${all.length - withSheets.length} marksheet(s) left out`, description: "They are waiting for the head office's approval." });
     setBusy(true);
     try {
       await printMarksheets(withSheets.map((sheet) => ({ sheet, opts: sheetOpts(sheet, examDate) })), user?.organizationId ?? null, ownBranch);
@@ -376,7 +426,15 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
                           {studentName(s)}
                           {(s.enrollmentNo || s.applicationNo) ? <span className="text-xs text-muted-foreground"> · {s.enrollmentNo || s.applicationNo}</span> : null}
                         </span>
-                        {done ? <Badge variant="secondary" className="text-[10px]">issued</Badge> : fin ? <Badge variant="outline" className="text-[10px]">{fin.percentage}% · {fin.grade}</Badge> : null}
+                        {done ? (
+                          <Badge variant="secondary" className="text-[10px]">issued</Badge>
+                        ) : certApproval(s.id) === "PENDING" ? (
+                          <Badge variant="outline" className="border-amber-300 text-[10px] text-amber-700">awaiting approval</Badge>
+                        ) : certApproval(s.id) === "REJECTED" ? (
+                          <Badge variant="destructive" className="text-[10px]">rejected</Badge>
+                        ) : fin ? (
+                          <Badge variant="outline" className="text-[10px]">{fin.percentage}% · {fin.grade}</Badge>
+                        ) : null}
                       </label>
                     );
                   })}
@@ -399,8 +457,12 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
                 <p className="text-muted-foreground">
                   {already
                     ? `Certificate ${already.certificateNo || ""} already issued on ${shown(already.issueDate)} — printing it again is free.`
+                    : studentApproval === "PENDING"
+                      ? `Sent for approval on ${shown(certRequest(student.id)?.requestedAt || "")} — waiting for the head office. It prints here once approved.`
+                      : studentApproval === "REJECTED"
+                        ? `The head office rejected this request${certRequest(student.id)?.note ? `: "${certRequest(student.id)?.note}"` : ""}. Correct it and send again.`
                     : sheet
-                      ? `Final result: ${sheet.percentage}% · Grade ${sheet.grade} · PASS. ${fee > 0 ? `₹${fee.toLocaleString("en-IN")} will be deducted from ${branchOf.get(student.branchId)?.name || "the centre"}'s wallet${balance !== null ? ` (balance ₹${balance.toLocaleString("en-IN")})` : ""}.` : "No certificate fee for this centre."}`
+                      ? `Final result: ${sheet.percentage}% · Grade ${sheet.grade} · PASS. ${fee > 0 ? `₹${fee.toLocaleString("en-IN")} will be deducted from ${branchOf.get(student.branchId)?.name || "the centre"}'s wallet${balance !== null ? ` (balance ₹${balance.toLocaleString("en-IN")})` : ""}${isAdmin ? "" : " when the head office approves"}.` : "No certificate fee for this centre."}`
                       : hasSheets(student.id)
                         ? "No passed final-term result yet — the certificate cannot be issued."
                         : "No result on the new Results page; the older published exams will be checked."}
@@ -416,7 +478,11 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
             {many ? (
               <div className="flex flex-wrap items-center gap-3">
                 <Button onClick={generateMany} disabled={busy || !chosen.length || short}>
-                  {busy ? "Working…" : `Generate ${chosen.length || ""} certificate${chosen.length === 1 ? "" : "s"}`.replace("  ", " ")}
+                  {busy
+                    ? "Working…"
+                    : !isAdmin && newOnes.length
+                      ? `Send ${newOnes.length} for approval${chosen.length > newOnes.length ? ` · print ${chosen.length - newOnes.length}` : ""}`
+                      : `Generate ${chosen.length || ""} certificate${chosen.length === 1 ? "" : "s"}`.replace("  ", " ")}
                 </Button>
                 <Button variant="outline" onClick={() => void printSheetsMany()} disabled={busy || !chosen.length}>
                   <Printer className="mr-2 h-4 w-4" />
@@ -426,8 +492,18 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
-                <Button onClick={generate} disabled={busy || !student || short || (hasSheets(studentId) && !sheet && !already)}>
-                  {busy ? "Working…" : already ? "Reprint certificate" : "Generate certificate"}
+                <Button onClick={generate} disabled={busy || !student || short || (hasSheets(studentId) && !sheet && !already) || studentApproval === "PENDING"}>
+                  {busy
+                    ? "Working…"
+                    : already
+                      ? "Reprint certificate"
+                      : isAdmin
+                        ? "Generate certificate"
+                        : studentApproval === "PENDING"
+                          ? "Waiting for approval"
+                          : studentApproval === "REJECTED"
+                            ? "Send for approval again"
+                            : "Send for approval"}
                 </Button>
                 <Button
                   variant="outline"
@@ -439,6 +515,40 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
                 </Button>
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {!passoutOnly && isAdmin && waiting.some((w) => w.status === "PENDING") && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/60">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6 text-sm">
+            <span>{waiting.filter((w) => w.status === "PENDING").length} certificate request(s) from centres are waiting for your approval.</span>
+            <Button asChild size="sm"><Link to="/certificate/approvals">Open Print Approvals</Link></Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {!passoutOnly && !isAdmin && waiting.length > 0 && (
+        <Card className="mb-4">
+          <CardHeader><CardTitle>Sent for approval <Badge variant="secondary" className="ml-2">{waiting.length}</Badge></CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {waiting.map((w) => {
+              const st = studentOf.get(w.studentId);
+              return (
+                <div key={w.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    <span className="font-medium">{studentName(st) || "Student"}</span>
+                    <span className="text-muted-foreground"> · {st?.enrollmentNo || st?.applicationNo || ""} · sent {shown(w.requestedAt)}</span>
+                    {w.status === "REJECTED" && w.note && <span className="block text-xs text-destructive">Reason: {w.note}</span>}
+                  </span>
+                  {w.status === "PENDING" ? (
+                    <Badge variant="outline" className="border-amber-300 text-amber-700">Awaiting approval</Badge>
+                  ) : (
+                    <Badge variant="destructive">Rejected</Badge>
+                  )}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}

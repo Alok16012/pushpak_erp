@@ -1,4 +1,5 @@
 import {
+  ClipboardCheck,
   Code2,
   Users,
   Building2,
@@ -170,6 +171,8 @@ export const menuItems: MenuItem[] = [
     // ones set up once. Admit cards are issued under Exam & Marks.
     items: [
       { title: "Certificates", url: "/certificate/issue", icon: Award },
+      // The head office's queue of centres' certificates and marksheets.
+      { title: "Print Approvals", url: "/certificate/approvals", icon: ClipboardCheck },
       { title: "Centre Certificate", url: "/certificate/centre", icon: Award },
       { title: "Document Designer", url: "/documents/designer", icon: LayoutTemplate },
       { title: "Certificate Format", url: "/certificate/template", icon: LayoutTemplate },

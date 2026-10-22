@@ -9,6 +9,8 @@ import { MemoryRouter } from "react-router-dom";
  */
 const toast = vi.fn();
 let sheets: Array<Record<string, unknown>> = [];
+// Null: approvals not set up, so every marksheet prints.
+let approvals: Array<Record<string, unknown>> | null = null;
 const saveMarksheet = vi.fn((_input: Record<string, unknown>, _by: string) => Promise.resolve({ result: "PASS", percentage: 75, grade: "A" }));
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
@@ -37,6 +39,9 @@ vi.mock("@/lib/supabase/examWorkflow", () => ({
   getMarksheets: () => Promise.resolve(sheets),
   getExamSchedules: () => Promise.resolve([]),
   getAdmitCards: () => Promise.resolve([]),
+  getPrintApprovals: () => Promise.resolve(approvals),
+  approvalFor: (list: Array<{ kind: string; studentId: string; marksheetId: string; status: string }> | null, kind: string, key: string) =>
+    list === null ? "APPROVED" : list.find((a) => a.kind === kind && (kind === "MARKSHEET" ? a.marksheetId === key : a.studentId === key))?.status ?? null,
   deleteMarksheet: vi.fn(),
   saveMarksheet: (input: Record<string, unknown>, by: string) => saveMarksheet(input, by),
   getCourseSubjects: () =>
@@ -69,6 +74,7 @@ const choose = async (label: string, option: RegExp | string) => {
 
 beforeEach(() => {
   sheets = [];
+  approvals = null;
   toast.mockClear();
   saveMarksheet.mockClear();
   printMarksheetsFromTemplate.mockClear();
@@ -76,6 +82,25 @@ beforeEach(() => {
 });
 
 describe("Results page", () => {
+  it("prints a centre's marksheet only once the head office approves it", async () => {
+    const sheet = (id: string, studentId: string) => ({
+      id, studentId, branchId: "b1", courseId: "c1", term: 1, session: "2026-2027", issueDate: "2026-10-21",
+      marks: [], totalObtained: 70, totalMax: 100, percentage: 70, grade: "B", result: "PASS", isFinal: false, marksheetNo: `MS-${id}`, updatedAt: "",
+    });
+    sheets = [sheet("m1", "s1"), sheet("m2", "s2")];
+    approvals = [
+      { id: "a1", kind: "MARKSHEET", marksheetId: "m1", studentId: "s1", status: "APPROVED" },
+      { id: "a2", kind: "MARKSHEET", marksheetId: "m2", studentId: "s2", status: "PENDING" },
+    ];
+    render(<MemoryRouter><Results /></MemoryRouter>);
+    expect(await screen.findByText("Awaiting approval")).toBeInTheDocument();
+    expect(screen.getByText("Approved")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Print all (2)" }));
+    await waitFor(() => expect(marksheetsPdf).toHaveBeenCalledTimes(1));
+    expect((marksheetsPdf.mock.calls[0] as unknown[])[0]).toHaveLength(1);
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "1 marksheet(s) left out" }));
+  });
+
   it("prints the ticked students' marksheets together", async () => {
     const sheet = (id: string, studentId: string) => ({
       id, studentId, branchId: "b1", courseId: "c1", term: 1, session: "2026-2027", issueDate: "2026-10-21",

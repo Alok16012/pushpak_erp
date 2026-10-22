@@ -491,3 +491,103 @@ export async function getPublicAdmitCard(enrollmentNo: string): Promise<PublicAd
   }
   return (data || null) as PublicAdmitCard | null;
 }
+
+/* ------------------------------------------------------ print approvals */
+
+export type ApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+/** A centre's certificate or marksheet waiting on the head office (print-approvals.sql). */
+export interface PrintApproval {
+  id: string;
+  kind: "CERTIFICATE" | "MARKSHEET";
+  studentId: string;
+  branchId: string;
+  marksheetId: string;
+  issueDate: string;
+  examConductedDate: string;
+  status: ApprovalStatus;
+  note: string;
+  requestedBy: string;
+  requestedAt: string;
+  reviewedBy: string;
+  reviewedAt: string;
+}
+
+/**
+ * Every approval the signed-in user may see. Null when print-approvals.sql
+ * has not been run: the pages then print as they did before approvals.
+ */
+export async function getPrintApprovals(branchId: string | null): Promise<PrintApproval[] | null> {
+  let query = supabase.from("print_approvals").select("*").order("requestedAt", { ascending: false });
+  if (branchId) query = query.eq("branchId", branchId);
+  const { data, error } = await query;
+  if (error) {
+    if (missingRelation(error)) return null;
+    fail(error);
+  }
+  return (data || []).map((row: Record<string, unknown>) => ({
+    id: text(row.id),
+    kind: text(row.kind) === "MARKSHEET" ? "MARKSHEET" : "CERTIFICATE",
+    studentId: text(row.studentId),
+    branchId: text(row.branchId),
+    marksheetId: text(row.marksheetId),
+    issueDate: text(row.issueDate),
+    examConductedDate: text(row.examConductedDate),
+    status: (["PENDING", "APPROVED", "REJECTED"].includes(text(row.status)) ? text(row.status) : "PENDING") as ApprovalStatus,
+    note: text(row.note),
+    requestedBy: text(row.requestedBy),
+    requestedAt: text(row.requestedAt),
+    reviewedBy: text(row.reviewedBy),
+    reviewedAt: text(row.reviewedAt),
+  }));
+}
+
+/**
+ * A centre asks the head office for a student's certificate. APPROVED means
+ * go ahead and issue (the head office itself, or approved already); PENDING
+ * means it waits. Before print-approvals.sql is run, everyone may issue.
+ */
+export async function requestCertificateApproval(
+  studentId: string,
+  by?: string | null,
+  dates: { issueDate?: string | null; examConductedDate?: string | null } = {},
+): Promise<ApprovalStatus> {
+  const { data, error } = await supabase.rpc("request_certificate_approval", {
+    p_student_id: studentId,
+    p_requested_by: by || null,
+    p_issue_date: dates.issueDate || null,
+    p_exam_date: dates.examConductedDate || null,
+  });
+  if (error) {
+    if (missingRelation(error)) return "APPROVED";
+    if (/NOT_ELIGIBLE/.test(error.message)) throw new Error("The student has no passed final-term marksheet yet. Create and pass the final result first.");
+    fail(error);
+  }
+  return ((data as { status?: string } | null)?.status as ApprovalStatus) || "PENDING";
+}
+
+/** The head office approves or rejects. Approving a certificate issues it and charges the centre. */
+export async function reviewPrintApproval(id: string, approve: boolean, note?: string | null, by?: string | null) {
+  const { data, error } = await supabase.rpc("review_print_approval", {
+    p_id: id,
+    p_approve: approve,
+    p_note: note || null,
+    p_reviewed_by: by || null,
+  });
+  if (error) {
+    if (/NOT_ELIGIBLE/.test(error.message)) throw new Error("The student has no passed final-term marksheet yet.");
+    fail(error);
+  }
+  return data as { status: ApprovalStatus; issue?: { charged?: boolean; amount?: number; certificateNo?: string } | null };
+}
+
+/** The decision on one certificate or marksheet; with approvals not set up, everything is approved. */
+export function approvalFor(
+  approvals: PrintApproval[] | null,
+  kind: PrintApproval["kind"],
+  key: string,
+): ApprovalStatus | null {
+  if (approvals === null) return "APPROVED";
+  const found = approvals.find((a) => a.kind === kind && (kind === "MARKSHEET" ? a.marksheetId === key : a.studentId === key));
+  return found ? found.status : null;
+}
