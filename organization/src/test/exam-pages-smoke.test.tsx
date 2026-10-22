@@ -14,6 +14,7 @@ const printFromTemplate = vi.fn((..._args: unknown[]) => Promise.resolve(true));
 const printManyFromTemplate = vi.fn((..._args: unknown[]) => Promise.resolve(true));
 const marksheetPdf = vi.fn((..._args: unknown[]) => Promise.resolve());
 let issuedList: unknown[] = [];
+const saveAdmitCard = vi.fn((..._a: unknown[]) => Promise.resolve());
 const saveCourseSubject = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
@@ -80,7 +81,7 @@ vi.mock("@/lib/supabase/examWorkflow", () => ({
   deleteExamSchedule: vi.fn(),
   getAdmitCards: () =>
     Promise.resolve([{ id: "a1", studentId: "s1", branchId: "b1", courseId: "c1", term: 1, session: "2026-2027", rollNo: "R1001", examCentreId: "ec1", scheduleId: "sch1", isFinal: true, issuedAt: "" }]),
-  saveAdmitCard: vi.fn(),
+  saveAdmitCard: (...a: unknown[]) => saveAdmitCard(...a),
   deleteAdmitCard: vi.fn(),
   getMarksheets: () =>
     Promise.resolve([{ id: "m1", studentId: "s1", branchId: "b1", courseId: "c1", term: 1, session: "2026-2027", issueDate: "2026-11-20", marks: [], totalObtained: 120, totalMax: 150, percentage: 80, grade: "A", result: "PASS", isFinal: true, marksheetNo: "MS-E001-1", updatedAt: "" }]),
@@ -122,6 +123,27 @@ describe("exam workflow pages", () => {
     render(<MemoryRouter><AdmitCards /></MemoryRouter>);
     expect((await screen.findAllByText("R1001")).length).toBeGreaterThan(0);
     await waitFor(() => expect(screen.getAllByText("Ram Kumar").length).toBeGreaterThan(0));
+  });
+
+  it("issues admit cards to several ticked students at once", async () => {
+    saveAdmitCard.mockClear();
+    const AdmitCards = await page("@/pages/exam/AdmitCards");
+    render(<MemoryRouter><AdmitCards /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Multiple students" }));
+    const field = (label: string) => within(Array.from(document.querySelectorAll("label")).find((el) => el.textContent === label)!.parentElement!).getByRole("combobox");
+    await waitFor(() => expect(field("Centre")).toBeTruthy());
+    fireEvent.keyDown(field("Centre"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "Begusarai Centre" }));
+    fireEvent.keyDown(field("Course"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "ADCA" }));
+    expect(screen.queryByPlaceholderText("Enter roll no.")).toBeNull();
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select all students shown" }));
+    fireEvent.click(screen.getByRole("button", { name: "Issue 1 admit card" }));
+    await waitFor(() => expect(saveAdmitCard).toHaveBeenCalledTimes(1));
+    // An issued card keeps its own roll number.
+    expect(saveAdmitCard.mock.calls[0][0]).toEqual(expect.objectContaining({ studentId: "s1", rollNo: "R1001", scheduleId: "sch1" }));
+    expect(screen.getByRole("button", { name: "Print all (1)" })).toBeEnabled();
   });
 
   it("shows a course's subjects", async () => {
