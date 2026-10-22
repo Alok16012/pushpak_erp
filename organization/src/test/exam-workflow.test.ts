@@ -96,8 +96,8 @@ describe("marksheet", () => {
       "YEAR",
     );
     expect(rows).toEqual([
-      { marks: 70, exam: { name: "1st Year", subject: "Web (Theory)", maxMarks: 100, passMarks: 35, examDate: "2026-11-01" } },
-      { marks: 60, exam: { name: "1st Year", subject: "Web (Practical)", maxMarks: 100, passMarks: 35, examDate: "2026-11-01" } },
+      { marks: 70, exam: { name: "1st Year", subject: "Web (Theory)", maxMarks: 100, passMarks: 35, examDate: "2026-11-01", paper: "Theory", base: "Web" } },
+      { marks: 60, exam: { name: "1st Year", subject: "Web (Practical)", maxMarks: 100, passMarks: 35, examDate: "2026-11-01", paper: "Practical", base: "Web" } },
     ]);
   });
 });
