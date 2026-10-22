@@ -281,3 +281,89 @@ export function pickImage(
     input.click();
   });
 }
+
+/** A CR80 card -- the size of an ID card -- in mm, long side first. */
+const CARD_MM = { long: 85.6, short: 54 };
+const PX_PER_MM = 96 / 25.4;
+
+/**
+ * Lays designed cards out at their real size, as many to an A4 sheet as fit
+ * (ten landscape or nine portrait cards), with a light cut line round each.
+ * Each card is `{ html, width, height }` in the designer's pixels; the
+ * orientation is read from its own shape, so branches with differently
+ * turned designs share a sheet.
+ */
+export function printCardSheets(title: string, cards: Array<{ html: string; width: number; height: number }>) {
+  const page = { w: 210 - 12, h: 297 - 12 }; // A4 less a 6mm margin
+  const gap = 3;
+  const sized = cards.map((card) => {
+    const landscape = card.width >= card.height;
+    const w = landscape ? CARD_MM.long : CARD_MM.short;
+    const h = landscape ? CARD_MM.short : CARD_MM.long;
+    return { ...card, w, h, scale: (w * PX_PER_MM) / card.width };
+  });
+
+  // Rows across, sheets down: a card that does not fit the row starts the next
+  // row, and a row that does not fit the sheet starts the next sheet.
+  type Placed = (typeof sized)[number];
+  const sheets: Placed[][][] = [[[]]];
+  let rowW = 0;
+  let usedH = 0;
+  let rowH = 0;
+  for (const card of sized) {
+    let rows = sheets[sheets.length - 1];
+    if (rows[rows.length - 1].length && rowW + gap + card.w > page.w) {
+      // A new row: on this sheet if it fits below, else at the top of the next.
+      if (usedH + rowH + gap + card.h > page.h) {
+        sheets.push([[]]);
+        usedH = 0;
+      } else {
+        usedH += rowH + gap;
+        rows.push([]);
+      }
+      rows = sheets[sheets.length - 1];
+      rowW = 0;
+      rowH = 0;
+    }
+    rows[rows.length - 1].push(card);
+    rowW += (rowW ? gap : 0) + card.w;
+    rowH = Math.max(rowH, card.h);
+  }
+
+  const cardHtml = (card: Placed) =>
+    `<div class="card" style="width:${card.w}mm;height:${card.h}mm">` +
+    `<div style="width:${card.width}px;height:${card.height}px;transform:scale(${card.scale});transform-origin:0 0">${card.html}</div></div>`;
+  const body = sheets
+    .map((rows) => `<div class="sheet">${rows.map((row) => `<div class="row">${row.map(cardHtml).join("")}</div>`).join("")}</div>`)
+    .join("");
+
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  document.body.appendChild(frame);
+  const doc = frame.contentDocument;
+  if (!doc) return;
+  doc.write(
+    `<!doctype html><title>${title}</title><style>
+      @page{size:A4 portrait;margin:6mm}
+      html,body{margin:0;padding:0;font-family:ui-sans-serif,system-ui,sans-serif}
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .sheet{display:flex;flex-direction:column;gap:${gap}mm;page-break-after:always;break-after:page}
+      .sheet:last-child{page-break-after:auto;break-after:auto}
+      .row{display:flex;gap:${gap}mm;justify-content:center}
+      .card{overflow:hidden;outline:0.2mm dashed #bbb;break-inside:avoid}
+    </style>${body}`,
+  );
+  doc.close();
+  const loaded = (img: HTMLImageElement) =>
+    img.complete
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          img.addEventListener("load", () => resolve(), { once: true });
+          img.addEventListener("error", () => resolve(), { once: true });
+        });
+  Promise.all(Array.from(doc.images).map(loaded)).then(() => {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    setTimeout(() => frame.remove(), 1000);
+  });
+}

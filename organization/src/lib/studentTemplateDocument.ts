@@ -2,6 +2,7 @@ import QRCode from "qrcode";
 
 import {
   SAMPLE_DATA,
+  canvasSize,
   designHtml,
   marksTableRowHeight,
   type DocumentDesign,
@@ -9,7 +10,7 @@ import {
   type TokenData,
 } from "@/lib/documentDesigner";
 import { marksheetSummary, type StudentDocument } from "@/lib/documents";
-import { printHtml } from "@/lib/export";
+import { printCardSheets, printHtml } from "@/lib/export";
 import {
   designFor,
   getTemplateAssignments,
@@ -217,16 +218,18 @@ export async function printRecordsByBranch(
   const found = students.map((student) => designFor(kind, templates.data, assignments.data, String(student.branchId ?? "") || null));
   if (found.some((f) => !f.template)) return false;
 
-  const pages = await Promise.all(
+  const cards = await Promise.all(
     students.map(async (student, i) => {
       const { design } = found[i];
       const data = tokensForRecord(student);
       const qr = await qrImages(design, data);
-      return `<div style="page-break-after:always">${designHtml(kind, design, data, qr)}</div>`;
+      return { html: designHtml(kind, design, data, qr), ...canvasSize(kind, design) };
     }),
   );
   const names = [...new Set(found.map((f) => f.template!.name))].join(", ");
-  printHtml(`${names} — ${students.length} student(s)`, pages.join(""));
+  // Cards go many to an A4 sheet at their real size; other kinds a page each.
+  if (kind === "student-id") printCardSheets(`${names} — ${students.length} card(s)`, cards);
+  else printHtml(`${names} — ${students.length} student(s)`, cards.map((c) => `<div style="page-break-after:always">${c.html}</div>`).join(""));
   return true;
 }
 
