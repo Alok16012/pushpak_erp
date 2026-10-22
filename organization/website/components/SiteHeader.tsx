@@ -4,7 +4,7 @@ export default function SiteHeader() {
     <header id="siteHeader" data-cms-scope="header" className="fixed top-0 left-0 right-0 z-50">
       <div className="navbar min-h-1 rounded-0xl px-3 flex items-center justify-between">
         <a href="index.html" className="flex items-center gap-0 shrink-0">
-          <img src="assets/logo.png" data-inline-onerror="this.src='logo.png'" alt="PNS " className="logo-img w-[80px] transition hover:scale-105" />
+          <img src="/logo.png" alt="Idealdigiskills" className="logo-img w-[80px] transition hover:scale-105" />
         </a>
         <nav className="hidden lg:flex items-center gap-1">
           <a href="index.html" className="nav-link">

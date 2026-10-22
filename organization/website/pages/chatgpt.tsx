@@ -40,7 +40,7 @@ export default function Chatgpt() {
         <header className="fixed top-0 left-0 right-0 z-50">
           <div className="navbar min-h-[70px] px-3 md:px-6 flex items-center justify-between">
             <a href="index.html" className="flex items-center shrink-0">
-              <img src="assets/logo.png" data-inline-onerror="this.src='logo.png'" alt="PNS Academy" className="w-[78px] md:w-[88px] transition hover:scale-105" />
+              <img src="/logo.png" alt="Idealdigiskills" className="w-[78px] md:w-[88px] transition hover:scale-105" />
             </a>
             <nav className="hidden lg:flex items-center gap-1">
               <a href="index.html" className="nav-link">
