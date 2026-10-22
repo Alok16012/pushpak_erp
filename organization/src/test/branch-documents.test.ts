@@ -4,7 +4,7 @@ import type { DocumentTemplate } from "@/lib/supabase/documentTemplates";
 
 vi.mock("@/lib/supabase/client", () => ({ supabase: {}, supabaseUrl: "https://project.supabase.co" }));
 
-const { assignedBranchDesign, branchTokens } = await import("@/lib/branchTemplateDocument");
+const { assignedBranchDesign, branchTokens, standardCentreCertificateHtml } = await import("@/lib/branchTemplateDocument");
 
 const template = (id: string, kind: DocumentTemplate["kind"], isDefault = false): DocumentTemplate => ({
   id,
@@ -72,5 +72,21 @@ describe("branchTokens", () => {
     const data = branchTokens({ name: "Digiskills Infotech" }, "Pushpak Institute");
     expect(data.branch_name).toBe("Digiskills Infotech");
     expect(data.centre_code).toBeTruthy();
+  });
+});
+
+describe("standardCentreCertificateHtml", () => {
+  it("prints the branch's own record, leaving out what it does not have", () => {
+    const html = standardCentreCertificateHtml(
+      { name: "PNS <Computer> Academy", code: "PNS01", address: { city: "Patepur", state: "Bihar" }, director: null, license: null },
+      "Pushpak",
+    );
+    expect(html).toContain("PNS &lt;Computer&gt; Academy");
+    expect(html).toContain("PNS01");
+    expect(html).toContain("Patepur, Bihar");
+    expect(html).toContain("authorised study centre of Pushpak");
+    // No sample stands in for a missing centre head or licence.
+    expect(html).not.toContain("Centre head");
+    expect(html).not.toContain("Valid until");
   });
 });

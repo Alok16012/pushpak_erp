@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Award, Download, Loader2 } from "lucide-react";
+import { Award, Loader2, Printer } from "lucide-react";
 
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -22,6 +22,8 @@ import {
   branchTokens,
   loadAssignedBranchDocuments,
   printBranchDocument,
+  printBranchDocuments,
+  standardCentreCertificateHtml,
   type BranchDetails,
   type BranchDocumentKind,
 } from "@/lib/branchTemplateDocument";
@@ -86,6 +88,7 @@ export default function CentreDocuments() {
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState<Ready[]>([]);
   const [branchName, setBranchName] = useState("");
+  const [details, setDetails] = useState<{ branch: BranchDetails; institute: string } | null>(null);
 
   useEffect(() => {
     if (isBranch) return;
@@ -97,17 +100,18 @@ export default function CentreDocuments() {
   useEffect(() => {
     if (!branchId || !organizationId) {
       setDocuments([]);
+      setDetails(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [details, institute, assigned] = await Promise.all([
+      const [branch, institute, assigned] = await Promise.all([
         getBranchDetails(organizationId, branchId).then((r) => r.data as BranchDetails),
         loadInstituteName(branchId),
         loadAssignedBranchDocuments(organizationId, branchId),
       ]);
-      const data = branchTokens(details, institute);
+      const data = branchTokens(branch, institute);
       const ready = await Promise.all(
         assigned.map(async ({ kind, template, design }) => ({
           kind,
@@ -117,12 +121,14 @@ export default function CentreDocuments() {
         })),
       );
       if (cancelled) return;
-      setBranchName(String(details.name ?? ""));
+      setBranchName(String(branch.name ?? ""));
+      setDetails({ branch, institute });
       setDocuments(ready);
     })()
       .catch((error) => {
         if (cancelled) return;
         setDocuments([]);
+        setDetails(null);
         toast({
           title: "Could not load the certificates",
           description: error instanceof Error ? error.message : undefined,
@@ -137,6 +143,24 @@ export default function CentreDocuments() {
 
   const download = (doc: Ready) => printBranchDocument(doc.kind, `${doc.name} — ${branchName}`, doc.html, doc.design);
 
+  const designed = documents.find((doc) => doc.kind === "centre-certificate");
+  // The office prints the branch's assigned design, else the standard layout.
+  const printCentre = async () => {
+    if (designed) return download(designed);
+    if (!details) return;
+    try {
+      await printBranchDocuments("centre-certificate", [details.branch], organizationId, details.institute, (branch) =>
+        standardCentreCertificateHtml(branch, details.institute),
+      );
+    } catch (error) {
+      toast({
+        title: "Could not print the certificate",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <AppLayout>
       <PageHeader
@@ -148,20 +172,26 @@ export default function CentreDocuments() {
       <div className="space-y-4">
         {!isBranch && (
           <Card>
-            <CardContent className="space-y-2 pt-6">
-              <Label>Branch</Label>
-              <Select value={picked} onValueChange={setPicked}>
-                <SelectTrigger className="max-w-sm">
-                  <SelectValue placeholder="Choose a branch" />
-                </SelectTrigger>
-                <SelectContent searchable searchPlaceholder="Search centre…">
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-end">
+              <div className="w-full max-w-sm space-y-2">
+                <Label>Branch</Label>
+                <Select value={picked} onValueChange={setPicked}>
+                  <SelectTrigger aria-label="Branch">
+                    <SelectValue placeholder="Choose a branch" />
+                  </SelectTrigger>
+                  <SelectContent searchable searchPlaceholder="Search centre…">
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button className="gap-2" onClick={() => void printCentre()} disabled={loading || !details}>
+                <Printer className="h-4 w-4" />
+                Print centre certificate
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -176,6 +206,24 @@ export default function CentreDocuments() {
               ? "Your account is not attached to a branch. Sign out and back in, then try again."
               : "Choose a branch to see its certificates."}
           </p>
+        ) : documents.length === 0 && !isBranch && details ? (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
+              <CardTitle className="text-base">
+                {DOCUMENT_KINDS["centre-certificate"].label}
+                <span className="block text-xs font-normal text-muted-foreground">
+                  Standard layout — no design is assigned to this branch. Assign one in the Document Designer to print it in your own design.
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div
+                className="overflow-hidden rounded-lg border bg-white p-4 text-black"
+                // standardCentreCertificateHtml escapes every value it writes.
+                dangerouslySetInnerHTML={{ __html: standardCentreCertificateHtml(details.branch, details.institute) }}
+              />
+            </CardContent>
+          </Card>
         ) : documents.length === 0 ? (
           <Card>
             <CardContent className="flex items-start gap-3 pt-6 text-sm text-muted-foreground">
@@ -196,8 +244,8 @@ export default function CentreDocuments() {
                     <span className="block text-xs font-normal text-muted-foreground">{doc.name}</span>
                   </CardTitle>
                   <Button size="sm" className="gap-2" onClick={() => download(doc)}>
-                    <Download className="h-4 w-4" />
-                    Download
+                    <Printer className="h-4 w-4" />
+                    Print / Download
                   </Button>
                 </CardHeader>
                 <CardContent>
