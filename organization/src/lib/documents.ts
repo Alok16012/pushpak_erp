@@ -73,6 +73,10 @@ export type StudentDocument = {
       maxMarks: number;
       passMarks: number;
       examDate: string;
+      /** Which paper of a subject this is, on a term marksheet; absent for a class test. */
+      paper?: "Theory" | "Practical";
+      /** The subject's own name, without the "(Theory)" a two-paper subject carries. */
+      base?: string;
     };
   }>;
 };
@@ -255,23 +259,82 @@ export function marksheetSummary(results: StudentDocument["examResults"]) {
 /** The assessment table's column edges, left to right. */
 const MARK_COLUMNS = [12, 26, 150, 195, 240, 285];
 
-function marksheetTableHeader(doc: jsPDF, y: number): number {
+type Paper = { marks: number; max: number };
+/** One subject on the marksheet: its theory and practical papers side by side. */
+export interface MarksheetRow {
+  subject: string;
+  theory?: Paper;
+  practical?: Paper;
+  total: Paper;
+}
+
+const PAPER_SUFFIX = /\s*\((Theory|Practical)\)\s*$/i;
+
+/**
+ * The papers folded into one row per subject. A subject sat in theory and
+ * practical arrives as two papers; the sheet reads them across one line, the
+ * way the institute's printed marksheets do. A paper of no stated kind (an old
+ * class test) shows only its total.
+ */
+export function marksheetRows(results: StudentDocument["examResults"]): MarksheetRow[] {
+  const rows = new Map<string, MarksheetRow>();
+  for (const r of results) {
+    const label = String(r.exam.subject || r.exam.name || "");
+    const kind = r.exam.paper || (label.match(PAPER_SUFFIX)?.[1] as string | undefined);
+    const subject = r.exam.base || label.replace(PAPER_SUFFIX, "") || "-";
+    const key = `${r.exam.name}\u0000${subject.toLowerCase()}`;
+    const row = rows.get(key) || { subject, total: { marks: 0, max: 0 } };
+    const paper = { marks: Number(r.marks) || 0, max: Number(r.exam.maxMarks) || 0 };
+    const slot = kind?.toLowerCase() === "practical" ? "practical" : kind?.toLowerCase() === "theory" ? "theory" : null;
+    if (slot) {
+      const was = row[slot] || { marks: 0, max: 0 };
+      row[slot] = { marks: was.marks + paper.marks, max: was.max + paper.max };
+    }
+    row.total = { marks: row.total.marks + paper.marks, max: row.total.max + paper.max };
+    rows.set(key, row);
+  }
+  return [...rows.values()];
+}
+
+/** The grade the percentage earns; a failed paper is an F whatever the aggregate. */
+export const marksheetGrade = (percentage: number, passed: boolean) =>
+  !passed ? "F" : percentage >= 85 ? "A+" : percentage >= 75 ? "A" : percentage >= 60 ? "B" : percentage >= 45 ? "C" : "D";
+
+const shownMarks = (n: number) => String(Math.round(n * 100) / 100);
+
+/** "(Out of 50)" when every subject's paper carries the same maximum, else nothing: each cell then says its own. */
+function outOf(maxes: number[]): number | null {
+  const set = [...new Set(maxes)];
+  return set.length === 1 ? set[0] : null;
+}
+
+function marksheetTableHeader(doc: jsPDF, y: number, outs: Array<number | null>): number {
   const [c0, c1, c2, c3, c4, c5] = MARK_COLUMNS;
+  const h = 13;
   doc.setFillColor(244, 244, 245);
-  doc.rect(c0, y, c5 - c0, 10, "F");
+  doc.rect(c0, y, c5 - c0, h, "F");
   doc.setDrawColor(60);
   doc.setLineWidth(0.3);
-  doc.rect(c0, y, c5 - c0, 10);
+  doc.rect(c0, y, c5 - c0, h);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(20);
-  doc.text("S.No.", (c0 + c1) / 2, y + 6.5, { align: "center" });
-  doc.text("Summative Assessment", c1 + 4, y + 6.5);
-  doc.text("Max. Marks", (c2 + c3) / 2, y + 6.5, { align: "center" });
-  doc.text("Min. Pass Marks", (c3 + c4) / 2, y + 6.5, { align: "center" });
-  doc.text("Marks Secured", (c4 + c5) / 2, y + 6.5, { align: "center" });
-  for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + 10);
-  return y + 10;
+  doc.text("S.No.", (c0 + c1) / 2, y + 8, { align: "center" });
+  doc.text("Subject", c1 + 4, y + 8);
+  const heads: Array<[string, number, number]> = [["Theory Marks", c2, c3], ["Practical Marks", c3, c4], ["Total Marks", c4, c5]];
+  heads.forEach(([label, from, to], i) => {
+    const out = outs[i];
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text(label, (from + to) / 2, out == null ? y + 8 : y + 5.8, { align: "center" });
+    if (out != null) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.text(`(Out of ${shownMarks(out)})`, (from + to) / 2, y + 10.4, { align: "center" });
+    }
+  });
+  for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + h);
+  return y + h;
 }
 
 export async function marksheetPdf(s: StudentDocument) {
@@ -362,49 +425,91 @@ export async function marksheetPdf(s: StudentDocument) {
     right - margin,
   );
 
-  /* ---- assessment table ---- */
+  /* ---- assessment table: a row per subject, theory and practical side by side ---- */
   const [c0, c1, c2, c3, c4, c5] = MARK_COLUMNS;
-  y = marksheetTableHeader(doc, y + 8);
+  const rows = marksheetRows(s.examResults);
+  const outs = [
+    outOf(rows.flatMap((r) => (r.theory ? [r.theory.max] : []))),
+    outOf(rows.flatMap((r) => (r.practical ? [r.practical.max] : []))),
+    outOf(rows.map((r) => r.total.max)),
+  ];
+  const header = (at: number) => marksheetTableHeader(doc, at, outs);
+  // A cell under a shared "(Out of N)" carries just the marks; otherwise it says its own maximum.
+  const cell = (paper: Paper | undefined, out: number | null) =>
+    !paper ? "-" : out != null ? shownMarks(paper.marks) : `${shownMarks(paper.marks)} / ${shownMarks(paper.max)}`;
+  y = header(y + 8);
   const summary = marksheetSummary(s.examResults);
+  const rowHeight = 8;
 
-  s.examResults.forEach((result, index) => {
+  rows.forEach((row, index) => {
     // A long list runs onto a second sheet with its own header rather than off
     // the bottom edge of the first.
-    if (y > 168) {
+    if (y > 170) {
       doc.addPage();
-      y = marksheetTableHeader(doc, 20);
+      y = header(20);
     }
-    const rowHeight = 10;
     doc.setDrawColor(60);
     doc.rect(c0, y, c5 - c0, rowHeight);
     for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + rowHeight);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text(String(index + 1), (c0 + c1) / 2, y + 6.5, { align: "center" });
+    doc.text(String(index + 1), (c0 + c1) / 2, y + 5.5, { align: "center" });
     doc.setFont("helvetica", "normal");
-    doc.text(String(result.exam.subject || result.exam.name).slice(0, 70), c1 + 4, y + 6.5);
-    doc.text(String(result.exam.maxMarks), (c2 + c3) / 2, y + 6.5, { align: "center" });
-    doc.text(String(result.exam.passMarks), (c3 + c4) / 2, y + 6.5, { align: "center" });
-    doc.text(result.marks.toFixed(2), (c4 + c5) / 2, y + 6.5, { align: "center" });
+    doc.text((doc.splitTextToSize(row.subject, c2 - c1 - 8) as string[])[0] || "-", c1 + 4, y + 5.5);
+    doc.text(cell(row.theory, outs[0]), (c2 + c3) / 2, y + 5.5, { align: "center" });
+    doc.text(cell(row.practical, outs[1]), (c3 + c4) / 2, y + 5.5, { align: "center" });
+    doc.setFont("helvetica", "bold");
+    doc.text(cell(row.total, outs[2]), (c4 + c5) / 2, y + 5.5, { align: "center" });
     y += rowHeight;
   });
 
+  // Column totals, each out of its own column's full marks.
+  const sum = (pick: (r: MarksheetRow) => Paper | undefined) => {
+    const papers = rows.map(pick).filter((p): p is Paper => !!p);
+    return papers.length ? papers.reduce((a, p) => ({ marks: a.marks + p.marks, max: a.max + p.max }), { marks: 0, max: 0 }) : undefined;
+  };
+  const totalCell = (p: Paper | undefined) => (p ? `${shownMarks(p.marks)} / ${shownMarks(p.max)}` : "-");
+  if (y > 178) {
+    doc.addPage();
+    y = header(20);
+  }
+  doc.setFillColor(244, 244, 245);
+  doc.rect(c0, y, c5 - c0, 10, "F");
   doc.setDrawColor(60);
   doc.rect(c0, y, c5 - c0, 10);
-  for (const x of [c1, c2, c3, c4]) doc.line(x, y, x, y + 10);
+  for (const x of [c2, c3, c4]) doc.line(x, y, x, y + 10);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9.5);
   doc.text("Total", c2 - 4, y + 6.5, { align: "right" });
-  doc.text(String(summary.max), (c2 + c3) / 2, y + 6.5, { align: "center" });
-  doc.text(String(summary.total), (c4 + c5) / 2, y + 6.5, { align: "center" });
+  doc.text(totalCell(sum((r) => r.theory)), (c2 + c3) / 2, y + 6.5, { align: "center" });
+  doc.text(totalCell(sum((r) => r.practical)), (c3 + c4) / 2, y + 6.5, { align: "center" });
+  doc.text(totalCell({ marks: summary.total, max: summary.max }), (c4 + c5) / 2, y + 6.5, { align: "center" });
   y += 10;
 
-  /* ---- result, notes, signature ---- */
-  y += 8;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.text(`Result: ${summary.result}${summary.max ? `   |   Percentage: ${(summary.total / summary.max * 100).toFixed(2)}%` : ""}`, margin, y);
-  dotted(doc, margin + 100, right - 60, y + 1.2);
+  /* ---- result: percentage, grade, full marks ---- */
+  const percentage = summary.max ? (summary.total / summary.max) * 100 : 0;
+  const facts: Array<[string, string]> = [
+    ["Result", summary.result],
+    ["Percentage", summary.max ? `${percentage.toFixed(2)}%` : "-"],
+    ["Grade", summary.result === "Awaited" ? "-" : marksheetGrade(percentage, summary.result === "Pass")],
+    ["Marks Obtained", shownMarks(summary.total)],
+    ["Full Marks", shownMarks(summary.max)],
+  ];
+  const cellWidth = (c5 - c0) / facts.length;
+  doc.setDrawColor(60);
+  facts.forEach(([label, value], i) => {
+    const x = c0 + i * cellWidth;
+    doc.rect(x, y, cellWidth, 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(90);
+    doc.text(label.toUpperCase(), x + cellWidth / 2, y + 4.5, { align: "center" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(20);
+    doc.text(value, x + cellWidth / 2, y + 9.8, { align: "center" });
+  });
+  y += 12;
 
   const notes = award.notes?.filter(Boolean) ?? [];
   if (notes.length) {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
-import { marksheetSummary, type StudentDocument } from "@/lib/documents";
+import { marksheetGrade, marksheetRows, marksheetSummary, type StudentDocument } from "@/lib/documents";
+import { asExamResults } from "@/lib/examWorkflow";
 
 /** jsPDF's save() reaches for the browser, and it copies its API onto each
  *  instance, so an own `save` shadows a subclass method — reassign it after
@@ -137,5 +138,36 @@ describe("marksheetPdf", () => {
   it("runs a long list of papers onto further pages", async () => {
     const many = Array.from({ length: 40 }, (_, i) => paper(40, 50, 20, `Paper ${i + 1}`));
     await expect(marksheetPdf({ ...base, examResults: many })).resolves.toBeUndefined();
+  });
+});
+
+describe("marksheetRows", () => {
+  const line = (name: string, subjectType: "THEORY" | "PRACTICAL" | "BOTH", theory: number | null, practical: number | null) => ({
+    subjectId: name, code: name, name, subjectType, theoryMax: 50, theoryMin: 35, practicalMax: 50, practicalMin: 35, theory, practical,
+  });
+
+  // The printed sheet reads a subject across one line: theory, practical, total.
+  it("puts a subject's theory and practical papers on one row", () => {
+    const results = asExamResults(
+      [{ term: 1, issueDate: "2026-10-22", marks: [line("Fundamental", "BOTH", 42, 45), line("Tally", "THEORY", 40, null), line("Lab", "PRACTICAL", null, 38)] as never }],
+      "YEAR",
+    );
+    expect(marksheetRows(results)).toEqual([
+      { subject: "Fundamental", theory: { marks: 42, max: 50 }, practical: { marks: 45, max: 50 }, total: { marks: 87, max: 100 } },
+      { subject: "Tally", theory: { marks: 40, max: 50 }, total: { marks: 40, max: 50 } },
+      { subject: "Lab", practical: { marks: 38, max: 50 }, total: { marks: 38, max: 50 } },
+    ]);
+  });
+
+  it("reads the paper from the name when the kind is not carried", () => {
+    expect(marksheetRows([paper(30, 50, 17, "MS Word (Theory)"), paper(44, 50, 17, "MS Word (Practical)")].map((r) => ({ ...r, exam: { ...r.exam, name: "1st Year" } })))).toEqual([
+      { subject: "MS Word", theory: { marks: 30, max: 50 }, practical: { marks: 44, max: 50 }, total: { marks: 74, max: 100 } },
+    ]);
+  });
+
+  it("grades by percentage, and a failed paper is an F", () => {
+    expect(marksheetGrade(85.88, true)).toBe("A+");
+    expect(marksheetGrade(62, true)).toBe("B");
+    expect(marksheetGrade(95, false)).toBe("F");
   });
 });

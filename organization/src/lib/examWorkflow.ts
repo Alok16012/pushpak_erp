@@ -205,12 +205,14 @@ export function asExamResults(
     .sort((a, b) => a.term - b.term)
     .flatMap((sheet) =>
       sheet.marks.flatMap((line) => {
-        const exam = (part: string, max: number, min: number) => ({
+        const exam = (part: "Theory" | "Practical", max: number, min: number) => ({
           name: termLabel(termType, sheet.term),
           subject: line.subjectType === "BOTH" ? `${line.name} (${part})` : line.name,
           maxMarks: max,
           passMarks: min,
           examDate: sheet.issueDate || "",
+          paper: part,
+          base: line.name,
         });
         const rows: Array<{ marks: number; exam: ReturnType<typeof exam> }> = [];
         if (hasTheory(line)) rows.push({ marks: Number(line.theory) || 0, exam: exam("Theory", line.theoryMax, line.theoryMin) });
