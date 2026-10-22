@@ -814,6 +814,12 @@ button,
                 display: none;
             }
 
+            /* The course tags and dots sat across the face on a phone. */
+            .skill,
+            .dot {
+                display: none;
+            }
+
             .floating-contact {
                 bottom: 12px;
             }
