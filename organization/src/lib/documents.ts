@@ -348,7 +348,8 @@ export async function marksheetPdf(s: StudentDocument) {
   );
   particular(doc, "Date of Birth:", s.dateOfBirth || "-", colTwo, y, colWidth);
   y += 8;
-  const trade = [s.course?.name, s.course?.code && `(${s.course.code})`].filter(Boolean).join(" ");
+  // The course by its name only: the internal course code means nothing to whoever reads the marksheet.
+  const trade = s.course?.name || "";
   particular(doc, "Trade/Course Name:", trade || "-", margin, y, colWidth);
   particular(doc, "Exam Month-Year:", award.examMonthYear || "-", colTwo, y, colWidth);
   y += 8;
