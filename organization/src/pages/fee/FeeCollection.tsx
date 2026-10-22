@@ -505,7 +505,7 @@ export default function FeeCollection() {
                 <SelectTrigger id="invoiceStudent">
                   <SelectValue placeholder="Select student" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="Search student or enrollment…">
                   {students.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.firstName} {s.lastName} · {s.enrollmentNo || "Pending"}

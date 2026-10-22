@@ -215,7 +215,7 @@ export default function AssignExam() {
                 {candidates.map((s) => (
                   <label key={s.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60">
                     <Checkbox checked={picked.has(s.id)} onCheckedChange={(v) => toggle(s.id, v === true)} aria-label={studentName(s)} />
-                    <span className="min-w-0 flex-1 truncate">{studentName(s)}{s.enrollmentNo ? <span className="text-xs text-muted-foreground"> · {s.enrollmentNo}</span> : null}</span>
+                    <span className="min-w-0 flex-1 truncate">{studentName(s)}{(s.enrollmentNo || s.applicationNo) ? <span className="text-xs text-muted-foreground"> · {(s.enrollmentNo || s.applicationNo)}</span> : null}</span>
                     {examId && alreadyOn(s.id) && <Badge variant="secondary" className="text-[10px]">on exam</Badge>}
                   </label>
                 ))}

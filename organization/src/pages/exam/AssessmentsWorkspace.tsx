@@ -715,7 +715,7 @@ export default function AssessmentsWorkspace() {
                     <SelectTrigger>
                       <SelectValue placeholder="Select student" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable searchPlaceholder="Search student or enrollment…">
                       {documentStudents.map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.firstName} {s.lastName} ·{" "}

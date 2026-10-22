@@ -189,10 +189,10 @@ export default function Certificates({ passoutOnly = false }: { passoutOnly?: bo
                 <Label>Student</Label>
                 <Select value={studentId} onValueChange={(v) => { setStudentId(v); setExamDate(""); }}>
                   <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent searchable searchPlaceholder="Search student or enrollment…">
                     {candidates.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        {studentName(s)}{s.enrollmentNo ? ` · ${s.enrollmentNo}` : ""}
+                        {studentName(s)}{(s.enrollmentNo || s.applicationNo) ? ` · ${(s.enrollmentNo || s.applicationNo)}` : ""}
                         {issuedFor(s.id) ? " · issued" : finalPass(s.id) ? " · eligible" : ""}
                       </SelectItem>
                     ))}

@@ -249,10 +249,10 @@ export default function Results() {
               <Label>Student</Label>
               <Select value={studentId} onValueChange={(v) => { setStudentId(v); setTerm(1); }}>
                 <SelectTrigger><SelectValue placeholder={candidates.length ? "Select student" : "No students"} /></SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="Search student or enrollment…">
                   {candidates.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
-                      {studentName(s)}{s.enrollmentNo ? ` · ${s.enrollmentNo}` : ""}{courseOf.get(s.courseId) ? ` · ${courseOf.get(s.courseId)?.name}` : ""}
+                      {studentName(s)}{(s.enrollmentNo || s.applicationNo) ? ` · ${(s.enrollmentNo || s.applicationNo)}` : ""}{courseOf.get(s.courseId) ? ` · ${courseOf.get(s.courseId)?.name}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>

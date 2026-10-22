@@ -242,7 +242,7 @@ export default function AdmitCards() {
       <Label>{label}</Label>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
-        <SelectContent searchable={label === "Centre" || label === "Student" || undefined} searchPlaceholder={`Search ${label.toLowerCase()}…`}>
+        <SelectContent searchable={label === "Centre" || label === "Student" || undefined} searchPlaceholder={label === "Student" ? "Search student or enrollment…" : `Search ${label.toLowerCase()}…`}>
           {options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
         </SelectContent>
       </Select>
@@ -264,7 +264,7 @@ export default function AdmitCards() {
             {pick("Course", courseId, (v) => { setCourseId(v); setTerm(1); setStudentId(""); }, courses.map((c) => [c.id, c.name]), "Select course")}
             {pick("Year / Semester", String(term), (v) => setTerm(Number(v)), terms.map((t) => [String(t.term), t.label]), "Select", !course)}
             {pick("Session", session, setSession, sessions.map((s) => [s, s]), "Select session")}
-            {pick("Student", studentId, setStudentId, candidates.map((s) => [s.id, `${studentName(s)}${s.enrollmentNo ? ` · ${s.enrollmentNo}` : ""}${issuedFor(s.id) ? " ✓" : ""}`]), candidates.length ? "Select student" : "No students for this course")}
+            {pick("Student", studentId, setStudentId, candidates.map((s) => [s.id, `${studentName(s)}${(s.enrollmentNo || s.applicationNo) ? ` · ${(s.enrollmentNo || s.applicationNo)}` : ""}${issuedFor(s.id) ? " ✓" : ""}`]), candidates.length ? "Select student" : "No students for this course")}
             <div className="space-y-2">
               <Label>Roll No.</Label>
               <Input value={rollNo} onChange={(e) => setRollNo(e.target.value)} placeholder="Enter roll no." />

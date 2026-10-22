@@ -983,10 +983,11 @@ export default function DocumentDesigner() {
                   <SelectTrigger>
                     <SelectValue placeholder="Sample data" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent searchable searchPlaceholder="Search student or enrollment…">
                     {students.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         {[s.firstName, s.lastName].filter(Boolean).join(" ") || s.id}
+                        {(s.enrollmentNo || s.applicationNo) ? ` · ${s.enrollmentNo || s.applicationNo}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
