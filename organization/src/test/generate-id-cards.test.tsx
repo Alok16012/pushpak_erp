@@ -6,16 +6,15 @@ import { MemoryRouter } from "react-router-dom";
  * ID cards are made branch by branch: pick the branch (searchable), narrow to
  * a course, tick the students, and generate -- in that branch's own design.
  */
-const getStudents = vi.fn((..._a: unknown[]) =>
-  Promise.resolve({
-    success: true,
-    data: [
-      { id: "s1", branchId: "b1", courseId: "c1", firstName: "Abhishek", lastName: "Gupta", enrollmentNo: "IDS/0012" },
-      { id: "s2", branchId: "b1", courseId: "c2", firstName: "Sonali", lastName: "Kumari", applicationNo: "APP-0011" },
-    ],
-  }),
-);
-const printRecordsFromTemplate = vi.fn((..._a: unknown[]) => Promise.resolve(true));
+const ROSTER: Record<string, unknown[]> = {
+  b1: [
+    { id: "s1", branchId: "b1", courseId: "c1", firstName: "Abhishek", lastName: "Gupta", enrollmentNo: "IDS/0012" },
+    { id: "s2", branchId: "b1", courseId: "c2", firstName: "Sonali", lastName: "Kumari", applicationNo: "APP-0011" },
+  ],
+  b2: [{ id: "s3", branchId: "b2", courseId: "c1", firstName: "Rohit", lastName: "Sharma", applicationNo: "APP-0010" }],
+};
+const getStudents = vi.fn((branchId: unknown, ..._a: unknown[]) => Promise.resolve({ success: true, data: ROSTER[String(branchId)] ?? ROSTER.b1 }));
+const printRecordsByBranch = vi.fn((..._a: unknown[]) => Promise.resolve(true));
 let view = "admin";
 
 const toast = vi.fn();
@@ -27,13 +26,13 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 vi.mock("@/lib/studentTemplateDocument", () => ({
   photoOf: () => "",
-  printRecordsFromTemplate: (...a: unknown[]) => printRecordsFromTemplate(...a),
+  printRecordsByBranch: (...a: unknown[]) => printRecordsByBranch(...a),
 }));
 vi.mock("@/lib/supabase/data", () => ({
   getBranches: () => Promise.resolve({ data: [{ id: "b1", name: "PNS COMPUTER ACADEMY" }, { id: "b2", name: "Coder Infotech Academy" }] }),
   getCourses: () => Promise.resolve({ data: [{ id: "c1", name: "ADCA" }, { id: "c2", name: "DCA" }, { id: "c3", name: "Tally" }] }),
   getBatches: () => Promise.resolve({ data: [] }),
-  getStudents: (...a: unknown[]) => getStudents(...a),
+  getStudents: (branchId: unknown, ...a: unknown[]) => getStudents(branchId, ...a),
 }));
 
 const GenerateIDCards = (await import("@/pages/cards/GenerateIDCards")).default;
@@ -46,7 +45,7 @@ const choose = async (label: string, option: string | RegExp) => {
 beforeEach(() => {
   view = "admin";
   getStudents.mockClear();
-  printRecordsFromTemplate.mockClear();
+  printRecordsByBranch.mockClear();
 });
 
 describe("Generate ID Cards", () => {
@@ -55,9 +54,10 @@ describe("Generate ID Cards", () => {
     expect(await screen.findByText("Select a branch to list its students.")).toBeInTheDocument();
     expect(screen.queryByText("Academic Year")).toBeNull();
 
-    fireEvent.keyDown(screen.getByRole("combobox", { name: "Branch" }), { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Branch" }));
     fireEvent.change(await screen.findByLabelText("Search branch…"), { target: { value: "pns" } });
-    fireEvent.click(screen.getByRole("option", { name: "PNS COMPUTER ACADEMY" }));
+    expect(screen.queryByRole("checkbox", { name: "Coder Infotech Academy" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "PNS COMPUTER ACADEMY" }));
     await waitFor(() => expect(getStudents).toHaveBeenCalledWith("b1", 1, 2000));
     expect(await screen.findByText("Abhishek Gupta")).toBeInTheDocument();
     expect(screen.getByText("Sonali Kumari")).toBeInTheDocument();
@@ -72,15 +72,32 @@ describe("Generate ID Cards", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Select all students shown" }));
     fireEvent.click(screen.getByRole("button", { name: "Generate ID Cards (1)" }));
     await waitFor(() =>
-      expect(printRecordsFromTemplate).toHaveBeenCalledWith("student-id", [expect.objectContaining({ id: "s1", courseName: "ADCA" })], "org1", "b1"),
+      expect(printRecordsByBranch).toHaveBeenCalledWith("student-id", [expect.objectContaining({ id: "s1", courseName: "ADCA" })], "org1"),
     );
+  });
+
+  it("lists several branches' students together and prints them in one run", async () => {
+    render(<MemoryRouter><GenerateIDCards /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Branch" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "All branches" }));
+    await waitFor(() => expect(getStudents).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Branch" })).toHaveTextContent("All branches (2)");
+    expect(await screen.findByText("Rohit Sharma")).toBeInTheDocument();
+    expect(screen.getByText("Abhishek Gupta")).toBeInTheDocument();
+    // The branch shows against each student once there is more than one.
+    expect(within(screen.getByText("Rohit Sharma").closest("tr")!).getByText("Coder Infotech Academy")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all students shown" }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate ID Cards (3)" }));
+    await waitFor(() => expect(printRecordsByBranch).toHaveBeenCalledTimes(1));
+    expect((printRecordsByBranch.mock.calls[0] as unknown[])[1]).toHaveLength(3);
   });
 
   it("gives a centre its own students without a branch picker", async () => {
     view = "franchise";
     render(<MemoryRouter><GenerateIDCards /></MemoryRouter>);
     await waitFor(() => expect(getStudents).toHaveBeenCalledWith("b9", 1, 2000));
-    expect(screen.queryByRole("combobox", { name: "Branch" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Branch" })).toBeNull();
     const row = (await screen.findByText("Sonali Kumari")).closest("tr")!;
     expect(within(row).getByText("APP-0011")).toBeInTheDocument();
     await choose("Course", "DCA (1)");

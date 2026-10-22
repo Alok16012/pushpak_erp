@@ -13,14 +13,15 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Printer, Download, Eye, Search, Users, CreditCard, Image as ImageIcon, QrCode } from "lucide-react";
+import { ChevronDown, Printer, Download, Eye, Search, Users, CreditCard, Image as ImageIcon, QrCode } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { printHtml } from "@/lib/export";
 import {
   photoOf,
-  printRecordsFromTemplate,
+  printRecordsByBranch,
   type StudentRecord,
 } from "@/lib/studentTemplateDocument";
 import { idCardsPdf } from "@/lib/id-card-pdf";
@@ -36,6 +37,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface IdCardStudent {
   id: string;
+  branchId: string;
   courseId: string;
   name: string;
   class: string;
@@ -65,8 +67,11 @@ export default function GenerateIDCards() {
   const [templateId, setTemplateId] = useState("");
   const [branches, setBranches] = useState<Array<{ id: string; name: string }>>([]);
   const [courses, setCourses] = useState<Array<{ id: string; name: string }>>([]);
-  const [pickedBranch, setPickedBranch] = useState("");
-  const branchId = ownBranch || pickedBranch;
+  // One branch or many: the office can print several centres' cards in one run.
+  const [pickedBranches, setPickedBranches] = useState<string[]>([]);
+  const branchIds = ownBranch ? [ownBranch] : pickedBranches;
+  const branchKey = branchIds.join(",");
+  const [branchQuery, setBranchQuery] = useState("");
   const [courseId, setCourseId] = useState(ALL_COURSES);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -99,30 +104,35 @@ export default function GenerateIDCards() {
     return () => { cancelled = true; };
   }, [ownBranch, user?.organizationId]);
 
-  // A branch's students, once the branch is known.
+  // The chosen branches' students, once the branches are known.
   useEffect(() => {
     let cancelled = false;
     setSelectedStudents([]);
     setCourseId(ALL_COURSES);
-    if (!branchId) {
+    const ids = branchKey ? branchKey.split(",") : [];
+    if (!ids.length) {
       setRecords([]);
       setStudents([]);
       return;
     }
     setLoading(true);
     Promise.all([
-      getStudents(branchId, 1, 2000),
-      getBatches(branchId).catch(() => ({ data: [] as Array<{ id: string; name: string }> })),
+      Promise.all(ids.map((id) => getStudents(id, 1, 2000))),
+      Promise.all(ids.map((id) => getBatches(id).catch(() => ({ data: [] as Array<{ id: string; name: string }> })))),
     ])
-      .then(([result, batchesRes]) => {
+      .then(([results, batchResults]) => {
         if (cancelled) return;
         // The card shows the course and batch by name, not by their ids.
-        const batchName = new Map(((batchesRes.data || []) as Array<{ id: string; name: string }>).map((b) => [b.id, b.name]));
+        const batchName = new Map(batchResults.flatMap((r) => (r.data || []) as Array<{ id: string; name: string }>).map((b) => [b.id, b.name]));
         // `getStudents` resolves to `{ success, data, meta }` - mapping over the
         // envelope threw, so this list was always empty.
-        setRecords((result.data ?? []) as StudentRecord[]);
-        const mapped: IdCardStudent[] = (result.data ?? []).map((s: StudentRecord & Record<string, string>) => ({
+        const rows = results.flatMap((r) => (r.data ?? []) as StudentRecord[]);
+        setRecords(rows);
+        const mapped: IdCardStudent[] = rows.map((row) => {
+          const s = row as StudentRecord & Record<string, string>;
+          return {
           id: s.id,
+          branchId: String(s.branchId || ""),
           courseId: String(s.courseId || ""),
           name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
           class: "",
@@ -134,7 +144,8 @@ export default function GenerateIDCards() {
           bloodGroup: s.bloodGroup ?? "—",
           parentContact: s.phone ?? "—",
           address: [s.streetAddress, s.city, s.state, s.pincode].filter(Boolean).join(", ") || "—",
-        }));
+          };
+        });
         setStudents(mapped);
       })
       .catch((error) => {
@@ -148,7 +159,7 @@ export default function GenerateIDCards() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast, branchId]);
+  }, [toast, branchKey]);
 
   // The card shows the course by name; the names may arrive after the students.
   const students = useMemo(() => {
@@ -157,12 +168,23 @@ export default function GenerateIDCards() {
   }, [rawStudents, courses]);
 
   const template = templates.find((item) => item.id === templateId) ?? null;
-  const branchName = branches.find((b) => b.id === branchId)?.name || "";
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name || "";
+  const many = branchIds.length > 1;
+  const shownBranches = branches.filter((b) => matchesSearch(b.name, branchQuery));
+  const toggleBranch = (id: string, on: boolean) =>
+    setPickedBranches((prev) => (on ? [...prev, id] : prev.filter((b) => b !== id)));
+  const branchLabel = !pickedBranches.length
+    ? "Select branches"
+    : pickedBranches.length === 1
+      ? branchName(pickedBranches[0])
+      : pickedBranches.length === branches.length
+        ? `All branches (${branches.length})`
+        : `${pickedBranches.length} branches`;
   // Only the courses this branch's students are on, each with its head count.
   const branchCourses = courses
     .map((c) => ({ ...c, count: students.filter((s) => s.courseId === c.id).length }))
     .filter((c) => c.count > 0);
-  const runName = [branchName, courseId !== ALL_COURSES ? courses.find((c) => c.id === courseId)?.name : ""].filter(Boolean).join(" - ") || "students";
+  const runName = [many ? `${branchIds.length} branches` : branchName(branchIds[0] || ""), courseId !== ALL_COURSES ? courses.find((c) => c.id === courseId)?.name : ""].filter(Boolean).join(" - ") || "students";
 
   const filteredStudents = students.filter(
     (s) =>
@@ -220,12 +242,8 @@ export default function GenerateIDCards() {
       const shown = chosen.find((s) => s.id === row.id);
       return shown ? [{ ...row, courseName: shown.class === "—" ? "" : shown.class, batchName: shown.section === "—" ? "" : shown.section }] : [];
     });
-    const printed = await printRecordsFromTemplate(
-      "student-id",
-      picked,
-      user?.organizationId ?? null,
-      branchId || null,
-    ).catch(() => false);
+    // Each card in its own branch's design, all in one print run.
+    const printed = await printRecordsByBranch("student-id", picked, user?.organizationId ?? null).catch(() => false);
     if (printed) return;
 
     if (!ready() || !template) return;
@@ -273,22 +291,50 @@ export default function GenerateIDCards() {
             {!ownBranch && (
               <div className="space-y-2">
                 <Label>Branch</Label>
-                <Select value={pickedBranch} onValueChange={setPickedBranch}>
-                  <SelectTrigger aria-label="Branch">
-                    <SelectValue placeholder="Select branch" />
-                  </SelectTrigger>
-                  <SelectContent searchable searchPlaceholder="Search branch…">
-                    {branches.map((b) => (
-                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover onOpenChange={(open) => !open && setBranchQuery("")}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" aria-label="Branch" className="h-11 w-full justify-between rounded-[14px] border-[1.5px] font-normal">
+                      <span className={`truncate ${pickedBranches.length ? "" : "text-muted-foreground"}`}>{branchLabel}</span>
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[16rem] p-1.5">
+                    <div className="relative mb-1">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <input
+                        type="search"
+                        value={branchQuery}
+                        onChange={(e) => setBranchQuery(e.target.value)}
+                        placeholder="Search branch…"
+                        aria-label="Search branch…"
+                        className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium hover:bg-muted/60">
+                      <Checkbox
+                        checked={branches.length > 0 && pickedBranches.length === branches.length}
+                        onCheckedChange={(v) => setPickedBranches(v === true ? branches.map((b) => b.id) : [])}
+                        aria-label="All branches"
+                      />
+                      All branches
+                    </label>
+                    <div className="max-h-64 overflow-y-auto border-t pt-1">
+                      {shownBranches.map((b) => (
+                        <label key={b.id} className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-muted/60">
+                          <Checkbox checked={pickedBranches.includes(b.id)} onCheckedChange={(v) => toggleBranch(b.id, v === true)} aria-label={b.name} />
+                          <span className="truncate">{b.name}</span>
+                        </label>
+                      ))}
+                      {!shownBranches.length && <p className="px-2 py-3 text-center text-sm text-muted-foreground">No match for “{branchQuery.trim()}”</p>}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             )}
 
             <div className="space-y-2">
               <Label>Course</Label>
-              <Select value={courseId} onValueChange={(v) => { setCourseId(v); setSelectedStudents([]); }} disabled={!branchId}>
+              <Select value={courseId} onValueChange={(v) => { setCourseId(v); setSelectedStudents([]); }} disabled={!branchIds.length}>
                 <SelectTrigger aria-label="Course">
                   <SelectValue placeholder="All courses" />
                 </SelectTrigger>
@@ -359,7 +405,7 @@ export default function GenerateIDCards() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <CardTitle className="text-lg">Select Students{branchId && !loading ? <Badge variant="secondary" className="ml-2">{filteredStudents.length}</Badge> : null}</CardTitle>
+              <CardTitle className="text-lg">Select Students{branchIds.length > 0 && !loading ? <Badge variant="secondary" className="ml-2">{filteredStudents.length}</Badge> : null}</CardTitle>
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -386,6 +432,7 @@ export default function GenerateIDCards() {
                     </th>
                     <th className="p-3 text-left text-sm font-medium">Enrollment No</th>
                     <th className="p-3 text-left text-sm font-medium">Name</th>
+                    {many && <th className="p-3 text-left text-sm font-medium">Branch</th>}
                     <th className="p-3 text-left text-sm font-medium">Course / Batch</th>
                     <th className="p-3 text-left text-sm font-medium">Photo</th>
                   </tr>
@@ -402,6 +449,7 @@ export default function GenerateIDCards() {
                       </td>
                       <td className="p-3 text-sm font-mono">{student.rollNo}</td>
                       <td className="p-3 text-sm font-medium">{student.name}</td>
+                      {many && <td className="p-3 text-sm">{branchName(student.branchId) || "—"}</td>}
                       <td className="p-3 text-sm">{student.class}{student.section !== "—" ? ` · ${student.section}` : ""}</td>
                       <td className="p-3">
                         <Badge variant={student.photo ? "default" : "destructive"}>
@@ -417,7 +465,7 @@ export default function GenerateIDCards() {
 
             {!loading && filteredStudents.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
-                {!branchId ? "Select a branch to list its students." : students.length ? "No students found matching your search" : "This branch has no students yet."}
+                {!branchIds.length ? "Select a branch to list its students." : students.length ? "No students found matching your search" : many ? "These branches have no students yet." : "This branch has no students yet."}
               </div>
             )}
           </CardContent>

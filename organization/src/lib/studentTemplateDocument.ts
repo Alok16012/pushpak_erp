@@ -9,7 +9,13 @@ import {
 } from "@/lib/documentDesigner";
 import { marksheetSummary, type StudentDocument } from "@/lib/documents";
 import { printHtml } from "@/lib/export";
-import { loadDesignFor } from "@/lib/supabase/documentTemplates";
+import {
+  designFor,
+  getTemplateAssignments,
+  getTemplates,
+  loadDesignFor,
+  type DocumentTemplate,
+} from "@/lib/supabase/documentTemplates";
 
 /**
  * Printing a student's document from the template their branch was given.
@@ -152,6 +158,37 @@ export async function printManyFromTemplate(
     }),
   );
   printHtml(`${template.name} — ${students.length} student(s)`, pages.join(""));
+  return true;
+}
+
+/**
+ * Students of several branches in one print run, each drawn in the design
+ * their own branch was given (or the organisation's default). False when the
+ * organisation has no design of this kind, the caller's cue to fall back.
+ */
+export async function printRecordsByBranch(
+  kind: DocumentKind,
+  students: StudentRecord[],
+  organizationId: string | null,
+): Promise<boolean> {
+  if (students.length === 0) return false;
+  const [templates, assignments] = await Promise.all([
+    getTemplates(organizationId).catch(() => ({ data: [] as DocumentTemplate[] })),
+    getTemplateAssignments(organizationId).catch(() => ({ data: {} })),
+  ]);
+  const found = students.map((student) => designFor(kind, templates.data, assignments.data, String(student.branchId ?? "") || null));
+  if (found.some((f) => !f.template)) return false;
+
+  const pages = await Promise.all(
+    students.map(async (student, i) => {
+      const { design } = found[i];
+      const data = tokensForRecord(student);
+      const qr = await qrImages(design, data);
+      return `<div style="page-break-after:always">${designHtml(kind, design, data, qr)}</div>`;
+    }),
+  );
+  const names = [...new Set(found.map((f) => f.template!.name))].join(", ");
+  printHtml(`${names} — ${students.length} student(s)`, pages.join(""));
   return true;
 }
 
