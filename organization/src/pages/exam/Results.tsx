@@ -10,11 +10,7 @@ import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { marksheetPdf } from "@/lib/documents";
-import { printFromTemplate } from "@/lib/studentTemplateDocument";
-import { getStudentDocument } from "@/lib/supabase/data";
 import {
-  asExamResults,
   hasPractical,
   hasTheory,
   isFinalTerm,
@@ -38,6 +34,7 @@ import {
   type ExamSchedule,
   type MarksheetRecord,
 } from "@/lib/supabase/examWorkflow";
+import { printMarksheet } from "./printMarksheet";
 import { studentName, useExamData } from "./useExamData";
 
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -164,24 +161,13 @@ export default function Results() {
 
   const print = async (sheet: MarksheetRecord) => {
     try {
-      const { data } = await getStudentDocument(sheet.studentId, ownBranch);
-      const c = courseOf.get(sheet.courseId);
-      const roll = cards.find((c) => c.studentId === sheet.studentId && c.term === sheet.term)?.rollNo;
-      const doc = {
-        ...data,
-        rollNo: roll || data.rollNo,
-        issueDate: sheet.issueDate,
+      await printMarksheet(sheet, {
+        course: courseOf.get(sheet.courseId),
+        rollNo: cards.find((c) => c.studentId === sheet.studentId && c.term === sheet.term)?.rollNo,
         examinationDate: examDateOf(sheet),
-        session: sheet.session || data.session,
-        examResults: asExamResults([sheet], termPlan(c).type),
-      };
-      const extra = {
-        marksheet_no: sheet.marksheetNo,
-        term: termLabel(termPlan(c).type, sheet.term),
-        session: sheet.session,
-      };
-      const printed = await printFromTemplate("marksheet", doc, user?.organizationId ?? null, sheet.branchId, extra);
-      if (!printed) await marksheetPdf(doc);
+        organizationId: user?.organizationId ?? null,
+        ownBranch,
+      });
     } catch (e) {
       toast({ title: "Could not print marksheet", description: e instanceof Error ? e.message : "", variant: "destructive" });
     }

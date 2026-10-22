@@ -544,6 +544,22 @@ export async function marksheetPdf(s: StudentDocument) {
 
 export async function certificatePdf(s: StudentDocument) {
   const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+  await drawCertificate(doc, s);
+  save(doc, `certificate-${s.enrollmentNo || s.applicationNo || s.firstName}.pdf`);
+}
+
+/** Several students' certificates in one file, a page each, for one print run. */
+export async function certificatesPdf(students: StudentDocument[], fileName = "certificates") {
+  if (!students.length) return;
+  const doc = new jsPDF({ orientation: "portrait", format: "a4" });
+  for (const [i, s] of students.entries()) {
+    if (i) doc.addPage();
+    await drawCertificate(doc, s);
+  }
+  save(doc, `${fileName}.pdf`);
+}
+
+async function drawCertificate(doc: jsPDF, s: StudentDocument) {
   const navy = "#173653";
   const gold = "#a77a32";
   const name = [s.firstName, s.lastName].filter(Boolean).join(" ");
@@ -600,7 +616,6 @@ export async function certificatePdf(s: StudentDocument) {
   }
   doc.setFontSize(7); doc.setTextColor("#6b7280");
   doc.text(`Student record reference: ${reference || "-"}`, 105, 278, { align: "center" });
-  save(doc, `certificate-${reference || s.firstName}.pdf`);
 }
 
 export function feeStatementPdf(record: {

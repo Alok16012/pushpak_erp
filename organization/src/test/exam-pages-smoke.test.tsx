@@ -11,6 +11,9 @@ const toast = vi.fn();
 let walletBalance = 500;
 const issueCertificate = vi.fn((..._args: unknown[]) => Promise.resolve({ charged: true, alreadyIssued: false, amount: 150, certificateNo: "CERT-E001" }));
 const printFromTemplate = vi.fn((..._args: unknown[]) => Promise.resolve(true));
+const printManyFromTemplate = vi.fn((..._args: unknown[]) => Promise.resolve(true));
+const marksheetPdf = vi.fn((..._args: unknown[]) => Promise.resolve());
+let issuedList: unknown[] = [];
 const saveCourseSubject = vi.fn((..._args: unknown[]) => Promise.resolve());
 
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
@@ -21,8 +24,17 @@ vi.mock("@/components/ui/PageHeader", () => ({ PageHeader: ({ title }: { title: 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ view: "admin", user: { id: "u1", name: "Head Office", role: "SUPER_ADMIN", organizationId: "org1", branchId: null } }),
 }));
-vi.mock("@/lib/studentTemplateDocument", () => ({ printFromTemplate: (...a: unknown[]) => printFromTemplate(...a), photoOf: () => "" }));
-vi.mock("@/lib/documents", () => ({ certificatePdf: vi.fn(), marksheetPdf: vi.fn(), marksheetSummary: () => ({ result: "Pass" }) }));
+vi.mock("@/lib/studentTemplateDocument", () => ({
+  printFromTemplate: (...a: unknown[]) => printFromTemplate(...a),
+  printManyFromTemplate: (...a: unknown[]) => printManyFromTemplate(...a),
+  photoOf: () => "",
+}));
+vi.mock("@/lib/documents", () => ({
+  certificatePdf: vi.fn(),
+  certificatesPdf: vi.fn(),
+  marksheetPdf: (...a: unknown[]) => marksheetPdf(...a),
+  marksheetSummary: () => ({ result: "Pass" }),
+}));
 vi.mock("@/lib/supabase/data", () => ({
   getBranches: () => Promise.resolve({ success: true, data: [{ id: "b1", name: "Begusarai Centre" }] }),
   getCourses: () => Promise.resolve({ success: true, data: [{ id: "c1", name: "ADCA", durationMonths: 12 }] }),
@@ -72,13 +84,16 @@ vi.mock("@/lib/supabase/examWorkflow", () => ({
   deleteAdmitCard: vi.fn(),
   getMarksheets: () =>
     Promise.resolve([{ id: "m1", studentId: "s1", branchId: "b1", courseId: "c1", term: 1, session: "2026-2027", issueDate: "2026-11-20", marks: [], totalObtained: 120, totalMax: 150, percentage: 80, grade: "A", result: "PASS", isFinal: true, marksheetNo: "MS-E001-1", updatedAt: "" }]),
-  getIssuedCertificates: () => Promise.resolve([]),
+  getIssuedCertificates: () => Promise.resolve(issuedList),
 }));
 
 const page = async (path: string) => (await import(path)).default;
 
 beforeEach(() => {
   walletBalance = 500;
+  issuedList = [];
+  printManyFromTemplate.mockClear();
+  marksheetPdf.mockClear();
   toast.mockClear();
   issueCertificate.mockClear();
   printFromTemplate.mockClear();
@@ -175,6 +190,39 @@ describe("exam workflow pages", () => {
     expect(await screen.findByText(/is less than the ₹150 certificate fee/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Recharge the wallet" })).toHaveAttribute("href", "/branch/wallet");
     expect(screen.getByRole("button", { name: "Generate certificate" })).toBeDisabled();
+  });
+
+  it("issues certificates to several students at once and prints them as one run", async () => {
+    const Certificates = await page("@/pages/exam/Certificates");
+    render(<MemoryRouter><Certificates /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Multiple students" }));
+    expect(screen.getByText("Choose the centre to list its students who passed.")).toBeInTheDocument();
+    const centre = Array.from(document.querySelectorAll("label")).find((el) => el.textContent === "Centre")!;
+    fireEvent.keyDown(within(centre.parentElement!).getByRole("combobox"), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("option", { name: "Begusarai Centre" }));
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select all students shown" }));
+    expect(await screen.findByText(/₹150 will be deducted from Begusarai Centre's wallet/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Generate 1 certificate" }));
+    await waitFor(() => expect(issueCertificate).toHaveBeenCalledTimes(1));
+    expect((issueCertificate.mock.calls[0] as unknown[])[0]).toBe("s1");
+    await waitFor(() =>
+      expect(printManyFromTemplate).toHaveBeenCalledWith("certificate", [expect.anything()], "org1", "b1", [{ certificate_no: "CERT-E001", certificate_id: "CERT-E001" }]),
+    );
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "1 certificate(s) ready" })));
+  });
+
+  it("prints the marksheet beside an issued certificate", async () => {
+    issuedList = [{ id: "c1", studentId: "s1", branchId: "b1", certificateNo: "CERT-E001", issueDate: "2026-11-25", examConductedDate: "2026-11-20", amount: 150 }];
+    printFromTemplate.mockResolvedValueOnce(false);
+    const Certificates = await page("@/pages/exam/Certificates");
+    render(<MemoryRouter><Certificates /></MemoryRouter>);
+    await waitFor(() => expect(screen.getAllByText("Ram Kumar").length).toBeGreaterThan(0));
+    const row = screen.getAllByText("CERT-E001").map((el) => el.closest("tr")).find(Boolean) as HTMLElement;
+    fireEvent.keyDown(within(row).getByRole("button", { name: "Row actions" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Print marksheet" }));
+    await waitFor(() => expect(printFromTemplate).toHaveBeenCalledWith("marksheet", expect.anything(), "org1", "b1", expect.objectContaining({ marksheet_no: "MS-E001-1" })));
+    await waitFor(() => expect(marksheetPdf).toHaveBeenCalledWith(expect.objectContaining({ rollNo: "R1001", examinationDate: "2026-11-20" })));
   });
 
   it("lists passout students", async () => {

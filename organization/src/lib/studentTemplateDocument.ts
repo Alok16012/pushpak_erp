@@ -137,13 +137,15 @@ export async function printManyFromTemplate(
   students: StudentDocument[],
   organizationId: string | null,
   branchId: string | null,
+  /** Per-student tokens, by position: each certificate's own number. */
+  extras: TokenData[] = [],
 ): Promise<boolean> {
   const { template, design } = await loadDesignFor(kind, organizationId, branchId);
   if (!template || students.length === 0) return false;
 
   const pages = await Promise.all(
-    students.map(async (student) => {
-      const data = tokensFor(student);
+    students.map(async (student, i) => {
+      const data = tokensFor(student, extras[i]);
       const qr = await qrImages(design, data);
       // Each card on its own sheet, as a printer expects them.
       return `<div style="page-break-after:always">${designHtml(kind, design, data, qr)}</div>`;
