@@ -155,3 +155,21 @@ describe("safeUrl", () => {
     expect(safeUrl("data:text/html,<script>")).toBeNull();
   });
 });
+
+describe("several links per chapter", () => {
+  it("reads one link per line, and a single old link as a list of one", async () => {
+    const { splitLinks, joinLinks, safeLinks, badLink } = await import("@/lib/syllabus");
+    expect(splitLinks("https://x/a.pdf")).toEqual(["https://x/a.pdf"]);
+    expect(splitLinks("https://x/a.pdf\nhttps://x/b.pdf\n")).toEqual(["https://x/a.pdf", "https://x/b.pdf"]);
+    expect(splitLinks("")).toEqual([]);
+    expect(joinLinks([" https://x/a.pdf ", "", "https://x/b.pdf"])).toBe("https://x/a.pdf\nhttps://x/b.pdf");
+    // Only real web addresses become links.
+    expect(safeLinks("https://x/a.pdf\njavascript:alert(1)\nhttps://x/b.pdf")).toEqual(["https://x/a.pdf", "https://x/b.pdf"]);
+    expect(badLink(["https://x/a.pdf", "", "x/b.pdf"])).toBe(2);
+    expect(badLink(["https://x/a.pdf", ""])).toBeNull();
+  });
+
+  it("counts a chapter with any of its links as having study material", () => {
+    expect(studyLinkCount([chap("1", "m1", 1, { pdfUrl: "https://x/a\nhttps://x/b" }), chap("2", "m1", 2, { videoUrl: "nope" })])).toBe(1);
+  });
+});

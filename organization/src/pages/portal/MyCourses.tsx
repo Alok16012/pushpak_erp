@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { safeLinks } from "@/lib/syllabus";
 import { Link } from "react-router-dom";
 import { Award, BookOpen, CalendarClock, ChevronDown, FileText, GraduationCap, PlayCircle, Users } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -147,10 +148,14 @@ export default function MyCourses() {
                                     <p className="font-medium">{i + 1}. {chapter.name}</p>
                                     {chapter.description && <p className="text-xs text-muted-foreground">{chapter.description}</p>}
                                     {chapter.practical && <p className="text-xs text-muted-foreground">Practical: {chapter.practical}</p>}
-                                    {(chapter.pdfUrl || chapter.videoUrl) && (
-                                      <div className="mt-1 flex gap-2">
-                                        {chapter.pdfUrl && <Button size="sm" variant="outline" asChild><a href={chapter.pdfUrl} target="_blank" rel="noopener"><FileText className="mr-1 h-3.5 w-3.5" />Notes</a></Button>}
-                                        {chapter.videoUrl && <Button size="sm" variant="outline" asChild><a href={chapter.videoUrl} target="_blank" rel="noopener"><PlayCircle className="mr-1 h-3.5 w-3.5" />Video</a></Button>}
+                                    {(safeLinks(chapter.pdfUrl).length > 0 || safeLinks(chapter.videoUrl).length > 0) && (
+                                      <div className="mt-1 flex flex-wrap gap-2">
+                                        {safeLinks(chapter.pdfUrl).map((url, n, all) => (
+                                          <Button key={`pdf-${n}`} size="sm" variant="outline" asChild><a href={url} target="_blank" rel="noopener noreferrer"><FileText className="mr-1 h-3.5 w-3.5" />Notes{all.length > 1 ? ` ${n + 1}` : ""}</a></Button>
+                                        ))}
+                                        {safeLinks(chapter.videoUrl).map((url, n, all) => (
+                                          <Button key={`video-${n}`} size="sm" variant="outline" asChild><a href={url} target="_blank" rel="noopener noreferrer"><PlayCircle className="mr-1 h-3.5 w-3.5" />Video{all.length > 1 ? ` ${n + 1}` : ""}</a></Button>
+                                        ))}
                                       </div>
                                     )}
                                   </li>

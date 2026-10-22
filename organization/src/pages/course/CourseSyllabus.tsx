@@ -46,8 +46,11 @@ import { canManageCourses } from "@/lib/roles";
 import {
   buildSyllabus,
   filterSyllabus,
+  badLink,
+  joinLinks,
   nextOrder,
-  safeUrl,
+  safeLinks,
+  splitLinks,
   studyLinkCount,
   syllabusProblem,
 } from "@/lib/syllabus";
@@ -88,8 +91,9 @@ interface ChapterDraft {
   name: string;
   description: string;
   practical: string;
-  pdfUrl: string;
-  videoUrl: string;
+  /** One box per link; the column keeps them one per line. */
+  pdfUrls: string[];
+  videoUrls: string[];
   sortOrder: number;
   status: SyllabusStatus;
 }
@@ -100,8 +104,8 @@ const blankChapter: ChapterDraft = {
   name: "",
   description: "",
   practical: "",
-  pdfUrl: "",
-  videoUrl: "",
+  pdfUrls: [""],
+  videoUrls: [""],
   sortOrder: 1,
   status: "Active",
 };
@@ -235,7 +239,11 @@ export default function CourseSyllabus() {
     setEditingChapter(chapter ?? null);
     setChapterDraft(
       chapter
-        ? { ...chapter }
+        ? {
+            ...chapter,
+            pdfUrls: splitLinks(chapter.pdfUrl).length ? splitLinks(chapter.pdfUrl) : [""],
+            videoUrls: splitLinks(chapter.videoUrl).length ? splitLinks(chapter.videoUrl) : [""],
+          }
         : {
             ...blankChapter,
             moduleId,
@@ -255,6 +263,17 @@ export default function CourseSyllabus() {
       toast({ title: "Pick a module", description: "A chapter sits inside one.", variant: "destructive" });
       return;
     }
+    for (const [label, links] of [["PDF notes link", chapterDraft.pdfUrls], ["Video link", chapterDraft.videoUrls]] as const) {
+      const bad = badLink([...links]);
+      if (bad !== null) {
+        toast({
+          title: "Check the links",
+          description: `${label} ${links.length > 1 ? bad + 1 + " " : ""}is not a web address. It should start with https://`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     setSaving(true);
     try {
       const body = {
@@ -263,8 +282,8 @@ export default function CourseSyllabus() {
         name: chapterDraft.name.trim(),
         description: chapterDraft.description.trim(),
         practical: chapterDraft.practical.trim(),
-        pdfUrl: chapterDraft.pdfUrl.trim(),
-        videoUrl: chapterDraft.videoUrl.trim(),
+        pdfUrl: joinLinks(chapterDraft.pdfUrls),
+        videoUrl: joinLinks(chapterDraft.videoUrls),
         sortOrder: chapterDraft.sortOrder,
         status: chapterDraft.status,
       };
@@ -282,6 +301,43 @@ export default function CourseSyllabus() {
     } finally {
       setSaving(false);
     }
+  };
+
+  /** A box per link, with a way to add another and to take one away. */
+  const linkList = (key: "pdfUrls" | "videoUrls", label: string, placeholder: string, addLabel: string) => {
+    const links = chapterDraft[key];
+    const setLinks = (next: string[]) => setChapterDraft((d) => ({ ...d, [key]: next.length ? next : [""] }));
+    return (
+      <div className="space-y-2">
+        <Label>{label}{links.length > 1 ? `s (${links.length})` : ""}</Label>
+        {links.map((link, n) => (
+          <div key={n} className="flex items-center gap-2">
+            <Input
+              type="url"
+              placeholder={placeholder}
+              aria-label={`${label} ${n + 1}`}
+              value={link}
+              onChange={(e) => setLinks(links.map((l, i) => (i === n ? e.target.value : l)))}
+            />
+            {links.length > 1 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                aria-label={`Remove ${label.toLowerCase()} ${n + 1}`}
+                onClick={() => setLinks(links.filter((_, i) => i !== n))}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        ))}
+        <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => setLinks([...links, ""])}>
+          <Plus className="h-3.5 w-3.5" />{addLabel}
+        </Button>
+      </div>
+    );
   };
 
   const confirmDelete = async () => {
@@ -527,8 +583,8 @@ export default function CourseSyllabus() {
                       </p>
                     )}
                     {moduleChapters.map((chapter) => {
-                      const pdf = safeUrl(chapter.pdfUrl);
-                      const video = safeUrl(chapter.videoUrl);
+                      const pdfs = safeLinks(chapter.pdfUrl);
+                      const videos = safeLinks(chapter.videoUrl);
                       return (
                         <article key={chapter.id} className="rounded-lg border-l-4 border-l-brand/40 bg-muted/20 p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -575,30 +631,32 @@ export default function CourseSyllabus() {
                             </div>
                           )}
 
-                          {(pdf || video) && (
+                          {(pdfs.length > 0 || videos.length > 0) && (
                             <div className="mt-3 flex flex-wrap gap-2">
-                              {pdf && (
+                              {pdfs.map((pdf, n) => (
                                 <a
+                                  key={`pdf-${n}`}
                                   href={pdf}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-success/12 px-3 py-1.5 text-xs font-semibold text-success hover:bg-success/20"
                                 >
                                   <FileText className="h-3.5 w-3.5" />
-                                  PDF notes
+                                  PDF notes{pdfs.length > 1 ? ` ${n + 1}` : ""}
                                 </a>
-                              )}
-                              {video && (
+                              ))}
+                              {videos.map((video, n) => (
                                 <a
+                                  key={`video-${n}`}
                                   href={video}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1.5 rounded-lg bg-info/12 px-3 py-1.5 text-xs font-semibold text-info hover:bg-info/20"
                                 >
                                   <Video className="h-3.5 w-3.5" />
-                                  Video lecture
+                                  Video lecture{videos.length > 1 ? ` ${n + 1}` : ""}
                                 </a>
-                              )}
+                              ))}
                             </div>
                           )}
                         </article>
@@ -724,24 +782,8 @@ export default function CourseSyllabus() {
                 onChange={(e) => setChapterDraft((d) => ({ ...d, practical: e.target.value }))}
               />
             </div>
-            <div className="space-y-2">
-              <Label>PDF notes link</Label>
-              <Input
-                type="url"
-                placeholder="https://…/notes.pdf"
-                value={chapterDraft.pdfUrl}
-                onChange={(e) => setChapterDraft((d) => ({ ...d, pdfUrl: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Video link</Label>
-              <Input
-                type="url"
-                placeholder="https://…"
-                value={chapterDraft.videoUrl}
-                onChange={(e) => setChapterDraft((d) => ({ ...d, videoUrl: e.target.value }))}
-              />
-            </div>
+            {linkList("pdfUrls", "PDF notes link", "https://…/notes.pdf", "Add another PDF")}
+            {linkList("videoUrls", "Video link", "https://…", "Add another video")}
             <div className="space-y-2">
               <Label>Status</Label>
               <Select

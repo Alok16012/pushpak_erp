@@ -73,9 +73,34 @@ export function filterSyllabus(
 export const nextOrder = (items: Array<{ sortOrder: number }>) =>
   items.reduce((highest, item) => Math.max(highest, item.sortOrder), 0) + 1;
 
+/**
+ * A chapter can carry several PDF notes and several videos. They are kept one
+ * per line in the same column a single link always lived in, so a chapter
+ * saved with one link reads back as a list of one.
+ */
+export const splitLinks = (value: string | null | undefined): string[] =>
+  String(value ?? "")
+    .split(/\s+/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+/** The links as the column stores them: one per line, blanks dropped. */
+export const joinLinks = (links: string[]) => links.map((l) => l.trim()).filter(Boolean).join("\n");
+
+/** Only the links that are real web addresses, ready to put in an href. */
+export const safeLinks = (value: string | null | undefined): string[] =>
+  splitLinks(value).map(safeUrl).filter((url): url is string => url !== null);
+
+/** The first typed link that is not a web address, by its place in the list, or null. */
+export function badLink(links: string[]): number | null {
+  const typed = links.map((l) => l.trim());
+  const index = typed.findIndex((l) => l && !safeUrl(l));
+  return index < 0 ? null : index;
+}
+
 /** How much of the syllabus carries notes or a video. */
 export const studyLinkCount = (chapters: SyllabusChapter[]) =>
-  chapters.filter((chapter) => chapter.pdfUrl || chapter.videoUrl).length;
+  chapters.filter((chapter) => safeLinks(chapter.pdfUrl).length || safeLinks(chapter.videoUrl).length).length;
 
 /** Why a module or chapter cannot be saved, or null when it can. */
 export function syllabusProblem(draft: { name: string; sortOrder: number }): string | null {
