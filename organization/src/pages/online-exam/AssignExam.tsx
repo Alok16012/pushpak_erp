@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { PHASE_LABELS, examPhase, whenShown, type OnlineExam } from "@/lib/onlineExam";
 import { assignExam, getExamAssignments, getOnlineExams, removeExamAssignment, type ExamAssignment } from "@/lib/supabase/onlineExams";
+import { matchesSearch } from "@/lib/search";
 import { studentName, useExamData } from "../exam/useExamData";
 
 const shown = (iso: string) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
@@ -70,7 +71,7 @@ export default function AssignExam() {
         (s) =>
           (!branchId || s.branchId === branchId) &&
           (!courseId || s.courseId === courseId) &&
-          (!needle || `${studentName(s)} ${s.enrollmentNo || ""} ${s.applicationNo || ""}`.toLowerCase().includes(needle)),
+          matchesSearch(`${studentName(s)} ${s.enrollmentNo || ""} ${s.applicationNo || ""}`, needle),
       ),
     [students, branchId, courseId, needle],
   );

@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { canonicalState } from "@/data/indianStates";
+import { matchesSearch } from "@/lib/search";
 import {
   CHARGE_ITEMS,
   CHARGE_LABELS,
@@ -132,7 +133,7 @@ export default function CentreCharges() {
   const inBlock = inDistrict.filter((b) => blockFilter === ALL || same(b.block, blockFilter));
   const needle = query.trim().toLowerCase();
   const shownCentres = inBlock.filter(
-    (b) => !needle || [b.name, b.code, b.state, b.district, b.block].some((v) => v.toLowerCase().includes(needle)),
+    (b) => matchesSearch([b.name, b.code, b.state, b.district, b.block].join(" "), needle),
   );
   const filtering = Boolean(needle) || stateFilter !== ALL || districtFilter !== ALL || blockFilter !== ALL;
   const clearFilters = () => {

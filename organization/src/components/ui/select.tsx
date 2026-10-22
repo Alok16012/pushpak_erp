@@ -3,6 +3,7 @@ import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp, Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { matchesSearch } from "@/lib/search";
 
 const Select = SelectPrimitive.Root;
 
@@ -94,10 +95,10 @@ const SelectContent = React.forwardRef<React.ElementRef<typeof SelectPrimitive.C
     React.useEffect(() => {
       const root = viewport.current;
       if (!root || !showSearch) return;
-      const needle = query.trim().toLowerCase();
+      const needle = query.trim();
       let shown = 0;
       root.querySelectorAll<HTMLElement>('[role="option"]').forEach((option) => {
-        const hit = !needle || (option.textContent || "").toLowerCase().includes(needle);
+        const hit = matchesSearch(option.textContent, needle);
         // `hidden` would lose to the item's own `flex` class.
         option.style.display = hit ? "" : "none";
         option.toggleAttribute("data-filtered-out", !hit);

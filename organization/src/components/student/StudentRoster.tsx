@@ -20,6 +20,7 @@ import {
 import { StudentContact } from "@/components/student/StudentContact";
 import { formatPhone, normalisePhone, telHref } from "@/lib/phone";
 import { rupees } from "@/lib/fees";
+import { matchesSearch } from "@/lib/search";
 import type { StudentRosterRow } from "@/lib/supabase/data";
 
 /** Radix Select needs a non-empty value for "every branch". */
@@ -157,7 +158,7 @@ export function StudentRoster({
       ]
         .join(" ")
         .toLowerCase();
-      return haystack.includes(q) || (digits.length >= 4 && haystack.includes(digits));
+      return matchesSearch(haystack, q) || (digits.length >= 4 && haystack.includes(digits));
     });
   }, [rows, search, branchFilter, courseFilter, statusFilter]);
 

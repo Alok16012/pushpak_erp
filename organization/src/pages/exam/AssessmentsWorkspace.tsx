@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import { useLocation } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -134,7 +135,7 @@ export default function AssessmentsWorkspace() {
   const [issueDate, setIssueDate] = useState(() => new Date().toLocaleDateString("en-CA"));
   const [examinationDate, setExaminationDate] = useState("");
   const documentStudents = students.filter((s) => (documentBranch === "all" || s.branchId === documentBranch)
-    && `${s.firstName} ${s.lastName} ${s.enrollmentNo || ""}`.toLowerCase().includes(studentSearch.toLowerCase()));
+    && matchesSearch(`${s.firstName} ${s.lastName} ${s.enrollmentNo || ""}`, studentSearch));
   useEffect(() => {
     let cancelled = false;
     setDocumentRecord(null);

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from "react";
+import { matchesSearch } from "@/lib/search";
 import {
   Table,
   TableBody,
@@ -174,8 +175,13 @@ export function DataTable<T extends { id: string | number }>({
         String((item as Record<string, unknown>)[String(filterColumn?.key)] ?? "") === quickFilter) &&
       // Every chosen filter has to hold, not just the last one touched.
       named.every((filter) => !picked[filter.label] || readFilter(filter, item) === picked[filter.label]) &&
-      Object.values(item).some((value) =>
-        String(value).toLowerCase().includes(search.toLowerCase())
+      // Every word of the search, across the row's own values: "abhishek gupta"
+      // and "gupta 0012" both find a row whatever the spacing of the name.
+      matchesSearch(
+        Object.values(item)
+          .filter((value) => value === null || typeof value !== "object")
+          .join(" "),
+        search,
       )
   );
 

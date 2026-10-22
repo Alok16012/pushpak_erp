@@ -38,6 +38,21 @@ describe("searchable select", () => {
     expect(onChange).toHaveBeenCalledWith("Coder Infotech Academy");
   });
 
+  it("finds a student by full name despite double spaces, in any word order, or with the number", async () => {
+    render(<Picker searchable options={["Abhishek  Gupta · APP-2026-0012", "Rohit  Kumar  Sharma  · APP-2026-0010", "Sonali kumari · APP-2026-0011"]} />);
+    open();
+    const box = await screen.findByLabelText("Search centre…");
+    const shown = () => screen.queryAllByRole("option").map((o) => o.textContent);
+    for (const q of ["abhishek gupta", "  Abhishek   Gupta ", "gupta abhishek", "abhishek 0012"]) {
+      fireEvent.change(box, { target: { value: q } });
+      expect(shown()).toEqual(["Abhishek  Gupta · APP-2026-0012"]);
+    }
+    fireEvent.change(box, { target: { value: "rohit kumar sharma" } });
+    expect(shown()).toEqual(["Rohit  Kumar  Sharma  · APP-2026-0010"]);
+    fireEvent.change(box, { target: { value: "abhishek sonali" } });
+    expect(shown()).toEqual([]);
+  });
+
   it("keeps a short list plain, and gives a long one a search box by itself", async () => {
     const { unmount } = render(<Picker />);
     open();
