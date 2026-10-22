@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Printer } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, type Column } from "@/components/ui/DataTable";
@@ -34,7 +35,7 @@ import {
   type ExamSchedule,
   type MarksheetRecord,
 } from "@/lib/supabase/examWorkflow";
-import { printMarksheet } from "./printMarksheet";
+import { printMarksheet, printMarksheets } from "./printMarksheet";
 import { studentName, useExamData } from "./useExamData";
 
 const today = () => new Date().toLocaleDateString("en-CA");
@@ -48,6 +49,9 @@ export default function Results() {
   const { toast } = useToast();
   const { user, ownBranch, branches, sessions, students, courseOf, branchOf, studentOf } = useExamData();
   const [branchId, setBranchId] = useState("");
+  // Results ticked in the list, for printing their marksheets together.
+  const [printIds, setPrintIds] = useState<string[]>([]);
+  const [printing, setPrinting] = useState(false);
   const [studentId, setStudentId] = useState("");
   const [term, setTerm] = useState(1);
   const [session, setSession] = useState("");
@@ -159,17 +163,30 @@ export default function Results() {
     return dates[dates.length - 1] || sheet.issueDate;
   };
 
+  const optsFor = (sheet: MarksheetRecord) => ({
+    course: courseOf.get(sheet.courseId),
+    rollNo: cards.find((c) => c.studentId === sheet.studentId && c.term === sheet.term)?.rollNo,
+    examinationDate: examDateOf(sheet),
+  });
+
   const print = async (sheet: MarksheetRecord) => {
     try {
-      await printMarksheet(sheet, {
-        course: courseOf.get(sheet.courseId),
-        rollNo: cards.find((c) => c.studentId === sheet.studentId && c.term === sheet.term)?.rollNo,
-        examinationDate: examDateOf(sheet),
-        organizationId: user?.organizationId ?? null,
-        ownBranch,
-      });
+      await printMarksheet(sheet, { ...optsFor(sheet), organizationId: user?.organizationId ?? null, ownBranch });
     } catch (e) {
       toast({ title: "Could not print marksheet", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
+  /** Several marksheets in one go: one print run, or one PDF with a page per student. */
+  const printMany = async (chosen: MarksheetRecord[]) => {
+    if (!chosen.length) return;
+    setPrinting(true);
+    try {
+      await printMarksheets(chosen.map((sheet) => ({ sheet, opts: optsFor(sheet) })), user?.organizationId ?? null, ownBranch);
+    } catch (e) {
+      toast({ title: "Could not print marksheets", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -360,11 +377,24 @@ export default function Results() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Results</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+          <CardTitle>Results <Badge variant="secondary" className="ml-2">{rows.length}</Badge></CardTitle>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={printing || !printIds.length} onClick={() => void printMany(sheets.filter((s) => printIds.includes(s.id)))}>
+              <Printer className="mr-2 h-4 w-4" />
+              {printing ? "Preparing…" : `Print selected (${printIds.length})`}
+            </Button>
+            <Button size="sm" variant="outline" disabled={printing || !sheets.length} onClick={() => void printMany(sheets)}>
+              Print all ({sheets.length})
+            </Button>
+          </div>
+        </CardHeader>
         <CardContent>
           <DataTable
             data={rows}
             columns={columns}
+            selectable
+            onSelectionChange={(ids) => setPrintIds(ids.map(String))}
             searchPlaceholder="Search name, enrollment…"
             filters={[
               { label: "Course", key: "courseName" },

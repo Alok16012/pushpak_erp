@@ -135,6 +135,11 @@ describe("marksheetPdf", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("puts several students' marksheets in one file", async () => {
+    const { marksheetsPdf } = await import("@/lib/documents");
+    await expect(marksheetsPdf([base, { ...base, firstName: "Sita" }], "marksheets-2")).resolves.toBeUndefined();
+  });
+
   it("runs a long list of papers onto further pages", async () => {
     const many = Array.from({ length: 40 }, (_, i) => paper(40, 50, 20, `Paper ${i + 1}`));
     await expect(marksheetPdf({ ...base, examResults: many })).resolves.toBeUndefined();

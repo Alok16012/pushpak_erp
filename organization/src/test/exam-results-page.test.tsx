@@ -29,7 +29,8 @@ vi.mock("@/lib/supabase/data", () => ({
         { id: "s1", branchId: "b1", courseId: "c1", firstName: "Ram", lastName: "Kumar", enrollmentNo: "E001", academicYear: "2026-2027" },
       ],
     }),
-  getStudentDocument: vi.fn(),
+  getStudentDocument: (id: string) =>
+    Promise.resolve({ data: { id, firstName: id === "s1" ? "Ram" : "Sita", branch: { name: "Begusarai Centre", organization: { name: "Org" } }, examResults: [] } }),
 }));
 vi.mock("@/lib/supabase/examWorkflow", () => ({
   getExamCentres: () => Promise.resolve([]),
@@ -47,8 +48,13 @@ vi.mock("@/lib/supabase/examWorkflow", () => ({
 }));
 
 vi.mock("@/components/ui/PageHeader", () => ({ PageHeader: () => <div /> }));
-vi.mock("@/lib/studentTemplateDocument", () => ({ printFromTemplate: vi.fn() }));
-vi.mock("@/lib/documents", () => ({ marksheetPdf: vi.fn() }));
+const printMarksheetsFromTemplate = vi.fn((..._a: unknown[]) => Promise.resolve(false));
+const marksheetsPdf = vi.fn((..._a: unknown[]) => Promise.resolve());
+vi.mock("@/lib/studentTemplateDocument", () => ({
+  printFromTemplate: vi.fn(),
+  printMarksheetsFromTemplate: (...a: unknown[]) => printMarksheetsFromTemplate(...a),
+}));
+vi.mock("@/lib/documents", () => ({ marksheetPdf: vi.fn(), marksheetsPdf: (...a: unknown[]) => marksheetsPdf(...a) }));
 
 const Results = (await import("@/pages/exam/Results")).default;
 
@@ -65,9 +71,36 @@ beforeEach(() => {
   sheets = [];
   toast.mockClear();
   saveMarksheet.mockClear();
+  printMarksheetsFromTemplate.mockClear();
+  marksheetsPdf.mockClear();
 });
 
 describe("Results page", () => {
+  it("prints the ticked students' marksheets together", async () => {
+    const sheet = (id: string, studentId: string) => ({
+      id, studentId, branchId: "b1", courseId: "c1", term: 1, session: "2026-2027", issueDate: "2026-10-21",
+      marks: [{ subjectId: "x3", code: "A00", name: "Basics", subjectType: "THEORY", theoryMax: 100, theoryMin: 35, theory: 70, practicalMax: 0, practicalMin: 0, practical: null }],
+      totalObtained: 70, totalMax: 100, percentage: 70, grade: "B", result: "PASS", isFinal: false, marksheetNo: `MS-${id}`, updatedAt: "",
+    });
+    sheets = [sheet("m1", "s1"), sheet("m2", "s2")];
+    render(<MemoryRouter><Results /></MemoryRouter>);
+    expect(await screen.findByRole("button", { name: "Print all (2)" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Print selected \(0\)/ })).toBeDisabled();
+
+    const rowOf = (no: string) => screen.getAllByText(no).map((el) => el.closest("tr")).find(Boolean) as HTMLElement;
+    await waitFor(() => expect(rowOf("E001")).toBeTruthy());
+    fireEvent.click(within(rowOf("E001")).getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: /Print selected \(1\)/ }));
+    await waitFor(() => expect(marksheetsPdf).toHaveBeenCalledTimes(1));
+    expect((marksheetsPdf.mock.calls[0] as unknown[])[0]).toEqual([expect.objectContaining({ firstName: "Ram" })]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Print all (2)" }));
+    await waitFor(() => expect(marksheetsPdf).toHaveBeenCalledTimes(2));
+    expect((marksheetsPdf.mock.calls[1] as unknown[])[0]).toHaveLength(2);
+    // The designs are tried first, all in one run.
+    expect((printMarksheetsFromTemplate.mock.calls[1] as unknown[])[0]).toHaveLength(2);
+  });
+
   it("works out the result from theory and practical marks and saves the final term", async () => {
     render(<MemoryRouter><Results /></MemoryRouter>);
     await waitFor(() => expect(control("Centre")).toHaveTextContent("Begusarai Centre"));

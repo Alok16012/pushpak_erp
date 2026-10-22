@@ -4,6 +4,7 @@ import {
   SAMPLE_DATA,
   designHtml,
   marksTableRowHeight,
+  type DocumentDesign,
   type DocumentKind,
   type TokenData,
 } from "@/lib/documentDesigner";
@@ -113,27 +114,64 @@ export async function printFromTemplate(
 
   const data = tokensFor(student, extra);
   if (kind === "marksheet") {
-    const tables = design.elements.filter((el) => el.type === "marks-table");
+    const pages = await marksheetPages(design, student, extra);
     // Older designs have only an empty rectangle: use the full PDF instead.
-    if (!tables.length) return false;
-    const capacity = Math.min(...tables.map((el) => Math.floor((el.height - 40) / marksTableRowHeight(data, el.width, el.fontSize))));
-    if (capacity < 1) throw new Error("Increase the marks table height in the template.");
-    const pages: string[] = [];
-    for (let offset = 0; offset < Math.max(1, student.examResults.length); offset += capacity) {
-      const pageData = tokensFor({ ...student, examResults: student.examResults.slice(offset, offset + capacity) }, extra);
-      pageData.percentage = data.percentage;
-      pageData.grade = data.grade;
-      pageData.result = data.result;
-      pageData.total_marks = data.total_marks;
-      pageData.maximum_marks = data.maximum_marks;
-      pages.push(`<div style="page-break-after:always">${designHtml(kind, design, pageData, await qrImages(design, pageData))}</div>`);
-    }
+    if (!pages) return false;
     printHtml(`${template.name} — ${student.firstName}`, pages.join(""));
     return true;
   }
   const qr = await qrImages(design, data);
   const name = [student.firstName, student.lastName].filter(Boolean).join(" ") || "Student";
   printHtml(`${template.name} — ${name}`, designHtml(kind, design, data, qr));
+  return true;
+}
+
+/**
+ * One student's marksheet drawn in a design, as many pages as its marks table
+ * needs. Null when the design has no marks table to fill.
+ */
+async function marksheetPages(design: DocumentDesign, student: StudentDocument, extra: TokenData): Promise<string[] | null> {
+  const data = tokensFor(student, extra);
+  const tables = design.elements.filter((el) => el.type === "marks-table");
+  if (!tables.length) return null;
+  const capacity = Math.min(...tables.map((el) => Math.floor((el.height - 40) / marksTableRowHeight(data, el.width, el.fontSize))));
+  if (capacity < 1) throw new Error("Increase the marks table height in the template.");
+  const pages: string[] = [];
+  for (let offset = 0; offset < Math.max(1, student.examResults.length); offset += capacity) {
+    const pageData = tokensFor({ ...student, examResults: student.examResults.slice(offset, offset + capacity) }, extra);
+    pageData.percentage = data.percentage;
+    pageData.grade = data.grade;
+    pageData.result = data.result;
+    pageData.total_marks = data.total_marks;
+    pageData.maximum_marks = data.maximum_marks;
+    pages.push(`<div style="page-break-after:always">${designHtml("marksheet", design, pageData, await qrImages(design, pageData))}</div>`);
+  }
+  return pages;
+}
+
+/**
+ * Many students' marksheets in one print run, each in its own branch's
+ * marksheet design. False when any of them has no usable design, the cue to
+ * print the built-in sheets instead.
+ */
+export async function printMarksheetsFromTemplate(
+  items: Array<{ student: StudentDocument; extra: TokenData; branchId: string | null }>,
+  organizationId: string | null,
+): Promise<boolean> {
+  if (!items.length) return false;
+  const [templates, assignments] = await Promise.all([
+    getTemplates(organizationId).catch(() => ({ data: [] as DocumentTemplate[] })),
+    getTemplateAssignments(organizationId).catch(() => ({ data: {} })),
+  ]);
+  const found = items.map((item) => designFor("marksheet", templates.data, assignments.data, item.branchId));
+  if (found.some((f) => !f.template)) return false;
+  const pages: string[] = [];
+  for (const [i, item] of items.entries()) {
+    const own = await marksheetPages(found[i].design, item.student, item.extra);
+    if (!own) return false;
+    pages.push(...own);
+  }
+  printHtml(`Marksheets — ${items.length} student(s)`, pages.join(""));
   return true;
 }
 

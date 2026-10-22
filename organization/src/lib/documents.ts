@@ -339,6 +339,22 @@ function marksheetTableHeader(doc: jsPDF, y: number, outs: Array<number | null>)
 
 export async function marksheetPdf(s: StudentDocument) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  await drawMarksheet(doc, s);
+  save(doc, `marksheet-${s.enrollmentNo || s.applicationNo || [s.firstName, s.lastName].filter(Boolean).join(" ") || "-"}.pdf`);
+}
+
+/** Several students' marksheets in one file, each starting on a sheet of its own. */
+export async function marksheetsPdf(students: StudentDocument[], fileName = "marksheets") {
+  if (!students.length) return;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  for (const [i, s] of students.entries()) {
+    if (i) doc.addPage();
+    await drawMarksheet(doc, s);
+  }
+  save(doc, `${fileName}.pdf`);
+}
+
+async function drawMarksheet(doc: jsPDF, s: StudentDocument) {
   const { width, height, margin } = MARKSHEET;
   const centre = width / 2;
   const right = width - margin;
@@ -542,7 +558,6 @@ export async function marksheetPdf(s: StudentDocument) {
   });
 
   if (s.issueDate) doc.text(`Issue date: ${new Date(s.issueDate).toLocaleDateString("en-IN")}`, margin, signY + 5);
-  save(doc, `marksheet-${s.enrollmentNo || s.applicationNo || name}.pdf`);
 }
 
 export async function certificatePdf(s: StudentDocument) {
