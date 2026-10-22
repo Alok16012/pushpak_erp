@@ -6,6 +6,14 @@
         bottom: 22px;
         z-index: 99999;
         font-family: Arial, sans-serif;
+        /* The box stretches across a phone's width and sat over the WhatsApp
+           button; only the call button and its popup take taps. */
+        width: max-content;
+        pointer-events: none;
+    }
+
+    .modern-call-wrapper > * {
+        pointer-events: auto;
     }
 
     .modern-call-btn {

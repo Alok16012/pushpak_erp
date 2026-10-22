@@ -753,23 +753,29 @@ button,
                 display: flex !important;
             }
 
+            /* minmax(0, …): a plain 1fr grows to the picture's full width
+               and pushed the heading off the side of a phone. */
             .hero-grid {
-                grid-template-columns: 1fr !important;
+                grid-template-columns: minmax(0, 1fr) !important;
+                min-height: 0 !important;
             }
 
+            /* Clears the fixed header, whose logo makes it ~100px tall. */
             .hero-left {
                 text-align: center;
-                padding-top: 85px;
+                padding-top: 125px;
             }
 
             .visual-wrapper {
                 justify-content: center;
             }
 
+            /* zoom, not transform: the picture then takes only the room
+               it shows in, instead of its full desktop width. */
             .visual-area {
-                margin: 0;
-                transform: scale(.78);
-                transform-origin: top center;
+                margin: 0 auto;
+                transform: none;
+                zoom: .78;
             }
         }
 
@@ -793,15 +799,15 @@ button,
             }
 
             .hero-left {
-                padding-top: 85px;
+                padding-top: 120px;
             }
 
             .visual-area {
                 width: 500px;
                 height: 430px;
-                margin-left: -20px;
-                transform: scale(.62);
-                transform-origin: top center;
+                margin: 0 auto;
+                transform: none;
+                zoom: .62;
             }
 
             .float-label {
@@ -820,7 +826,6 @@ button,
             }
 
             .visual-area {
-                transform: scale(.55);
-                margin-left: -45px;
+                zoom: .55;
             }
         }
