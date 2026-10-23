@@ -18,7 +18,7 @@ export function BranchDocumentsSection() {
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <UploadTile name="labPhoto" label="Lab Photo" hint="Upload lab photo" />
-          <UploadTile name="statusDocument" label="Status Document" hint="Upload status document" />
+          <UploadTile name="statusDocument" label="Status Document" hint="Upload status document (image or PDF)" accept="image/*,application/pdf" />
         </div>
       </CardContent>
     </Card>

@@ -56,7 +56,7 @@ export function fileKind(url: string, name = ""): StudentFile["kind"] {
 }
 
 /** A stored value -- a URL string, or an object carrying one -- as a file, or null. */
-function asFile(key: string, label: string, value: unknown): StudentFile | null {
+export function asFile(key: string, label: string, value: unknown): StudentFile | null {
   let url = "";
   let name = "";
   let uploadedAt = "";

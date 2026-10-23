@@ -66,8 +66,8 @@ export function DirectorInfoSection() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <UploadTile name="aadharFront" label="Aadhar Card (Front)" hint="Upload front side" />
-          <UploadTile name="aadharBack" label="Aadhar Card (Back)" hint="Upload back side" />
+          <UploadTile name="aadharFront" label="Aadhar Card (Front)" hint="Upload front side" accept="image/*,application/pdf" />
+          <UploadTile name="aadharBack" label="Aadhar Card (Back)" hint="Upload back side" accept="image/*,application/pdf" />
         </div>
       </CardContent>
     </Card>

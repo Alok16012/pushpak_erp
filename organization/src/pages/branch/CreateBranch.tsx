@@ -119,6 +119,18 @@ export default function CreateBranch() {
       return;
     }
     setSaving(true);
+    // An upload tile hands over its file as JSON beside its name; a slot left
+    // empty is left out, so the column stays null.
+    const fileOf = (key: string): Record<string, unknown> => {
+      try {
+        const file = JSON.parse(value(`${key}File`) || "null");
+        return file?.dataUrl ? file : {};
+      } catch {
+        return {};
+      }
+    };
+    const files = (pairs: Array<[string, string]>) =>
+      Object.fromEntries(pairs.map(([column, key]) => [column, fileOf(key)]).filter(([, file]) => Object.keys(file as object).length));
     // Branch details live across three tables: the branch itself, its address
     // and its director. Enum columns take the uppercase form of the select value.
     createBranchWithDetails(user.organizationId, {
@@ -147,6 +159,13 @@ export default function CreateBranch() {
         onlineFeePayment: Boolean(data.get("onlineFeePayment")),
         studentPortal: Boolean(data.get("studentPortal")),
         parentPortal: Boolean(data.get("parentPortal")),
+        ...files([
+          ["branchMohar", "mohar"],
+          ["branchPhoto", "branchPhoto"],
+          ["labPhoto", "labPhoto"],
+          ["statusDocument", "statusDocument"],
+          ["branchLogo", "branchLogo"],
+        ]),
       },
       address: {
         streetAddress: value("address"),
@@ -165,6 +184,12 @@ export default function CreateBranch() {
         gender: storedChoice(value("directorGender"), GENDERS),
         dob: new Date(value("directorDOB")).toISOString(),
         bloodGroup: value("directorBloodGroup") || null,
+        ...files([
+          ["photo", "directorPhoto"],
+          ["signature", "directorSignature"],
+          ["aadharFront", "aadharFront"],
+          ["aadharBack", "aadharBack"],
+        ]),
       },
       // Without a registration date, the first of the expiry month stands in.
       license: value("expiryDate")

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { BranchDocuments } from "@/components/branch/BranchDocuments";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SelectWithCustom } from "@/components/ui/select-with-custom";
 import { storedChoice } from "@/lib/choices";
@@ -892,7 +893,7 @@ export default function ViewBranch() {
       )}
 
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{details?.name}</DialogTitle>
             <DialogDescription>{details?.code}</DialogDescription>
@@ -916,6 +917,12 @@ export default function ViewBranch() {
                 </div>
               ))}
             </dl>
+          )}
+          {details && (
+            <section className="space-y-2 border-t pt-3">
+              <h3 className="text-sm font-semibold">Registration documents</h3>
+              <BranchDocuments branchId={details.id} organizationId={user?.organizationId || ""} branchName={details.name} canUpload />
+            </section>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => details && certificate(details)}>Print certificate</Button>

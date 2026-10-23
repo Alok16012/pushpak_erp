@@ -1,37 +1,40 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Upload, X } from "lucide-react";
+import { FileText, Upload, X } from "lucide-react";
 import { pickImage } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 
 /**
  * A dashed upload slot that actually opens a file picker and previews the
- * choice. The file name rides along in a hidden input so the enclosing form's
- * `FormData` records it; the data URL itself stays in memory (branch records
- * live in localStorage, and a handful of base64 images would blow the quota).
+ * choice. The enclosing form's `FormData` gets the file name under `name` and
+ * the file itself -- { name, dataUrl, uploadedAt } as JSON -- under
+ * `${name}File`, which the page saves with the record.
  */
 export function UploadTile({
   label,
   hint,
   name,
   size = "sm",
+  accept = "image/*",
 }: {
   label: string;
   hint: string;
   name: string;
   size?: "sm" | "lg";
+  /** What the picker offers: images, or "image/*,application/pdf" for papers. */
+  accept?: string;
 }) {
   const { toast } = useToast();
-  const [file, setFile] = useState<{ name: string; dataUrl: string } | null>(null);
+  const [file, setFile] = useState<{ name: string; dataUrl: string; uploadedAt: string } | null>(null);
 
   const choose = async () => {
-    const picked = await pickImage();
+    const picked = await pickImage(accept);
     if (picked === "too-large") {
-      toast({ title: "File too large", description: "Pick an image under 5 MB.", variant: "destructive" });
+      toast({ title: "File too large", description: "Pick a file under 5 MB.", variant: "destructive" });
       return;
     }
-    if (picked) setFile(picked);
+    if (picked) setFile({ ...picked, uploadedAt: new Date().toISOString() });
   };
 
   return (
@@ -40,7 +43,11 @@ export function UploadTile({
       <div className={`border-2 border-dashed border-border rounded-lg text-center ${size === "lg" ? "p-8" : "p-4"}`}>
         {file ? (
           <>
-            <img src={file.dataUrl} alt={label} className="mx-auto mb-2 max-h-24 rounded object-contain" />
+            {file.dataUrl.startsWith("data:image/") ? (
+              <img src={file.dataUrl} alt={label} className="mx-auto mb-2 max-h-24 rounded object-contain" />
+            ) : (
+              <FileText className="mx-auto mb-2 h-10 w-10 text-muted-foreground" />
+            )}
             <p className="mb-2 truncate text-xs text-muted-foreground" title={file.name}>{file.name}</p>
             <div className="flex justify-center gap-2">
               <Button type="button" variant="outline" size="sm" onClick={choose}>Replace</Button>
@@ -59,6 +66,7 @@ export function UploadTile({
         )}
       </div>
       <input type="hidden" name={name} value={file?.name ?? ""} />
+      <input type="hidden" name={`${name}File`} value={file ? JSON.stringify(file) : ""} />
     </div>
   );
 }

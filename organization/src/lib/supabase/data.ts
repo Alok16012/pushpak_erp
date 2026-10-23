@@ -2152,20 +2152,37 @@ export async function deleteNotice(id: string) {
    BRANCHES
    ============================ */
 
+/**
+ * Every column of a branch but its registration documents. Those are images
+ * kept on the row itself (branchMohar, branchPhoto, labPhoto, statusDocument,
+ * branchLogo); every centre picker loads this list, and would otherwise pull
+ * each centre's photos with it. getBranchDetails still reads the whole row.
+ */
+const BRANCH_LIST_COLUMNS = [
+  "id", "organizationId", "userId", "name", "code", "branchType", "instituteType", "academicYear",
+  "establishedYear", "website", "description", "phone", "altPhone", "whatsappNumber", "email",
+  "numComputers", "numFaculty", "numRooms", "isActive", "onlineEnrollment", "smsNotifications",
+  "emailNotifications", "onlineFeePayment", "studentPortal", "parentPortal", "deletedAt", "createdAt", "updatedAt",
+].join(",");
+
 export async function getBranches(organizationId: string | null) {
-  let query = supabase
-    .from("branches")
-    .select("*")
-    .is("deletedAt", null)
-    .order("name");
+  const run = (columns: string) => {
+    let query = supabase
+      .from("branches")
+      .select(columns)
+      .is("deletedAt", null)
+      .order("name");
+    if (organizationId) query = query.eq("organizationId", organizationId);
+    return query;
+  };
 
-  if (organizationId) {
-    query = query.eq("organizationId", organizationId);
-  }
-
-  const { data, error } = await query;
+  let { data, error } = await run(BRANCH_LIST_COLUMNS);
+  // A database without one of the later columns: the whole row, as before.
+  if (error && isMissingBranchColumn(error)) ({ data, error } = await run("*"));
   if (error) throw new Error(error.message);
-  return { success: true, data: data || [] };
+  // The rows as select("*") typed them before, which every caller casts from.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return { success: true, data: (data || []) as any[] };
 }
 
 /**
@@ -5812,4 +5829,26 @@ export async function getStudentPicklist(branchId: string | null) {
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   return { success: true as const, data: data || [] };
+}
+
+/**
+ * Puts one of a centre's registration documents on file, or replaces it
+ * (src/lib/branchDocuments.ts lists them). The director's go on the
+ * director's row, which every registered centre has.
+ */
+export async function saveBranchDocument(
+  branchId: string,
+  slot: { table: "branches" | "branch_directors"; column: string },
+  file: { name: string; dataUrl: string; uploadedAt: string },
+) {
+  const { data, error } = await supabase
+    .from(slot.table)
+    .update({ [slot.column]: file, updatedAt: new Date().toISOString() })
+    .eq(slot.table === "branches" ? "id" : "branchId", branchId)
+    .select("id");
+  if (error) throw new Error(error.message);
+  if (!data?.length) {
+    throw new Error(slot.table === "branch_directors" ? "This centre has no director on record. Edit the branch to add one." : "Could not save the document.");
+  }
+  return { success: true };
 }
