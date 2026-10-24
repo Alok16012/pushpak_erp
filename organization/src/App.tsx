@@ -122,6 +122,7 @@ const ExpenseVoucher = lazy(() => import("./pages/expense/ExpenseVoucher"));
 
 // Attendance Management
 const Attendance = lazy(() => import("./pages/attendance/Attendance"));
+const AttendanceQr = lazy(() => import("./pages/attendance/AttendanceQr"));
 const AttendanceReport = lazy(() => import("./pages/attendance/AttendanceReport"));
 const AttendanceLogs = lazy(() => import("./pages/attendance/AttendanceLogs"));
 const HolidayApply = lazy(() => import("./pages/attendance/HolidayApply"));
@@ -298,6 +299,7 @@ const App = () => (
 
           {/* Attendance Management */}
           <Route path="/attendance/mark" element={<Attendance />} />
+          <Route path="/attendance/qr" element={<AttendanceQr />} />
           <Route path="/attendance/report" element={<AttendanceReport />} />
           <Route path="/attendance/logs" element={<AttendanceLogs />} />
           <Route path="/attendance/holiday-apply" element={<HolidayApply />} />

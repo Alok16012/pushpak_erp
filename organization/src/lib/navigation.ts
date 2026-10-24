@@ -1,5 +1,6 @@
 import {
   ClipboardCheck,
+  QrCode,
   Code2,
   Users,
   Building2,
@@ -207,6 +208,8 @@ export const menuItems: MenuItem[] = [
     icon: Camera,
     items: [
       { title: "Mark Attendance", url: "/attendance/mark", icon: Camera },
+      // The centre's screen students scan to mark themselves present.
+      { title: "QR Attendance", url: "/attendance/qr", icon: QrCode },
       { title: "Attendance Report", url: "/attendance/report", icon: FileBarChart },
       { title: "Attendance Logs", url: "/attendance/logs", icon: History },
       { title: "Holiday Apply", url: "/attendance/holiday-apply", icon: CalendarCheck },
@@ -290,6 +293,7 @@ const franchiseMenu: MenuItem[] = [
   ...scope("Fee Management", ["/fee/collection", "/fee/due-collection"]),
   ...scope("Attendance Management", [
     "/attendance/mark",
+    "/attendance/qr",
     "/attendance/report",
     "/attendance/logs",
   ]),

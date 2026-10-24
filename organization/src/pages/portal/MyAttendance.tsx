@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Flag } from "lucide-react";
+import { Camera, CheckCircle2, Download, Flag, QrCode } from "lucide-react";
+import { CameraCheckIn } from "@/components/attendance/CameraCheckIn";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,10 @@ export default function MyAttendance() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Marking today's attendance from the phone: by the centre's QR, or a selfie.
+  const [checkIn, setCheckIn] = useState<"QR" | "SELFIE" | null>(null);
+  const [reload, setReload] = useState(0);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
   useEffect(() => {
     let cancelled = false;
@@ -117,7 +122,7 @@ export default function MyAttendance() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast, studentId, branchId]);
+  }, [toast, studentId, branchId, reload]);
 
   const months = useMemo(() => [...new Set(days.map((day) => monthKey(day.date)))].sort().reverse(), [days]);
   const rows = days
@@ -163,6 +168,36 @@ export default function MyAttendance() {
             <Download />Export CSV
           </Button>
         }
+      />
+
+      {!loading && (() => {
+        const mark = days.find((day) => day.date.slice(0, 10) === today);
+        return (
+          <Card className="mb-5 border-primary/30">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold">Today's attendance</p>
+                {mark ? (
+                  <p className="mt-1 flex items-center gap-1.5 text-sm text-emerald-700"><CheckCircle2 className="h-4 w-4" />Marked {mark.status} for today.</p>
+                ) : (
+                  <p className="mt-1 text-sm text-muted-foreground">At the centre? Scan the QR on its screen, or take a selfie.</p>
+                )}
+              </div>
+              {!mark && (
+                <div className="flex gap-2">
+                  <Button onClick={() => setCheckIn("QR")}><QrCode className="mr-2 h-4 w-4" />Scan QR</Button>
+                  <Button variant="outline" onClick={() => setCheckIn("SELFIE")}><Camera className="mr-2 h-4 w-4" />Selfie</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+      <CameraCheckIn
+        mode={checkIn ?? "QR"}
+        open={checkIn !== null}
+        onClose={() => setCheckIn(null)}
+        onDone={() => setReload((n) => n + 1)}
       />
 
       {loading ? (
