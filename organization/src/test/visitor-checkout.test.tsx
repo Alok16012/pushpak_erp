@@ -132,8 +132,9 @@ describe("where a visit has got to", () => {
   it("calls the end of a visit what the office calls it", async () => {
     open();
     await rowMenu();
-    // "Mark completed" said nothing about what had completed.
-    expect(await screen.findByText(/mark as admission completed/i)).toBeInTheDocument();
+    // "Mark completed" said nothing about what had completed; "admission
+    // completed" claimed an admission for every visitor who left.
+    expect(await screen.findByText(/mark as visit completed/i)).toBeInTheDocument();
   });
 });
 

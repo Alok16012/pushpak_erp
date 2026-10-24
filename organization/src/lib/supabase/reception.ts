@@ -35,8 +35,10 @@ export const ENQUIRY_STATUS_LABEL: Record<string, string> = {
   NEW: "Checked in",
   CONTACTED: "Follow-up",
   CONVERTED: "Converted",
-  // Most visits here are admission enquiries, and this is the end of one.
-  CLOSED: "Admission completed",
+  // The end of a visit, whatever it was for: checking a visitor out closes it.
+  // An admission is "Converted"; calling every closed visit an admission
+  // filed a delivery or a meeting as one.
+  CLOSED: "Visit completed",
 };
 
 /** enum VisitPurpose */
@@ -204,9 +206,17 @@ export async function deleteItemMovement(id: string) {
  * `new Date(undefined).toLocaleString()` renders the string "Invalid Date".
  * ------------------------------------------------------------------ */
 
+/**
+ * A stored timestamp as a Date. The visit columns are `timestamp without time
+ * zone` and the app writes them as UTC (toISOString), so a value that comes
+ * back with no zone is UTC -- read as local time it showed a 9:36 pm visit as
+ * the previous day's 6:30 pm, and dropped it from "Visitors today".
+ */
+const NAIVE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
 const valid = (value: unknown) => {
   if (value === null || value === undefined || value === "") return null;
-  const date = new Date(value as string);
+  const text = typeof value === "string" && NAIVE.test(value) ? `${value.replace(" ", "T")}Z` : (value as string);
+  const date = new Date(text);
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
@@ -248,8 +258,9 @@ export function isToday(value: unknown) {
 
 /** `"2024-01-24"` + `"09:30"` -> ISO string, falling back to now when unparseable. */
 export function toIsoTimestamp(date?: string, time?: string) {
-  const parsed = valid(`${date || ""}T${time || "00:00"}`);
-  return (parsed || new Date()).toISOString();
+  // What the form holds is the clock on the wall: local time, not UTC.
+  const parsed = new Date(`${date || ""}T${time || "00:00"}`);
+  return (Number.isNaN(parsed.getTime()) ? new Date() : parsed).toISOString();
 }
 
 /** Initials for an avatar, safe against null/blank names arriving from the API. */

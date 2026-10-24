@@ -233,6 +233,7 @@ export default function ItemMovementWorkspace() {
         draft.description.trim() && `Description: ${draft.description.trim()}`,
         draft.phone.trim() && `Contact: ${draft.phone.trim()}`,
       ].filter(Boolean).join("\n");
+      const today = new Date().toLocaleDateString("en-CA");
       const created = await createItemMovement(branchId, {
         direction: draft.direction || "Received",
         item: draft.item.trim(),
@@ -246,11 +247,15 @@ export default function ItemMovementWorkspace() {
         courier: draft.courier || undefined,
         tracking: draft.tracking || undefined,
         notes: notes || undefined,
-        dispatch_date: draft.dispatchDate || undefined,
-        receive_date: draft.receiveDate || undefined,
+        // Left blank, the movement happened today -- the "today" tiles count by it.
+        dispatch_date: draft.direction === "Dispatched" ? draft.dispatchDate || today : draft.dispatchDate || undefined,
+        receive_date: (draft.direction || "Received") === "Received" ? draft.receiveDate || today : draft.receiveDate || undefined,
       });
       if (created.data) setMovements((list) => [fromRow(created.data), ...list]);
       else await load();
+      // The list opens on Dispatched from the menu; a received item just
+      // recorded must not vanish behind that filter.
+      setDirection((current) => (current === "all" || current === (draft.direction || "Received") ? current : "all"));
       toast({ title: "Movement recorded", description: `${draft.item.trim()} was added to the shared register.` });
       setDraft(blankDraft);
       setMode("list");
