@@ -3,6 +3,7 @@ import { supabase, supabaseUrl } from "./client";
 import { KNOWN_COURSE_CATEGORIES } from "../courseCategories";
 import { describeEnumRejection } from "../choices";
 import { newId, nowIso } from "../id";
+import { storedTime } from "../storedTime";
 import { listNames, renameInList, splitNames } from "../instructors";
 import { toStudentProfile, type StudentRow } from "../student-profile";
 import {
@@ -3135,7 +3136,7 @@ function extractRemarks(desc: string | null | undefined): string {
 function mapTransaction(row: Record<string, unknown>): WalletTransactionItem {
   const branch = row.branch as { name?: string; code?: string } | null;
   const created = (row.createdAt as string) || "";
-  const at = created ? new Date(created) : null;
+  const at = storedTime(created);
   const rawStatus = String(row.status || "COMPLETED").toUpperCase() as "PENDING" | "COMPLETED" | "FAILED";
   const uiStatus: "pending" | "approved" | "rejected" =
     rawStatus === "PENDING" ? "pending" : rawStatus === "COMPLETED" ? "approved" : "rejected";

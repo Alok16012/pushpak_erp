@@ -229,6 +229,26 @@ begin
 end;
 $$;
 
+-- An admission made at the counter is charged as it is saved; an online
+-- application only when it is approved -- even one a member of staff typed in
+-- on the online form while signed in.
+create or replace function public.charge_admission()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.jwt_role() <> '' and public.jwt_role() <> 'STUDENT'
+     and new."applicationSource" is distinct from 'ONLINE' then
+    perform public.charge_centre(new."branchId", 'ADMISSION', new."id",
+      'Admission fee - ' || trim(concat_ws(' ', new."firstName", new."lastName")),
+      coalesce(new."applicationNo", new."enrollmentNo"), null);
+  end if;
+  return new;
+end;
+$$;
+
 drop trigger if exists "students_charge_on_approval" on public.students;
 create trigger "students_charge_on_approval" after update of "admissionStatus" on public.students
   for each row execute function public.charge_admission_on_approval();

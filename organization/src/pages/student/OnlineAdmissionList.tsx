@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { GraduationCap, Clock, CheckCircle, XCircle, Download, Link2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getStudents } from "@/lib/supabase/data";
+import { storedTime } from "@/lib/storedTime";
+import { listBatches, listCourses, type LookupRow } from "@/lib/supabase/examAttendance";
 import { listInvoices, updateStudentRow, type InvoiceRow } from "@/lib/supabase/studentFee";
 import {
   REQUIRED_DOCUMENTS,
@@ -64,6 +66,13 @@ type StudentRecord = Record<string, unknown> & {
   decisionNote?: string;
 };
 
+/** "24 Oct 2026, 10:27 pm". */
+const shortDate = (value: string) => {
+  const at = storedTime(value);
+  if (!at) return value;
+  return at.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+};
+
 const columns: Column<OnlineAdmission>[] = [
   {
     key: "applicationNo",
@@ -82,7 +91,7 @@ const columns: Column<OnlineAdmission>[] = [
     cell: (admission) => (
       <div>
         <p className="font-medium">{admission.name}</p>
-        <p className="text-xs text-muted-foreground">{admission.email}</p>
+        <p className="text-xs text-muted-foreground">{admission.email || admission.phone}</p>
       </div>
     ),
   },
@@ -141,10 +150,16 @@ export default function OnlineAdmissionList() {
       try {
         // Invoices decide the Payment column. A failure there leaves the column
         // unknown rather than the page empty.
-        const [result, invoiceResult] = await Promise.all([
+        // Students come without their course and batch names; those are looked
+        // up here, and a failed lookup only leaves the names out.
+        const [result, invoiceResult, courses, batches] = await Promise.all([
           getStudents(branchId, 1, 500),
           listInvoices(branchId ?? null).catch(() => ({ data: [] as InvoiceRow[] })),
+          listCourses(user?.organizationId).catch((): LookupRow[] => []),
+          listBatches(branchId).catch((): LookupRow[] => []),
         ]);
+        const courseName = new Map(courses.map((c) => [c.id, c.name]));
+        const batchName = new Map(batches.map((b) => [b.id, b.name]));
         const byStudent = new Map<string, InvoiceRow[]>();
         for (const invoice of invoiceResult.data) {
           const id = String(invoice.studentId ?? "");
@@ -160,12 +175,12 @@ export default function OnlineAdmissionList() {
           applications.map((s) => ({
             id: s.id,
             applicationNo: s.applicationNo || s.enrollmentNo || "—",
-            date: s.admissionDate || s.createdAt || "",
+            date: shortDate(s.admissionDate || s.createdAt || ""),
             name: [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" "),
             email: s.email || "",
             phone: s.phone,
-            course: s.course?.name || "Not assigned",
-            batch: s.batch?.name || "Not assigned",
+            course: s.course?.name || courseName.get(String(s.courseId ?? "")) || "Not assigned",
+            batch: s.batch?.name || batchName.get(String(s.batchId ?? "")) || "No batch yet",
             documents: uploadedDocuments(s),
             files: studentFiles(s),
             paymentStatus: paymentFor(byStudent.get(String(s.id)) ?? []),
@@ -190,7 +205,7 @@ export default function OnlineAdmissionList() {
     return () => {
       cancelled = true;
     };
-  }, [branchId, toast]);
+  }, [branchId, user?.organizationId, toast]);
 
   /** Saves the decision, and shows it only once the database has it. */
   const updateAdmission = async (id: string, changes: Partial<OnlineAdmission>) => {

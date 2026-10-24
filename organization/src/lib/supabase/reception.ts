@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { newId } from "@/lib/id";
+import { storedTime } from "@/lib/storedTime";
 
 /**
  * Reception-only data access.
@@ -206,19 +207,7 @@ export async function deleteItemMovement(id: string) {
  * `new Date(undefined).toLocaleString()` renders the string "Invalid Date".
  * ------------------------------------------------------------------ */
 
-/**
- * A stored timestamp as a Date. The visit columns are `timestamp without time
- * zone` and the app writes them as UTC (toISOString), so a value that comes
- * back with no zone is UTC -- read as local time it showed a 9:36 pm visit as
- * the previous day's 6:30 pm, and dropped it from "Visitors today".
- */
-const NAIVE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
-const valid = (value: unknown) => {
-  if (value === null || value === undefined || value === "") return null;
-  const text = typeof value === "string" && NAIVE.test(value) ? `${value.replace(" ", "T")}Z` : (value as string);
-  const date = new Date(text);
-  return Number.isNaN(date.getTime()) ? null : date;
-};
+const valid = storedTime;
 
 export function formatDate(value: unknown, fallback = "—") {
   const date = valid(value);
