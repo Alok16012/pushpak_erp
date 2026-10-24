@@ -1853,6 +1853,15 @@ export async function getStudentDocument(studentId: string, branchId: string | n
   const { data: settings } = branch
     ? await supabase.from("branch_settings").select("address").eq("branchId", branch.id).maybeSingle()
     : { data: null };
+  // The address the centre was registered with, for a centre that has set none
+  // on its settings page: better on an admit card than the organisation's.
+  const { data: registered } = branch
+    ? await supabase
+        .from("branch_addresses")
+        .select("streetAddress, city, district, state, pincode")
+        .eq("branchId", branch.id)
+        .maybeSingle()
+    : { data: null };
 
   const { data: invoiceRows } = await supabase
     .from("fee_invoices")
@@ -1936,6 +1945,7 @@ export async function getStudentDocument(studentId: string, branchId: string | n
         // stands in for a branch that has not set one.
         address:
           settings?.address ||
+          [...new Set([registered?.streetAddress, registered?.city, registered?.district, registered?.state, registered?.pincode].filter(Boolean))].join(", ") ||
           [organization?.streetAddress, organization?.city, organization?.state, organization?.pincode]
             .filter(Boolean)
             .join(", "),
