@@ -79,6 +79,8 @@ const ExamSchedule = lazy(() => import("./pages/exam/ExamSchedule"));
 const AdmitCards = lazy(() => import("./pages/exam/AdmitCards"));
 const Results = lazy(() => import("./pages/exam/Results"));
 const Certificates = lazy(() => import("./pages/exam/Certificates"));
+// Public: a student applies with documents, without a login.
+const OnlineAdmission = lazy(() => import("./pages/public/OnlineAdmission"));
 const PrintApprovals = lazy(() => import("./pages/exam/PrintApprovals"));
 const CentreCharges = lazy(() => import("./pages/branch/CentreCharges"));
 
@@ -172,6 +174,7 @@ const App = () => (
           <Suspense fallback={<LoadingFallback />}>
           <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/apply" element={<OnlineAdmission />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route element={<ProtectedRoute />}>
           {/* Dashboard */}

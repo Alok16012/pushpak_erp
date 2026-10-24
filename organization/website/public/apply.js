@@ -208,13 +208,23 @@
     return box;
   }
 
-  function done(box, kind, data, centreName, form) {
+  function done(box, kind, data, centreName, form, centreId) {
     box.textContent = "";
     box.appendChild(el("div", { class: "ok" }, "✅"));
     box.appendChild(el("h3", { style: "text-align:center" }, "Thank you" + (data.name ? ", " + data.name.split(" ")[0] : "") + "!"));
     box.appendChild(el("p", { style: "text-align:center" }, kind === "franchise"
       ? "Your franchise application has reached our head office. Our team will call you on " + data.phone + " soon."
       : "Your admission application has been sent to " + centreName + ". The centre will call you on " + data.phone + " soon."));
+    // The full admission -- documents and fee screenshot -- is made on the
+    // ERP's online form, which the centre then approves.
+    if (kind === "admission") {
+      var query = ["centre=" + encodeURIComponent(centreId || ""), "course=" + encodeURIComponent(data.course || ""),
+        "name=" + encodeURIComponent(data.name || ""), "phone=" + encodeURIComponent(data.phone || "")].join("&");
+      box.appendChild(el("p", { style: "text-align:center;margin-top:4px" }, "To confirm your seat, complete the admission form with your documents."));
+      var full = el("a", { class: "go", href: "/computercentre/apply?" + query,
+        style: "display:flex;align-items:center;justify-content:center;text-decoration:none;height:44px;border-radius:12px;font-weight:600;margin-top:8px" }, "Apply online with documents");
+      box.appendChild(full);
+    }
     var row = el("div", { class: "row" });
     var number = whatsappNumber();
     if (number) {
@@ -313,7 +323,7 @@
         p_message: message(data) || null,
         p_page: location.pathname.split("/").pop() || "home",
       })
-        .then(function () { done(box, "admission", data, chosen.name, form); })
+        .then(function () { done(box, "admission", data, chosen.name, form, chosen.id); })
         .catch(function (e) {
           send.disabled = false;
           send.textContent = "Send application";

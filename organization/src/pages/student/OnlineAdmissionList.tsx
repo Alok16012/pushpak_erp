@@ -12,7 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { GraduationCap, Clock, CheckCircle, XCircle, Download } from "lucide-react";
+import { GraduationCap, Clock, CheckCircle, XCircle, Download, Link2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { getStudents } from "@/lib/supabase/data";
 import { listInvoices, updateStudentRow, type InvoiceRow } from "@/lib/supabase/studentFee";
@@ -142,7 +142,7 @@ export default function OnlineAdmissionList() {
         // Invoices decide the Payment column. A failure there leaves the column
         // unknown rather than the page empty.
         const [result, invoiceResult] = await Promise.all([
-          getStudents(branchId, 1, 100),
+          getStudents(branchId, 1, 500),
           listInvoices(branchId ?? null).catch(() => ({ data: [] as InvoiceRow[] })),
         ]);
         const byStudent = new Map<string, InvoiceRow[]>();
@@ -151,8 +151,13 @@ export default function OnlineAdmissionList() {
           byStudent.set(id, [...(byStudent.get(id) ?? []), invoice]);
         }
         if (cancelled) return;
+        // Applications made on the online form, and any admission still waiting
+        // for a decision -- not every student a counter admission filed as approved.
+        const applications = (result.data as StudentRecord[]).filter(
+          (s) => (s as Record<string, unknown>).applicationSource === "ONLINE" || admissionView(s) !== "approved",
+        );
         setAdmissions(
-          (result.data as StudentRecord[]).map((s) => ({
+          applications.map((s) => ({
             id: s.id,
             applicationNo: s.applicationNo || s.enrollmentNo || "—",
             date: s.admissionDate || s.createdAt || "",
@@ -196,9 +201,12 @@ export default function OnlineAdmissionList() {
       setAdmissions((prev) => prev.map((a) => (a.id === id ? { ...a, ...changes } : a)));
       return true;
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Please try again";
+      const low = /INSUFFICIENT_BALANCE:\s*(.*)/.exec(message);
       toast({
-        title: "Could not save",
-        description: error instanceof Error ? error.message : "Please try again",
+        title: low ? "Centre wallet balance is too low" : "Could not save",
+        // Approving charges the centre's admission fee, as a counter admission is charged.
+        description: low ? `${low[1]} Recharge the wallet, then approve again.` : message,
         variant: "destructive",
       });
       return false;
@@ -256,6 +264,17 @@ export default function OnlineAdmissionList() {
     }
   };
 
+  /** The online form's address, with this centre chosen, to send to students. */
+  const copyFormLink = async () => {
+    const link = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, "")}/apply${branchId ? `?centre=${encodeURIComponent(branchId)}` : ""}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      toast({ title: "Form link copied", description: link });
+    } catch {
+      toast({ title: "Online admission form", description: link });
+    }
+  };
+
   const exportData = () => {
     downloadCsv(
       "online-admissions.csv",
@@ -310,16 +329,22 @@ export default function OnlineAdmissionList() {
     <AppLayout>
       <PageHeader
         title="Online Admission List"
-        description="Manage online admission applications"
+        description="Applications students made on the online form, with their documents. Approving confirms the admission and charges the centre's admission fee."
         breadcrumbs={[
           { label: "Student Management", href: "/student/view" },
           { label: "Online Admission List" },
         ]}
         actions={
-          <Button variant="outline" className="gap-2" onClick={exportData}>
-            <Download className="h-4 w-4" />
-            Export Data
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" onClick={copyFormLink}>
+              <Link2 className="h-4 w-4" />
+              Copy form link
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={exportData}>
+              <Download className="h-4 w-4" />
+              Export Data
+            </Button>
+          </div>
         }
       />
 
@@ -327,9 +352,8 @@ export default function OnlineAdmissionList() {
         <StatsCard
           title="Total Applications"
           value={admissions.length}
-          subtitle="This session"
+          subtitle="Made on the online form"
           icon={GraduationCap}
-          trend={{ value: 12, isPositive: true }}
         />
         <StatsCard
           title="Pending Review"
@@ -340,9 +364,8 @@ export default function OnlineAdmissionList() {
         <StatsCard
           title="Approved"
           value={statusCounts.approved}
-          subtitle="Ready for enrollment"
+          subtitle="Admission confirmed"
           icon={CheckCircle}
-          trend={{ value: 8, isPositive: true }}
         />
         <StatsCard
           title="Rejected"
@@ -357,6 +380,7 @@ export default function OnlineAdmissionList() {
         columns={columns}
         searchPlaceholder="Search applications..."
         actions={handleActions}
+        emptyMessage="No online applications yet. Share the online admission form (Copy form link) with students."
       />
 
       <Dialog open={!!details} onOpenChange={(open) => !open && setDetails(null)}>

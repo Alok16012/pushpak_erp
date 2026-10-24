@@ -103,6 +103,10 @@ describe("website applications", () => {
       p_page: "python.html",
     });
     expect(dialog.textContent).toContain("sent to Digiskills computer academy");
+    // The way on to the full admission, with documents, at the chosen centre.
+    const link = dialog.querySelector('a[href^="/computercentre/apply?"]') as HTMLAnchorElement;
+    expect(link.textContent).toBe("Apply online with documents");
+    expect(link.getAttribute("href")).toBe("/computercentre/apply?centre=b2&course=Python%20Programming&name=Rahul%20Kumar&phone=9876543210");
   });
 
   it("shows the database's own complaint, and falls back to WhatsApp when it cannot be reached", async () => {
