@@ -1059,8 +1059,12 @@ export default function AdmissionsWorkspace() {
                       }))
                     }
                     label="Courses"
-                    placeholder={courses.length ? "Choose courses" : "No courses yet"}
-                    hint="Pick as many as the student is enrolled on. The first one is the primary course shown on certificates and invoices."
+                    placeholder={courseOptions.length ? "Choose courses" : "No courses yet"}
+                    hint={
+                      courseOptions.length || !offeredIds
+                        ? "Pick as many as the student is enrolled on. The first one is the primary course shown on certificates and invoices."
+                        : "No course is assigned to this branch yet. The head office assigns courses to a branch; once it does, they show here."
+                    }
                   />
                 </Field>
                 <Field l="Batch">

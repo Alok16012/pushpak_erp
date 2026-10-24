@@ -134,8 +134,11 @@ export async function getDashboardStats(branchId: string | null) {
         .eq("fee_invoices.branchId", branchId)
     : supabase.from("fee_payments").select("amount").gte("paidAt", monthStart);
 
-  const coursesQuery = supabase.from("courses").select("*", { count: "exact", head: true }).eq("isActive", true).is("deletedAt", null);
+  // A branch runs the active courses it has been assigned, not the whole
+  // catalogue -- a new branch with none assigned showed "9 courses running".
+  const coursesQuery = supabase.from("courses").select("id", { count: "exact" }).eq("isActive", true).is("deletedAt", null);
   if (orgId) coursesQuery.eq("organizationId", orgId);
+  const offeredQuery = branchId ? getBranchCourseIds(branchId).catch(() => null) : Promise.resolve(null);
 
   const [
     studentsRes,
@@ -144,6 +147,7 @@ export async function getDashboardStats(branchId: string | null) {
     attendanceRes,
     paymentsRes,
     coursesRes,
+    offered,
   ] = await Promise.all([
     studentsQuery,
     enquiriesQuery,
@@ -151,7 +155,11 @@ export async function getDashboardStats(branchId: string | null) {
     attendanceQuery,
     paymentsQuery,
     coursesQuery,
+    offeredQuery,
   ]);
+  const courses = offered
+    ? (coursesRes.data || []).filter((c: { id: unknown }) => offered.has(String(c.id))).length
+    : coursesRes.count || 0;
 
   // Outstanding is what is still owed, not what was billed: a PARTIAL invoice
   // counts only its unpaid remainder.
@@ -171,7 +179,7 @@ export async function getDashboardStats(branchId: string | null) {
       enquiriesToday: enquiriesRes.count || 0,
       outstanding,
       feesCollected,
-      courses: coursesRes.count || 0,
+      courses,
       attendancePercentage: attendanceTotal ? Math.round((present / attendanceTotal) * 1000) / 10 : 0,
       attendance: (attendanceRes.data || []).reduce((acc: any, r: any) => {
         acc[r.status] = (acc[r.status] || 0) + 1;
