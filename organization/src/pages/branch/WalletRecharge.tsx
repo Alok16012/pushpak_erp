@@ -198,7 +198,8 @@ export default function WalletRecharge() {
         getWalletsByOrg(orgId),
         getWalletTransactions({
           organizationId: orgId,
-          branchId: selectedBranch === "all" ? null : selectedBranch,
+          // A centre sees its own ledger only, whatever the database lets it read.
+          branchId: canApprove ? (selectedBranch === "all" ? null : selectedBranch) : branchId || null,
           status: statusTab,
           paymentMethod: selectedMethod === "all" ? null : selectedMethod,
           search: debouncedSearch,
@@ -227,7 +228,11 @@ export default function WalletRecharge() {
       setTotalPages(txResult.totalPages);
       setStatusCounts(txResult.counts);
       setTotals({
-        totalBalance: instituteList.reduce((sum, i) => sum + i.balance, 0),
+        // The office sees every centre's wallets added up; a centre sees its own
+        // wallet -- the figure the header shows -- never the others' summed in.
+        totalBalance: canApprove
+          ? instituteList.reduce((sum, i) => sum + i.balance, 0)
+          : Number(walletMap.get(branchId || "") ?? 0),
         pendingAmount: txResult.totals.pendingAmount,
         approvedAmount: txResult.totals.approvedAmount,
       });
@@ -243,6 +248,8 @@ export default function WalletRecharge() {
     }
   }, [
     user?.organizationId,
+    canApprove,
+    branchId,
     selectedBranch,
     statusTab,
     selectedMethod,
@@ -596,7 +603,6 @@ export default function WalletRecharge() {
           value={inr(totals.approvedAmount)}
           subtitle={`${statusCounts.approved} recharges credited`}
           icon={CreditCard}
-          trend={{ value: 12, isPositive: true }}
         />
         <StatsCard
           title="Pending Approval"
